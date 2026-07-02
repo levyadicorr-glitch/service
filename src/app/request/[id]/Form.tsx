@@ -126,8 +126,9 @@ export default function RequestForm({ customer }: FormProps) {
         setCreatedRequestNumber(data.request.requestNumber);
       }
       setSubmitSuccess(true);
-    } catch (err: any) {
-      setSubmitError(err.message || 'שגיאה בחיבור לשרת, אנא נסה שנית.');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'שגיאה בחיבור לשרת, אנא נסה שנית.';
+      setSubmitError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -490,7 +491,7 @@ export default function RequestForm({ customer }: FormProps) {
               required
             />
             <span className="mr-3 text-sm text-gray-600 leading-relaxed font-semibold">
-              אני מאשר/ת ומסכים/ה לשלם <strong className="text-amber-800">150 ש"ח דמי בדיקה</strong> במידה ויימצאו בכלי דברים שאינם קשורים לאחריות, ואבחר שלא לבצע את התיקון.
+              אני מאשר/ת ומסכים/ה לשלם <strong className="text-amber-800">150 ש&quot;ח דמי בדיקה</strong> במידה ויימצאו בכלי דברים שאינם קשורים לאחריות, ואבחר שלא לבצע את התיקון.
             </span>
           </label>
         </div>

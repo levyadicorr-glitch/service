@@ -37,6 +37,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
   const [selectedCustomerForQr, setSelectedCustomerForQr] = useState<Customer | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line
     setBaseUrl(window.location.origin);
   }, []);
 
@@ -132,8 +133,9 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
       setSelectedCustomerForCreate(null);
       setCreateSearch('');
       setAdminToolOwnerName('');
-    } catch (err: any) {
-      alert(err.message || 'שגיאה בשמירת הקריאה');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'שגיאה בשמירת הקריאה';
+      alert(errorMessage);
     } finally {
       setIsAdminSavingRequest(false);
     }
@@ -190,7 +192,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
             {/* Stats Cards Section */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
               <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm transition-all duration-300 hover:shadow-md">
-                <span className="text-gray-400 text-xs font-semibold block">סה"כ קריאות</span>
+                <span className="text-gray-400 text-xs font-semibold block">סה&quot;כ קריאות</span>
                 <span className="block text-3xl font-extrabold text-gray-900 mt-2">{stats.total}</span>
               </div>
               {statuses.map(st => {
@@ -579,7 +581,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
 
               {/* Inspection fee condition indicator */}
               <div className="p-4 bg-orange-50/50 border border-orange-100 rounded-2xl flex items-center justify-between text-orange-800 text-sm">
-                <span className="font-semibold">אישור דמי בדיקה (150 ש"ח):</span>
+                <span className="font-semibold">אישור דמי בדיקה (150 ש&quot;ח):</span>
                 <span className="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs font-bold">מאושר</span>
               </div>
 

@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import sharp from 'sharp';
 import { createServiceRequest, getCustomerById, getServiceRequests } from '@/lib/db';
 
@@ -8,9 +6,10 @@ export async function GET() {
   try {
     const requests = await getServiceRequests();
     return NextResponse.json({ requests });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error fetching requests:', err);
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    const errorMessage = err instanceof Error ? err.message : 'Server error';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
@@ -96,8 +95,9 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, request: newRequest });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error creating request:', err);
-    return NextResponse.json({ error: err.message || 'שגיאת שרת פנימית' }, { status: 500 });
+    const errorMessage = err instanceof Error ? err.message : 'שגיאת שרת פנימית';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

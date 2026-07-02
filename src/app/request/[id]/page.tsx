@@ -3,6 +3,8 @@ import { getCustomerById } from '@/lib/db';
 import RequestForm from './Form';
 import Link from 'next/link';
 
+export const dynamic = 'force-dynamic';
+
 interface PageProps {
   params: Promise<{
     id: string;

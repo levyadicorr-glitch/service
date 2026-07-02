@@ -20,8 +20,9 @@ export async function PATCH(
     }
 
     return NextResponse.json({ success: true, request: updated });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error updating request status:', err);
-    return NextResponse.json({ error: err.message || 'שגיאת שרת פנימית' }, { status: 500 });
+    const errorMessage = err instanceof Error ? err.message : 'שגיאת שרת פנימית';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

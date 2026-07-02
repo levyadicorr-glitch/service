@@ -32,8 +32,9 @@ export async function POST(req: NextRequest) {
     };
 
     return NextResponse.json({ success: true, request: responseData });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error creating direct request:', err);
-    return NextResponse.json({ error: err.message || 'שגיאת שרת פנימית' }, { status: 500 });
+    const errorMessage = err instanceof Error ? err.message : 'שגיאת שרת פנימית';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

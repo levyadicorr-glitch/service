@@ -96,7 +96,7 @@ export async function createServiceRequest(
     updatedAt: new Date().toISOString()
   };
 
-  await db.collection('serviceRequests').insertOne(newRequest as any);
+  await db.collection('serviceRequests').insertOne(newRequest as Record<string, unknown>);
   return newRequest;
 }
 
