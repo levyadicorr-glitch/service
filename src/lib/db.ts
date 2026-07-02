@@ -121,3 +121,9 @@ export async function updateServiceRequestStatus(
   const { _id, ...rest } = result;
   return rest as unknown as ServiceRequest;
 }
+
+export async function deleteServiceRequest(id: string): Promise<boolean> {
+  const db = await getDb();
+  const result = await db.collection('serviceRequests').deleteOne({ id });
+  return result.deletedCount === 1;
+}

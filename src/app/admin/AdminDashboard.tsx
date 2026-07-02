@@ -23,8 +23,14 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
   // Modal State
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [copiedCustomerId, setCopiedCustomerId] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
+  
+  // Auth State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   // Create Request Flow State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -39,7 +45,22 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
   useEffect(() => {
     // eslint-disable-next-line
     setBaseUrl(window.location.origin);
+    const auth = localStorage.getItem('admin_auth');
+    if (auth === 'true') {
+      setIsAuthenticated(true);
+    }
   }, []);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === '123123') {
+      setIsAuthenticated(true);
+      localStorage.setItem('admin_auth', 'true');
+      setLoginError('');
+    } else {
+      setLoginError('סיסמה שגויה');
+    }
+  };
 
   // Status mapping (only the 3 statuses requested)
   const statuses = [
@@ -104,6 +125,28 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
     }
   };
 
+  const handleDeleteRequest = async (reqId: string) => {
+    if (!confirm('האם אתה בטוח שברצונך למחוק קריאה זו לחלוטין? הפעולה בלתי הפיכה והקישור ללקוח יפסיק לעבוד.')) {
+      return;
+    }
+    
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/requests/${reqId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) throw new Error('Failed to delete request');
+      
+      setRequests(requests.filter(r => r.id !== reqId));
+      setSelectedRequest(null);
+    } catch (err) {
+      alert('שגיאה במחיקת הקריאה');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Handle direct request creation by admin
   const handleAdminSaveRequest = async () => {
     if (!selectedCustomerForCreate) return;
@@ -149,6 +192,38 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
     setCopiedCustomerId(customerId);
     setTimeout(() => setCopiedCustomerId(null), 2000);
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#fbfbfd] flex items-center justify-center p-4" dir="rtl">
+        <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 max-w-sm w-full text-center">
+          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black text-3xl mx-auto mb-6 shadow-lg shadow-blue-500/30">G</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">כניסת מנהל</h1>
+          <p className="text-gray-500 text-sm mb-8">הזן סיסמה כדי לגשת לפאנל הניהול</p>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <input
+                type="password"
+                placeholder="סיסמה..."
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest"
+                autoFocus
+              />
+              {loginError && <p className="text-red-500 text-xs mt-2 font-bold">{loginError}</p>}
+            </div>
+            <button
+              type="submit"
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
+            >
+              התחבר
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f] font-sans antialiased pb-20" dir="rtl">
@@ -579,10 +654,27 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                 </div>
               </div>
 
-              {/* Inspection fee condition indicator */}
-              <div className="p-4 bg-orange-50/50 border border-orange-100 rounded-2xl flex items-center justify-between text-orange-800 text-sm">
-                <span className="font-semibold">אישור דמי בדיקה (150 ש&quot;ח):</span>
-                <span className="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs font-bold">מאושר</span>
+              {/* Action Buttons (Delete & Info) */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 p-4 bg-orange-50/50 border border-orange-100 rounded-2xl flex items-center justify-between text-orange-800 text-sm">
+                  <span className="font-semibold">אישור דמי בדיקה (150 ש&quot;ח):</span>
+                  <span className="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs font-bold">מאושר</span>
+                </div>
+                
+                <button
+                  onClick={() => handleDeleteRequest(selectedRequest.id)}
+                  disabled={isDeleting}
+                  className="px-6 py-4 sm:py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl text-sm font-bold border border-red-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <span className="animate-pulse">מוחק...</span>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      מחק קריאה
+                    </>
+                  )}
+                </button>
               </div>
 
               {/* Images Grid */}

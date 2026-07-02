@@ -26,3 +26,26 @@ export async function PATCH(
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    
+    // Import deleteServiceRequest dynamically here or at top of file
+    const { deleteServiceRequest } = await import('@/lib/db');
+    
+    const deleted = await deleteServiceRequest(id);
+    if (!deleted) {
+      return NextResponse.json({ error: 'קריאת שירות לא נמצאה' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    console.error('Error deleting request:', err);
+    const errorMessage = err instanceof Error ? err.message : 'שגיאת שרת פנימית';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
