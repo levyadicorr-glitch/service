@@ -1,0 +1,3 @@
+git remote add origin https://github.com/adicore123/servicegowheels.git
+git branch -M land
+git push -u origin land
