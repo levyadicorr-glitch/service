@@ -61,37 +61,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'חובה לצרף תמונת חשבונית או תעודת אחריות' }, { status: 400 });
     }
 
-    // Ensure public/uploads directory exists
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
-    // Process up to 3 tool images with sharp
+    // Process up to 3 tool images with sharp to Base64 (Serverless & Vercel friendly)
     const toolImageUrls: string[] = [];
     for (let i = 0; i < Math.min(toolImageFiles.length, 3); i++) {
       const file = toolImageFiles[i];
       const toolImageBuffer = Buffer.from(await file.arrayBuffer());
-      const toolImageFilename = `tool-${crypto.randomUUID()}.webp`;
-      const toolImagePath = path.join(uploadsDir, toolImageFilename);
-      await sharp(toolImageBuffer)
+      const webpBuffer = await sharp(toolImageBuffer)
         .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 80 })
-        .toFile(toolImagePath);
-      toolImageUrls.push(`/uploads/${toolImageFilename}`);
+        .toBuffer();
+      toolImageUrls.push(`data:image/webp;base64,${webpBuffer.toString('base64')}`);
     }
 
-    // Save warranty image if exists (Compressed WebP)
+    // Save warranty image if exists (Compressed WebP to Base64)
     let warrantyReceiptImageUrl = undefined;
     if (hasWarranty && warrantyReceiptImage && warrantyReceiptImage.size > 0) {
       const warrantyReceiptBuffer = Buffer.from(await warrantyReceiptImage.arrayBuffer());
-      const warrantyReceiptFilename = `warranty-${crypto.randomUUID()}.webp`;
-      const warrantyReceiptPath = path.join(uploadsDir, warrantyReceiptFilename);
-      await sharp(warrantyReceiptBuffer)
+      const webpBuffer = await sharp(warrantyReceiptBuffer)
         .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 80 })
-        .toFile(warrantyReceiptPath);
-      warrantyReceiptImageUrl = `/uploads/${warrantyReceiptFilename}`;
+        .toBuffer();
+      warrantyReceiptImageUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
     }
 
     const newRequest = await createServiceRequest({
