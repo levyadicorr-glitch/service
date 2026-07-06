@@ -22,9 +22,11 @@ import { ServiceRequest, Customer } from '@/lib/db';
 
 interface DriverDashboardProps {
   initialRequests: ServiceRequest[];
+  tenantId: string;
+  businessName: string;
 }
 
-export default function DriverDashboard({ initialRequests }: DriverDashboardProps) {
+export default function DriverDashboard({ initialRequests, tenantId, businessName }: DriverDashboardProps) {
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -34,7 +36,7 @@ export default function DriverDashboard({ initialRequests }: DriverDashboardProp
   const handleMarkAsPickedUp = async (reqId: string) => {
     setUpdatingId(reqId);
     try {
-      const res = await fetch(`/api/requests/${reqId}`, {
+      const res = await fetch(`/api/${tenantId}/requests/${reqId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'PICKED_UP_BY_DRIVER' }),
@@ -54,7 +56,7 @@ export default function DriverDashboard({ initialRequests }: DriverDashboardProp
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const res = await fetch('/api/requests');
+      const res = await fetch(`/api/${tenantId}/requests`);
       if (res.ok) {
         const data = await res.json();
         if (data.requests) {
@@ -92,7 +94,7 @@ export default function DriverDashboard({ initialRequests }: DriverDashboardProp
             </div>
             <div>
               <h1 className="text-md font-black tracking-tight">נסיעות נהגים</h1>
-              <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider block -mt-0.5">Gowheels Logistics</span>
+              <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider block -mt-0.5">{businessName} Logistics</span>
             </div>
           </div>
           

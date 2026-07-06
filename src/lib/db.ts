@@ -2,6 +2,15 @@ import crypto from 'crypto';
 import clientPromise from './mongodb';
 import { ObjectId, Document } from 'mongodb';
 
+export interface Tenant {
+  id: string; // The URL slug (e.g., 'bikeshop1')
+  name: string; // Display name
+  businessName?: string;
+  adminPassword?: string;
+  whatsappTemplate?: string;
+  createdAt: string;
+}
+
 export interface Customer {
   id: string;
   excelId: number;
@@ -22,44 +31,97 @@ export interface ServiceRequest {
   customer?: Customer;
   storeName: string;
   toolOwnerName: string;
+  toolOwnerPhone?: string;
   hasWarranty: boolean;
   warrantyReceiptImage?: string;
   toolImage?: string;
   toolImages?: string[];
   agreedToInspectionFee: boolean;
-  status: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER';
+  status: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' | 'COMPLETED';
   createdAt: string;
   updatedAt: string;
 }
 
 // ---------------- MongoDB Collections ----------------
-async function getDb() {
+
+export async function getMasterDb() {
   const client = await clientPromise;
-  return client.db('gowheels');
+  return client.db('master_db');
 }
 
-export async function getCustomers(): Promise<Customer[]> {
-  const db = await getDb();
-  // Fetch from Mongo and remove the internal _id
-  const customers = await db.collection('customers').find({}).toArray();
-  return customers.map(c => {
-    const { _id, ...rest } = c;
-    return rest as Customer;
+export async function getDb(tenantId: string) {
+  const client = await clientPromise;
+  if (!tenantId) {
+    throw new Error('tenantId is required to access a tenant database');
+  }
+  return client.db(tenantId);
+}
+
+// ---------------- Tenant Management ----------------
+
+export async function getTenants(): Promise<Tenant[]> {
+  const db = await getMasterDb();
+  const tenants = await db.collection('tenants').find({}).toArray();
+  return tenants.map(t => {
+    const { _id, ...rest } = t;
+    return rest as Tenant;
   });
 }
 
-export async function getCustomerById(id: string): Promise<Customer | undefined> {
-  const db = await getDb();
+export async function getTenantById(id: string): Promise<Tenant | undefined> {
+  const db = await getMasterDb();
+  const tenant = await db.collection('tenants').findOne({ id });
+  if (!tenant) return undefined;
+  const { _id, ...rest } = tenant;
+  return rest as Tenant;
+}
+
+export async function createTenant(tenant: Omit<Tenant, 'createdAt'>): Promise<Tenant> {
+  const db = await getMasterDb();
+  
+  // check if exists
+  const existing = await db.collection('tenants').findOne({ id: tenant.id });
+  if (existing) {
+    throw new Error('Tenant ID already exists');
+  }
+
+  const newTenant: Tenant = {
+    ...tenant,
+    createdAt: new Date().toISOString()
+  };
+  await db.collection('tenants').insertOne(newTenant as unknown as import('mongodb').Document);
+  return newTenant;
+}
+
+export async function deleteTenant(id: string): Promise<boolean> {
+  const db = await getMasterDb();
+  const result = await db.collection('tenants').deleteOne({ id });
+  return result.deletedCount === 1;
+}
+
+// ---------------- Data Management ----------------
+
+export async function getCustomers(tenantId: string): Promise<Customer[]> {
+  const db = await getDb(tenantId);
+  const customers = await db.collection('customers').find({}).toArray();
+  return customers.map(c => {
+    const { _id, id, ...rest } = c;
+    return { id: id || _id.toString(), ...rest } as Customer;
+  });
+}
+
+export async function getCustomerById(tenantId: string, id: string): Promise<Customer | undefined> {
+  const db = await getDb(tenantId);
   const customer = await db.collection('customers').findOne({ id });
   if (!customer) return undefined;
   const { _id, ...rest } = customer;
   return rest as Customer;
 }
 
-export async function getServiceRequests(): Promise<ServiceRequest[]> {
-  const db = await getDb();
+export async function getServiceRequests(tenantId: string): Promise<ServiceRequest[]> {
+  const db = await getDb(tenantId);
   const requests = await db.collection('serviceRequests').find({}).toArray();
-  const customers = await getCustomers();
+  const customers = await getCustomers(tenantId);
   
   return requests.map(req => {
     const { _id, ...rest } = req;
@@ -71,11 +133,11 @@ export async function getServiceRequests(): Promise<ServiceRequest[]> {
 }
 
 export async function createServiceRequest(
-  request: Omit<ServiceRequest, 'id' | 'requestNumber' | 'status' | 'createdAt' | 'updatedAt'> & { status?: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' }
+  tenantId: string,
+  request: Omit<ServiceRequest, 'id' | 'requestNumber' | 'status' | 'createdAt' | 'updatedAt'> & { status?: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' | 'COMPLETED' }
 ): Promise<ServiceRequest> {
-  const db = await getDb();
+  const db = await getDb(tenantId);
   
-  // Find highest request number
   const lastRequest = await db.collection('serviceRequests')
     .find({}, { projection: { requestNumber: 1 } })
     .sort({ requestNumber: -1 })
@@ -101,11 +163,11 @@ export async function createServiceRequest(
 }
 
 export async function updateServiceRequestStatus(
+  tenantId: string,
   id: string,
-  status: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER'
+  status: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' | 'COMPLETED'
 ): Promise<ServiceRequest | undefined> {
-  const db = await getDb();
-  
+  const db = await getDb(tenantId);
   const updatedAt = new Date().toISOString();
   
   const result = await db.collection('serviceRequests').findOneAndUpdate(
@@ -114,16 +176,71 @@ export async function updateServiceRequestStatus(
     { returnDocument: 'after' }
   );
   
-  if (!result) {
-    return undefined;
-  }
-  
+  if (!result) return undefined;
   const { _id, ...rest } = result;
   return rest as unknown as ServiceRequest;
 }
 
-export async function deleteServiceRequest(id: string): Promise<boolean> {
-  const db = await getDb();
+export async function createCustomer(
+  tenantId: string,
+  customer: Omit<Customer, 'id' | 'excelId'>
+): Promise<Customer> {
+  const db = await getDb(tenantId);
+
+  const lastCustomer = await db.collection('customers')
+    .find({}, { projection: { excelId: 1 } })
+    .sort({ excelId: -1 })
+    .limit(1)
+    .toArray();
+
+  let excelId = 10000;
+  if (lastCustomer.length > 0 && lastCustomer[0].excelId) {
+    excelId = lastCustomer[0].excelId + 1;
+  }
+
+  const newCustomer: Customer = {
+    ...customer,
+    id: crypto.randomUUID(),
+    excelId,
+  };
+
+  await db.collection('customers').insertOne(newCustomer as unknown as import('mongodb').Document);
+  return newCustomer;
+}
+
+export async function getServiceRequestsByCustomerId(tenantId: string, customerId: string): Promise<ServiceRequest[]> {
+  const db = await getDb(tenantId);
+  const requests = await db.collection('serviceRequests')
+    .find({ customerId })
+    .sort({ createdAt: -1 })
+    .toArray();
+  
+  const customer = await getCustomerById(tenantId, customerId);
+  
+  return requests.map(req => {
+    const { _id, ...rest } = req;
+    return {
+      ...(rest as ServiceRequest),
+      customer: customer || undefined,
+    };
+  });
+}
+
+export async function deleteServiceRequest(tenantId: string, id: string): Promise<boolean> {
+  const db = await getDb(tenantId);
   const result = await db.collection('serviceRequests').deleteOne({ id });
+  return result.deletedCount === 1;
+}
+
+export async function deleteCustomer(tenantId: string, id: string): Promise<boolean> {
+  const db = await getDb(tenantId);
+  await db.collection('serviceRequests').deleteMany({ customerId: id });
+  
+  let filter = { id };
+  if (ObjectId.isValid(id)) {
+    filter = { $or: [{ id }, { _id: new ObjectId(id) }] } as any;
+  }
+  
+  const result = await db.collection('customers').deleteOne(filter);
   return result.deletedCount === 1;
 }

@@ -20,11 +20,15 @@ import { Customer } from '@/lib/db';
 
 interface FormProps {
   customer: Customer;
+  tenantId: string;
+  businessName: string;
+  whatsappTemplate: string;
 }
 
-export default function RequestForm({ customer }: FormProps) {
-  const [storeName, setStoreName] = useState('');
-  const [toolOwnerName, setToolOwnerName] = useState(`${customer.firstName} ${customer.lastName}`.trim());
+export default function RequestForm({ customer, tenantId, businessName, whatsappTemplate }: FormProps) {
+  const [storeName, setStoreName] = useState(`${customer.firstName} ${customer.lastName}`.trim());
+  const [toolOwnerName, setToolOwnerName] = useState('');
+  const [toolOwnerPhone, setToolOwnerPhone] = useState('');
   const [hasWarranty, setHasWarranty] = useState<string>('no');
   const [toolImages, setToolImages] = useState<File[]>([]);
   const [toolImagePreviews, setToolImagePreviews] = useState<string[]>([]);
@@ -103,6 +107,9 @@ export default function RequestForm({ customer }: FormProps) {
       formData.append('customerId', customer.id);
       formData.append('storeName', storeName.trim());
       formData.append('toolOwnerName', toolOwnerName.trim());
+      if (toolOwnerPhone.trim()) {
+        formData.append('toolOwnerPhone', toolOwnerPhone.trim());
+      }
       formData.append('hasWarranty', hasWarranty === 'yes' ? 'true' : 'false');
       formData.append('agreedToInspectionFee', agreedToInspectionFee ? 'true' : 'false');
       toolImages.forEach(file => {
@@ -112,7 +119,7 @@ export default function RequestForm({ customer }: FormProps) {
         formData.append('warrantyReceiptImage', warrantyReceiptImage);
       }
 
-      const res = await fetch('/api/requests', {
+      const res = await fetch(`/api/${tenantId}/requests`, {
         method: 'POST',
         body: formData,
       });
@@ -154,7 +161,7 @@ export default function RequestForm({ customer }: FormProps) {
         
         <h2 className="text-3xl font-black text-gray-900 mb-3 tracking-tight">הקריאה התקבלה בהצלחה!</h2>
         <p className="text-gray-500 mb-8 text-base leading-relaxed">
-          תודה, קריאת השירות שלך נרשמה במערכת Gowheels. נציג מטעמנו יטפל בפנייה בהקדם.
+          תודה, קריאת השירות שלך נרשמה במערכת {businessName}. נציג מטעמנו יטפל בפנייה בהקדם.
         </p>
 
         <motion.div 
@@ -166,7 +173,7 @@ export default function RequestForm({ customer }: FormProps) {
           <div className="flex justify-between items-center border-b border-gray-100 pb-2">
             <span className="text-gray-400 font-medium">מספר קריאה סידורי:</span>
             <strong className="text-blue-600 font-mono text-base">
-              #GW-{createdRequestNumber || 'נשמר בענן'}
+              #{tenantId.substring(0, 2).toUpperCase()}-{createdRequestNumber || 'נשמר בענן'}
             </strong>
           </div>
           <div className="flex justify-between items-center">
@@ -203,7 +210,7 @@ export default function RequestForm({ customer }: FormProps) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="bg-white rounded-3xl shadow-xl border border-gray-100 p-6 md:p-10 max-w-2xl mx-auto"
+      className="bg-white/80 backdrop-blur-md rounded-3xl shadow-xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 md:p-10 max-w-2xl mx-auto"
     >
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Apple-grade Animated High-Tech Welcome Header Card */}
@@ -216,7 +223,7 @@ export default function RequestForm({ customer }: FormProps) {
             <div>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded-lg text-[10px] font-bold tracking-wider uppercase mb-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span>
-                Gowheels שירות לקוחות
+                {businessName} שירות לקוחות
               </div>
               <motion.h1 
                 initial={{ opacity: 0, x: 20 }}
@@ -227,7 +234,7 @@ export default function RequestForm({ customer }: FormProps) {
                 שלום, <span className="text-transparent bg-clip-text bg-gradient-to-l from-blue-400 via-indigo-300 to-white">{customer.firstName} {customer.lastName}</span>
               </motion.h1>
               <p className="text-slate-400 text-xs md:text-sm mt-1.5 font-medium">
-                מרכז השירות המורשה Gowheels. אנא מלא את פרטי הטיפול עבור הכלי שלך.
+                מרכז השירות המורשה {businessName}. אנא מלא את פרטי הטיפול עבור הכלי שלך.
               </p>
             </div>
             
@@ -270,7 +277,7 @@ export default function RequestForm({ customer }: FormProps) {
               value={storeName}
               onChange={(e) => setStoreName(e.target.value)}
               placeholder="שם החנות שבה נקנה הכלי"
-              className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-gray-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white text-gray-800 transition-all text-sm font-medium"
+              className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
               required
             />
           </div>
@@ -285,14 +292,29 @@ export default function RequestForm({ customer }: FormProps) {
               value={toolOwnerName}
               onChange={(e) => setToolOwnerName(e.target.value)}
               placeholder="השם המלא של בעל הכלי"
-              className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-gray-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white text-gray-800 transition-all text-sm font-medium"
+              className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
               required
+            />
+          </div>
+          
+          <div className="space-y-2 md:col-span-2">
+            <label className="block text-gray-700 text-sm font-bold flex items-center gap-1.5">
+              <Phone className="w-4 h-4 text-gray-400" />
+              מספר טלפון בעל הכלי <span className="text-gray-400 font-normal text-xs">(אופציונלי)</span>
+            </label>
+            <input
+              type="tel"
+              value={toolOwnerPhone}
+              onChange={(e) => setToolOwnerPhone(e.target.value)}
+              placeholder="מספר טלפון ליצירת קשר"
+              className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium text-right"
+              dir="rtl"
             />
           </div>
         </div>
 
         {/* Info Grid */}
-        <div className="p-4 bg-gray-50/50 border border-gray-100 rounded-2xl grid grid-cols-2 gap-4 text-xs font-semibold text-gray-500">
+        <div className="p-4 bg-slate-50/60 border border-slate-100/80 rounded-2xl grid grid-cols-2 gap-4 text-xs font-semibold text-gray-500 shadow-sm">
           <div className="flex items-center gap-2">
             <Phone className="w-4 h-4 text-gray-400" />
             <div>
@@ -319,10 +341,10 @@ export default function RequestForm({ customer }: FormProps) {
             <button
               type="button"
               onClick={() => setHasWarranty('yes')}
-              className={`py-4 px-5 rounded-2xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] ${
+              className={`py-4 px-5 rounded-2xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer ${
                 hasWarranty === 'yes'
-                  ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-2 ring-blue-500/10'
-                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300'
+                  ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-4 ring-blue-500/10'
+                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
               }`}
             >
               <div>
@@ -342,10 +364,10 @@ export default function RequestForm({ customer }: FormProps) {
                 setWarrantyReceiptImage(null);
                 setWarrantyReceiptPreview(null);
               }}
-              className={`py-4 px-5 rounded-2xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] ${
+              className={`py-4 px-5 rounded-2xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer ${
                 hasWarranty === 'no'
-                  ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-2 ring-blue-500/10'
-                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300'
+                  ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-4 ring-blue-500/10'
+                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
               }`}
             >
               <div>
@@ -379,7 +401,7 @@ export default function RequestForm({ customer }: FormProps) {
                 className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[140px] relative group ${
                   warrantyReceiptPreview 
                     ? 'border-solid border-gray-200 bg-gray-50/50' 
-                    : 'border-gray-200 hover:bg-gray-50/80 hover:border-blue-400'
+                    : 'border-gray-200 hover:bg-blue-50/10 hover:border-blue-400'
                 }`}
               >
                 <input
@@ -401,14 +423,14 @@ export default function RequestForm({ customer }: FormProps) {
                           e.stopPropagation();
                           warrantyImageInputRef.current?.click();
                         }}
-                        className="p-2 bg-white text-gray-800 rounded-lg hover:scale-105 transition-all text-xs font-bold shadow"
+                        className="p-2 bg-white text-gray-800 rounded-lg hover:scale-105 transition-all text-xs font-bold shadow cursor-pointer"
                       >
                         החלף תמונה
                       </button>
                       <button
                         type="button"
                         onClick={removeWarrantyImage}
-                        className="p-2 bg-red-600 text-white rounded-lg hover:scale-105 transition-all shadow"
+                        className="p-2 bg-red-600 text-white rounded-lg hover:scale-105 transition-all shadow cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -416,7 +438,7 @@ export default function RequestForm({ customer }: FormProps) {
                   </div>
                 ) : (
                   <>
-                    <div className="w-11 h-11 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 mb-2.5 transition-transform group-hover:scale-110">
+                    <div className="w-11 h-11 rounded-full bg-blue-50 border border-blue-100/50 flex items-center justify-center text-blue-600 mb-2.5 transition-transform group-hover:scale-110">
                       <UploadCloud className="w-5 h-5" />
                     </div>
                     <span className="text-blue-600 font-extrabold text-sm">לחץ כאן להעלאת צילום התעודה / החשבונית</span>
@@ -435,20 +457,20 @@ export default function RequestForm({ customer }: FormProps) {
               <UploadCloud className="w-4 h-4 text-gray-400" />
               צילומים של הכלי <span className="text-red-500">*</span>
             </label>
-            <span className="text-xs text-gray-400 font-medium">({toolImages.length}/3 תמונות)</span>
+            <span className="text-xs text-gray-400 font-bold bg-gray-100 px-2 py-0.5 rounded-lg border border-gray-200/20">({toolImages.length}/3 תמונות)</span>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Render Previews */}
             {toolImagePreviews.map((preview, idx) => (
-              <div key={idx} className="relative group/preview aspect-[4/3] rounded-xl overflow-hidden border bg-white shadow-sm flex items-center justify-center">
+              <div key={idx} className="relative group/preview aspect-[4/3] rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm flex items-center justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={preview} alt={`Tool preview ${idx + 1}`} className="w-full h-full object-contain" />
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/preview:opacity-100 transition-opacity gap-2">
                   <button
                     type="button"
                     onClick={(e) => removeToolImage(idx, e)}
-                    className="p-2 bg-red-600 text-white rounded-lg hover:scale-105 transition-all shadow"
+                    className="p-2 bg-red-600 text-white rounded-lg hover:scale-105 transition-all shadow cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -460,7 +482,7 @@ export default function RequestForm({ customer }: FormProps) {
             {toolImages.length < 3 && (
               <div 
                 onClick={() => toolImageInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-200 rounded-xl aspect-[4/3] text-center cursor-pointer transition-all flex flex-col items-center justify-center hover:bg-gray-50/80 hover:border-blue-400 group min-h-[120px]"
+                className="border-2 border-dashed border-gray-200 rounded-xl aspect-[4/3] text-center cursor-pointer transition-all flex flex-col items-center justify-center hover:bg-blue-50/10 hover:border-blue-400 group min-h-[120px]"
               >
                 <input
                   type="file"
@@ -470,7 +492,7 @@ export default function RequestForm({ customer }: FormProps) {
                   className="hidden"
                   multiple
                 />
-                <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 mb-1.5 transition-transform group-hover:scale-110">
+                <div className="w-9 h-9 rounded-full bg-blue-50 border border-blue-100/50 flex items-center justify-center text-blue-600 mb-1.5 transition-transform group-hover:scale-110">
                   <UploadCloud className="w-4 h-4" />
                 </div>
                 <span className="text-blue-600 font-extrabold text-xs">הוסף תמונה</span>
@@ -481,7 +503,7 @@ export default function RequestForm({ customer }: FormProps) {
         </div>
 
         {/* Cost acceptance checkbox */}
-        <div className="p-5 bg-amber-50/50 border border-amber-100 rounded-2xl transition-all hover:bg-amber-50/70">
+        <div className="p-5 bg-amber-50/40 border border-amber-100/80 rounded-2xl transition-all hover:bg-amber-50/60 shadow-sm">
           <label className="flex items-start cursor-pointer select-none">
             <input
               type="checkbox"
@@ -490,7 +512,7 @@ export default function RequestForm({ customer }: FormProps) {
               className="w-5 h-5 mt-0.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
               required
             />
-            <span className="mr-3 text-sm text-gray-600 leading-relaxed font-semibold">
+            <span className="mr-3 text-sm text-gray-600 leading-relaxed font-bold">
               אני מאשר/ת ומסכים/ה לשלם <strong className="text-amber-800">150 ש&quot;ח דמי בדיקה</strong> במידה ויימצאו בכלי דברים שאינם קשורים לאחריות, ואבחר שלא לבצע את התיקון.
             </span>
           </label>
@@ -502,10 +524,10 @@ export default function RequestForm({ customer }: FormProps) {
           whileTap={{ scale: 0.99 }}
           type="submit"
           disabled={isSubmitting}
-          className={`w-full py-4 rounded-2xl text-white text-base font-extrabold shadow-lg shadow-blue-500/10 transition-all flex items-center justify-center gap-2 cursor-pointer ${
+          className={`w-full py-4 rounded-2xl text-white text-base font-extrabold shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
             isSubmitting
-              ? 'bg-blue-400 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-500/25 active:scale-[0.98]'
+              ? 'bg-blue-400 cursor-not-allowed shadow-none'
+              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/25 active:scale-[0.98]'
           }`}
         >
           {isSubmitting ? (

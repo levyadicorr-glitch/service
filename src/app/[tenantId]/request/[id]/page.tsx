@@ -7,13 +7,14 @@ export const dynamic = 'force-dynamic';
 
 interface PageProps {
   params: Promise<{
+    tenantId: string;
     id: string;
   }>;
 }
 
 export default async function CustomerRequestPage({ params }: PageProps) {
-  const { id } = await params;
-  const customer = await getCustomerById(id);
+  const { tenantId, id } = await params;
+  const customer = await getCustomerById(tenantId, id);
 
   if (!customer) {
     return (
@@ -28,7 +29,7 @@ export default async function CustomerRequestPage({ params }: PageProps) {
           <p className="text-gray-600 mb-6">
             לא מצאנו לקוח שמתאים למזהה המבוקש. אנא ודא שהקישור נכון או פנה למנהל המערכת.
           </p>
-          <Link href="/admin" className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl shadow transition-colors">
+          <Link href={`/${tenantId}/admin`} className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl shadow transition-colors">
             חזרה לניהול
           </Link>
         </div>
@@ -36,9 +37,14 @@ export default async function CustomerRequestPage({ params }: PageProps) {
     );
   }
 
+  const { getTenantById } = await import('@/lib/db');
+  const tenantObj = await getTenantById(tenantId);
+  const businessName = tenantObj?.businessName || 'העסק';
+  const whatsappTemplate = tenantObj?.whatsappTemplate || '';
+
   return (
     <div className="min-h-screen bg-gray-50/50 py-8 px-4 sm:px-6 lg:px-8" dir="rtl">
-      <RequestForm customer={customer} />
+      <RequestForm customer={customer} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} />
     </div>
   );
 }

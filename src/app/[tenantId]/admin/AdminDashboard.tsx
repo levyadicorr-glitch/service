@@ -2,13 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import { Customer, ServiceRequest } from '@/lib/db';
+import { 
+  Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock, 
+  Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone, 
+  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw
+} from 'lucide-react';
 
 interface AdminDashboardProps {
   initialRequests: ServiceRequest[];
   customers: Customer[];
+  tenantId: string;
+  businessName: string;
+  whatsappTemplate: string;
 }
 
-export default function AdminDashboard({ initialRequests, customers }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, tenantId, businessName, whatsappTemplate }: AdminDashboardProps) {
+  const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [activeTab, setActiveTab] = useState<'requests' | 'customers'>('requests');
   
@@ -37,10 +46,48 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
   const [createSearch, setCreateSearch] = useState('');
   const [selectedCustomerForCreate, setSelectedCustomerForCreate] = useState<Customer | null>(null);
   const [adminToolOwnerName, setAdminToolOwnerName] = useState('');
+  const [adminToolOwnerPhone, setAdminToolOwnerPhone] = useState('');
   const [isAdminSavingRequest, setIsAdminSavingRequest] = useState(false);
+
+  // Add Customer Modal State
+  const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
+  const [newCustomer, setNewCustomer] = useState({
+    firstName: '',
+    lastName: '',
+    phone: '',
+    email: '',
+    address: '',
+    licensePlate: '',
+    color: '',
+    serialNumber: '',
+  });
 
   // QR Code Flyer State
   const [selectedCustomerForQr, setSelectedCustomerForQr] = useState<Customer | null>(null);
+
+  // Live Sync & Manual Refresh States
+  const [isAdminRefreshing, setIsAdminRefreshing] = useState(false);
+
+  const refreshRequests = async (showLoader = false) => {
+    if (showLoader) setIsAdminRefreshing(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/requests`);
+      const data = await res.json();
+      if (res.ok && data.requests) {
+        // Preserving the selected request reference to keep modal details updated if open
+        setRequests(data.requests);
+        if (selectedRequest) {
+          const updatedReq = data.requests.find((r: ServiceRequest) => r.id === selectedRequest.id);
+          if (updatedReq) setSelectedRequest(updatedReq);
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing requests:', err);
+    } finally {
+      if (showLoader) setIsAdminRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     // eslint-disable-next-line
@@ -50,6 +97,20 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
       setIsAuthenticated(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Refresh immediately on auth
+    refreshRequests(false);
+
+    // Set polling interval for 15 seconds
+    const interval = setInterval(() => {
+      refreshRequests(false);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,11 +123,12 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
     }
   };
 
-  // Status mapping (only the 3 statuses requested)
+  // Status mapping
   const statuses = [
     { key: 'NEW', label: 'חדש', bg: 'bg-blue-50/70', text: 'text-blue-600', border: 'border-blue-100', hover: 'hover:bg-blue-50/40' },
     { key: 'WAITING_FOR_PICKUP', label: 'ממתין לאיסוף', bg: 'bg-amber-50/70', text: 'text-amber-600', border: 'border-amber-100', hover: 'hover:bg-amber-50/40' },
-    { key: 'PICKED_UP_BY_DRIVER', label: 'נהג אסף כלי', bg: 'bg-purple-50/70', text: 'text-purple-600', border: 'border-purple-100', hover: 'hover:bg-purple-50/40' }
+    { key: 'PICKED_UP_BY_DRIVER', label: 'נהג אסף כלי', bg: 'bg-purple-50/70', text: 'text-purple-600', border: 'border-purple-100', hover: 'hover:bg-purple-50/40' },
+    { key: 'COMPLETED', label: 'טיפול הסתיים', bg: 'bg-green-50/70', text: 'text-green-600', border: 'border-green-100', hover: 'hover:bg-green-50/40' }
   ];
 
   // Stats Calculations
@@ -75,6 +137,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
     new: requests.filter(r => r.status === 'NEW').length,
     waitingPickup: requests.filter(r => r.status === 'WAITING_FOR_PICKUP').length,
     pickedUp: requests.filter(r => r.status === 'PICKED_UP_BY_DRIVER').length,
+    completed: requests.filter(r => r.status === 'COMPLETED').length,
   };
 
   // Filter requests
@@ -90,7 +153,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
   });
 
   // Filter customers
-  const filteredCustomers = customers.filter(cust => {
+  const filteredCustomers = customersList.filter(cust => {
     const name = `${cust.firstName} ${cust.lastName}`.toLowerCase();
     const phone = (cust.phone || '').toLowerCase();
     const searchLower = customerSearch.toLowerCase();
@@ -101,7 +164,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
   const handleStatusChange = async (reqId: string, newStatus: string) => {
     setIsUpdatingStatus(true);
     try {
-      const res = await fetch(`/api/requests/${reqId}`, {
+      const res = await fetch(`/api/${tenantId}/requests/${reqId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -132,13 +195,13 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
     
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/requests/${reqId}`, {
+      const res = await fetch(`/api/${tenantId}/requests/${reqId}`, {
         method: 'DELETE',
       });
 
       if (!res.ok) throw new Error('Failed to delete request');
       
-      setRequests(requests.filter(r => r.id !== reqId));
+      setRequests(prev => prev.filter(r => r.id !== reqId));
       setSelectedRequest(null);
     } catch (err) {
       alert('שגיאה במחיקת הקריאה');
@@ -152,12 +215,13 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
     if (!selectedCustomerForCreate) return;
     setIsAdminSavingRequest(true);
     try {
-      const res = await fetch('/api/requests/direct', {
+      const res = await fetch(`/api/${tenantId}/requests/direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: selectedCustomerForCreate.id,
-          toolOwnerName: adminToolOwnerName.trim() || undefined
+          toolOwnerName: adminToolOwnerName.trim() || undefined,
+          toolOwnerPhone: adminToolOwnerPhone.trim() || undefined
         }),
       });
 
@@ -176,6 +240,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
       setSelectedCustomerForCreate(null);
       setCreateSearch('');
       setAdminToolOwnerName('');
+      setAdminToolOwnerPhone('');
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'שגיאה בשמירת הקריאה';
       alert(errorMessage);
@@ -184,9 +249,67 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
     }
   };
 
+  // Handle add customer
+  const handleAddCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCustomer.firstName.trim() || !newCustomer.lastName.trim()) {
+      alert('שם פרטי ושם משפחה הם שדות חובה');
+      return;
+    }
+    setIsSavingCustomer(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/customers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCustomer),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to create customer');
+      }
+
+      const data = await res.json();
+      setCustomersList(prev => [data.customer, ...prev]);
+      setIsAddCustomerModalOpen(false);
+      setNewCustomer({
+        firstName: '',
+        lastName: '',
+        phone: '',
+        email: '',
+        address: '',
+        licensePlate: '',
+        color: '',
+        serialNumber: '',
+      });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'שגיאה בהוספת הלקוח';
+      alert(errorMessage);
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  };
+
+  // Delete customer
+  const handleDeleteCustomer = async (customerId: string) => {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק לקוח זה? שים לב: כל קריאות השירות המשויכות אליו יימחקו גם כן!')) return;
+    
+    try {
+      const res = await fetch(`/api/${tenantId}/customers/${customerId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('שגיאה במחיקת הלקוח');
+      
+      setCustomersList(prev => prev.filter(c => c.id !== customerId));
+      // Also clean up local requests state
+      setRequests(prev => prev.filter(r => r.customerId !== customerId));
+    } catch (err: unknown) {
+      alert('שגיאה במחיקת הלקוח');
+    }
+  };
+
   // Copy customer URL
+
   const copyCustomerUrl = (customerId: string) => {
-    const url = `${baseUrl}/request/${customerId}`;
+    const url = `${baseUrl}/${tenantId}/portal/${customerId}`;
     navigator.clipboard.writeText(url);
     
     setCopiedCustomerId(customerId);
@@ -197,7 +320,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
     return (
       <div className="min-h-screen bg-[#fbfbfd] flex items-center justify-center p-4" dir="rtl">
         <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 max-w-sm w-full text-center">
-          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black text-3xl mx-auto mb-6 shadow-lg shadow-blue-500/30">G</div>
+          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black text-3xl mx-auto mb-6 shadow-lg shadow-blue-500/30">{businessName.charAt(0)}</div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">כניסת מנהל</h1>
           <p className="text-gray-500 text-sm mb-8">הזן סיסמה כדי לגשת לפאנל הניהול</p>
           
@@ -226,19 +349,19 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
   }
 
   return (
-    <div className="min-h-screen bg-[#fbfbfd] text-[#1d1d1f] font-sans antialiased pb-20" dir="rtl">
+    <div className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20" dir="rtl">
       {/* Top Navbar */}
-      <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100 print:hidden">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-lg">G</div>
-            <span className="text-xl font-bold tracking-tight">Gowheels <span className="text-blue-600 font-normal">ניהול</span></span>
+      <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50 print:hidden transition-all duration-300">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-all cursor-pointer">{businessName.charAt(0)}</div>
+            <span className="text-xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-l from-gray-900 via-gray-800 to-blue-700">{businessName} <span className="font-normal text-blue-600">ניהול</span></span>
           </div>
 
-          <div className="flex gap-1.5 p-1 bg-gray-100 rounded-xl">
+          <div className="flex gap-1 p-1 bg-gray-200/60 backdrop-blur rounded-xl border border-gray-300/10">
             <button
               onClick={() => setActiveTab('requests')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
                 activeTab === 'requests'
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-900'
@@ -248,7 +371,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
             </button>
             <button
               onClick={() => setActiveTab('customers')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
                 activeTab === 'customers'
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-900'
@@ -266,29 +389,55 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
           <div className="space-y-10">
             {/* Stats Cards Section */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm transition-all duration-300 hover:shadow-md">
-                <span className="text-gray-400 text-xs font-semibold block">סה&quot;כ קריאות</span>
-                <span className="block text-3xl font-extrabold text-gray-900 mt-2">{stats.total}</span>
+              {/* Total Card */}
+              <div className="bg-white/75 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.01] hover:bg-white flex items-center justify-between">
+                <div className="space-y-1">
+                  <span className="text-gray-400 text-xs font-bold block">סה&quot;כ קריאות</span>
+                  <span className="block text-3xl font-black text-gray-900 font-mono tracking-tight">{stats.total}</span>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                  <FileText className="w-6 h-6" />
+                </div>
               </div>
+
+              {/* Status Cards */}
               {statuses.map(st => {
                 let count = 0;
-                if (st.key === 'NEW') count = stats.new;
-                if (st.key === 'WAITING_FOR_PICKUP') count = stats.waitingPickup;
-                if (st.key === 'PICKED_UP_BY_DRIVER') count = stats.pickedUp;
+                let IconComponent = Clock;
+                let colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
+
+                if (st.key === 'NEW') {
+                  count = stats.new;
+                  IconComponent = Clock;
+                  colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
+                }
+                if (st.key === 'WAITING_FOR_PICKUP') {
+                  count = stats.waitingPickup;
+                  IconComponent = AlertCircle;
+                  colorClass = 'text-amber-600 bg-amber-50 border-amber-100';
+                }
+                if (st.key === 'PICKED_UP_BY_DRIVER') {
+                  count = stats.pickedUp;
+                  IconComponent = CheckCircle2;
+                  colorClass = 'text-purple-600 bg-purple-50 border-purple-100';
+                }
 
                 return (
-                  <div key={st.key} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm transition-all duration-300 hover:shadow-md">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md inline-block border ${st.bg} ${st.text} ${st.border}`}>
-                      {st.label}
-                    </span>
-                    <span className="block text-3xl font-extrabold text-gray-900 mt-3">{count}</span>
+                  <div key={st.key} className="bg-white/75 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.01] hover:bg-white flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-gray-400 text-xs font-bold block">{st.label}</span>
+                      <span className="block text-3xl font-black text-gray-900 font-mono tracking-tight">{count}</span>
+                    </div>
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${colorClass}`}>
+                      <IconComponent className="w-6 h-6" />
+                    </div>
                   </div>
                 );
               })}
             </div>
 
             {/* Filter and Search Bar */}
-            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col lg:flex-row gap-4 items-center justify-between">
+            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col lg:flex-row gap-4 items-center justify-between">
               <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto items-stretch sm:items-center">
                 <div className="relative w-full sm:w-80">
                   <input
@@ -296,35 +445,40 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                     placeholder="חיפוש לפי שם לקוח או חנות..."
                     value={requestSearch}
                     onChange={(e) => setRequestSearch(e.target.value)}
-                    className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-gray-800 transition-all text-sm"
+                    className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
                   />
-                  <svg className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+                  <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" />
                 </div>
                 
+                <button
+                  onClick={() => refreshRequests(true)}
+                  disabled={isAdminRefreshing}
+                  className="p-3 bg-white/80 border border-gray-250/50 hover:bg-gray-100 rounded-xl text-gray-500 hover:text-gray-700 active:scale-95 transition-all shadow-sm cursor-pointer flex items-center justify-center"
+                  title="רענן קריאות"
+                >
+                  <RotateCw className={`w-4 h-4 ${isAdminRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+                </button>
+
                 <button
                   onClick={() => {
                     setIsCreateModalOpen(true);
                     setCreateSearch('');
                     setSelectedCustomerForCreate(null);
                   }}
-                  className="px-4 py-3 sm:py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all whitespace-nowrap active:scale-[0.98]"
+                  className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
-                  </svg>
+                  <Plus className="w-4 h-4" />
                   פתח קריאה חדשה
                 </button>
               </div>
 
-              <div className="flex flex-wrap gap-2 w-full lg:w-auto">
+              <div className="flex flex-wrap gap-1.5 w-full lg:w-auto">
                 <button
                   onClick={() => setRequestStatusFilter('ALL')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${
                     requestStatusFilter === 'ALL'
                       ? 'bg-gray-900 border-gray-900 text-white shadow-sm'
-                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                      : 'bg-white/60 border-gray-200 text-gray-600 hover:bg-white hover:text-gray-900 shadow-sm shadow-black/5'
                   }`}
                 >
                   הכל
@@ -333,10 +487,10 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                   <button
                     key={st.key}
                     onClick={() => setRequestStatusFilter(st.key)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                    className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${
                       requestStatusFilter === st.key
                         ? 'bg-gray-900 border-gray-900 text-white shadow-sm'
-                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                        : 'bg-white/60 border-gray-200 text-gray-600 hover:bg-white hover:text-gray-900 shadow-sm shadow-black/5'
                     }`}
                   >
                     {st.label}
@@ -346,11 +500,11 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
             </div>
 
             {/* Requests Table */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-right border-collapse">
                   <thead>
-                    <tr className="bg-gray-50/70 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-100 whitespace-nowrap">
+                    <tr className="bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50 whitespace-nowrap">
                       <th className="p-5">מספר קריאה</th>
                       <th className="p-5">שם הלקוח</th>
                       <th className="p-5">שם החנות</th>
@@ -361,14 +515,14 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                       <th className="p-5 text-center">פעולות</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-200/40">
                     {filteredRequests.length > 0 ? (
                       filteredRequests.map((req) => {
                         const statusObj = statuses.find(s => s.key === req.status) || statuses[0];
                         return (
                           <tr key={req.id} className="hover:bg-gray-50/30 transition-colors whitespace-nowrap">
                             <td className="p-5 text-gray-400 font-mono text-sm font-semibold">
-                              #GW-{req.requestNumber}
+                              #{tenantId.substring(0, 2).toUpperCase()}-{req.requestNumber}
                             </td>
                             <td className="p-5 font-bold text-gray-800">
                               {req.customer?.firstName} {req.customer?.lastName}
@@ -417,18 +571,18 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                                 ))}
                               </select>
                             </td>
-                            <td className="p-5 flex items-center justify-end gap-2">
+                            <td className="p-5 flex items-center justify-end gap-1.5">
                               {req.customer?.phone && (
                                 <a
                                   href={`https://wa.me/${req.customer.phone.startsWith('0') ? '972' + req.customer.phone.slice(1) : req.customer.phone}?text=${encodeURIComponent(
-                                    `שלום ${req.customer.firstName} ${req.customer.lastName},\nלצפייה בטופס התיקון שלך ב-Gowheels לחץ כאן:\n${baseUrl}/request/${req.customer.id}`
+                                    whatsappTemplate.replace('{link}', `${baseUrl}/${tenantId}/request/${req.customer.id}`).replace('{businessName}', businessName)
                                   )}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98]"
+                                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
                                   title="שליחת קישור בווטסאפ"
                                 >
-                                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                                     <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
                                   </svg>
                                 </a>
@@ -438,19 +592,34 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                                   href={`https://waze.com/ul?q=${encodeURIComponent(req.customer.address)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-2 bg-gradient-to-br from-[#05C2DF] to-[#0091FF] hover:opacity-90 text-white rounded-xl transition-all flex items-center justify-center shadow-md shadow-cyan-500/30 active:scale-[0.95]"
+                                  className="p-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.95] border border-cyan-100/50 cursor-pointer"
                                   title="ניווט ב-Waze"
                                 >
-                                  <svg className="w-5 h-5 fill-current" viewBox="0 0 512 512">
-                                    <path d="M508.8 255.4C508.8 322 479 383.5 425 417.8v45.1c0 24-21 44-46.7 44-24.8 0-45.3-18.7-46.7-42.3-43.1 11.5-89 11.5-131.7 0-1.4 23.6-21.8 42.3-46.7 42.3-25.7 0-46.7-20-46.7-44v-46C49 378.1 12 316.3 12 248.8c0-83 67-150.3 149.7-150.3h2.3c27.1-51.2 84.7-86.5 149.5-86.5 89 0 161.4 69.3 162.7 156.4 19.8 19 32.6 44.5 32.6 73zM250 185c-16.6 0-30 13.4-30 30s13.4 30 30 30 30-13.4 30-30-13.4-30-30-30zm-87.8 0c-16.6 0-30 13.4-30 30s13.4 30 30 30 30-13.4 30-30-13.4-30-30-30zm136 122.5c-4 5.3-11.6 6.3-16.9 2.3-14.7-11.2-34.5-16.5-54.8-16.5s-40.1 5.3-54.8 16.5c-5.3 4-12.9 3-16.9-2.3-4-5.3-3-12.9 2.3-16.9 18.2-13.8 42.6-20.7 69.4-20.7s51.2 6.9 69.4 20.7c5.3 4 6.3 11.6 2.3 16.9z" />
-                                  </svg>
+                                  <Navigation className="w-4 h-4" />
                                 </a>
                               )}
+                              {req.status !== 'COMPLETED' && (
+                                <button
+                                  onClick={() => handleStatusChange(req.id, 'COMPLETED')}
+                                  disabled={isUpdatingStatus}
+                                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                                  title="סמן כטיפול הסתיים"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteRequest(req.id)}
+                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                                title="מחק קריאה"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={() => setSelectedRequest(req)}
-                                className="px-4 py-2 bg-blue-50/80 hover:bg-blue-100 hover:text-blue-700 text-blue-600 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98]"
+                                className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer"
                               >
-                                פרטים מלאים
+                                פרטים
                               </button>
                             </td>
                           </tr>
@@ -471,55 +640,60 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
         ) : (
           <div className="space-y-6">
             {/* Customer Search */}
-            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="relative w-full md:w-96">
-                <input
-                  type="text"
-                  placeholder="חיפוש לקוח לפי שם או טלפון..."
-                  value={customerSearch}
-                  onChange={(e) => setCustomerSearch(e.target.value)}
-                  className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-gray-800 transition-all"
-                />
-                <svg className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+                <div className="relative w-full sm:w-80">
+                  <input
+                    type="text"
+                    placeholder="חיפוש לקוח לפי שם או טלפון..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                  />
+                  <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" />
+                </div>
+                <button
+                  onClick={() => setIsAddCustomerModalOpen(true)}
+                  className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  הוסף לקוח חדש
+                </button>
               </div>
-              <span className="text-gray-400 text-xs font-semibold">נמצאו {filteredCustomers.length} לקוחות</span>
+              <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20">נמצאו {filteredCustomers.length} לקוחות</span>
             </div>
 
             {/* Customer List Table */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-right border-collapse">
                   <thead>
-                    <tr className="bg-gray-50/70 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-100">
+                    <tr className="bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50">
                       <th className="p-5">שם הלקוח</th>
                       <th className="p-5">טלפון</th>
                       <th className="p-5">כתובת</th>
                       <th className="p-5 text-center">קישור לטופס ופעולות</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-200/40">
                     {filteredCustomers.length > 0 ? (
                       filteredCustomers.slice(0, 100).map((cust) => (
-                        <tr key={cust.id} className="hover:bg-gray-50/30 transition-colors">
+                        <tr key={cust.id} className="hover:bg-gray-50/50 transition-colors">
                           <td className="p-5 font-bold text-gray-800">{cust.firstName} {cust.lastName}</td>
                           <td className="p-5 text-gray-600 font-mono text-sm">{cust.phone || '-'}</td>
                           <td className="p-5 text-gray-500 text-sm">{cust.address || 'לא צוינה כתובת'}</td>
                           <td className="p-5 text-center">
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-1.5">
                               {/* Copy Link Button */}
                               <button
                                 onClick={() => copyCustomerUrl(cust.id)}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98] ${
+                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer ${
                                   copiedCustomerId === cust.id
-                                    ? 'bg-green-500 text-white'
+                                    ? 'bg-green-500 border-green-500 text-white shadow-green-500/10'
                                     : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                 }`}
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m-5 10h6m-7 3h7" />
-                                </svg>
+                                <Copy className="w-3.5 h-3.5 inline-block mr-1" />
                                 {copiedCustomerId === cust.id ? 'הועתק!' : 'העתק קישור'}
                               </button>
                               
@@ -527,44 +701,63 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                               {cust.phone && (
                                 <a
                                   href={`https://wa.me/${cust.phone.startsWith('0') ? '972' + cust.phone.slice(1) : cust.phone}?text=${encodeURIComponent(
-                                    `שלום ${cust.firstName} ${cust.lastName},\nלהלן קישור לפתיחת קריאת שירות מ-Gowheels עבור הכלי שלך:\n${baseUrl}/request/${cust.id}`
+                                    `שלום ${cust.firstName} ${cust.lastName},\nלהלן קישור לפורטל השירות שלך ב-${businessName}:\n${baseUrl}/${tenantId}/portal/${cust.id}`
                                   )}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98]"
+                                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
                                   title="שלח בוואטסאפ"
                                 >
-                                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                                     <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
                                   </svg>
                                 </a>
                               )}
-
+ 
                               {/* QR Code Printable Flyer Button */}
                               <button
                                 onClick={() => setSelectedCustomerForQr(cust)}
-                                className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98]"
+                                className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-purple-100/50 cursor-pointer"
                                 title="הדפסת פלייר QR לחנות"
                               >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m0 11v1m0-6h.01M12 12h.01M16 8h.01M16 12h.01M8 8h.01M8 12h.01M4 4h4v4H4V4zm0 12h4v4H4v-4zm12-12h4v4h-4V4zM4 9h5M4 15h5M15 9h5" />
                                 </svg>
                               </button>
-
-                              {/* Waze Navigation Button (Authentic High-Tech Production Design) */}
+ 
+                              {/* Waze Navigation Button */}
                               {cust.address && (
                                 <a
                                   href={`https://waze.com/ul?q=${encodeURIComponent(cust.address)}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-2.5 bg-gradient-to-br from-[#05C2DF] to-[#0091FF] hover:opacity-90 text-white rounded-xl transition-all flex items-center justify-center shadow-md shadow-cyan-500/30 active:scale-[0.95]"
+                                  className="p-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.95] border border-cyan-100/50 cursor-pointer"
                                   title="ניווט ב-Waze"
                                 >
-                                  <svg className="w-5 h-5 fill-current" viewBox="0 0 512 512">
-                                    <path d="M508.8 255.4C508.8 322 479 383.5 425 417.8v45.1c0 24-21 44-46.7 44-24.8 0-45.3-18.7-46.7-42.3-43.1 11.5-89 11.5-131.7 0-1.4 23.6-21.8 42.3-46.7 42.3-25.7 0-46.7-20-46.7-44v-46C49 378.1 12 316.3 12 248.8c0-83 67-150.3 149.7-150.3h2.3c27.1-51.2 84.7-86.5 149.5-86.5 89 0 161.4 69.3 162.7 156.4 19.8 19 32.6 44.5 32.6 73zM250 185c-16.6 0-30 13.4-30 30s13.4 30 30 30 30-13.4 30-30-13.4-30-30-30zm-87.8 0c-16.6 0-30 13.4-30 30s13.4 30 30 30 30-13.4 30-30-13.4-30-30-30zm136 122.5c-4 5.3-11.6 6.3-16.9 2.3-14.7-11.2-34.5-16.5-54.8-16.5s-40.1 5.3-54.8 16.5c-5.3 4-12.9 3-16.9-2.3-4-5.3-3-12.9 2.3-16.9 18.2-13.8 42.6-20.7 69.4-20.7s51.2 6.9 69.4 20.7c5.3 4 6.3 11.6 2.3 16.9z" />
-                                  </svg>
+                                  <Navigation className="w-4 h-4" />
                                 </a>
                               )}
+ 
+                              {/* Portal Button */}
+                              <a
+                                href={`/${tenantId}/portal/${cust.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
+                                title="כניסה לפורטל הלקוח"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                פורטל
+                              </a>
+                              
+                              {/* Delete Customer Button */}
+                              <button
+                                onClick={() => handleDeleteCustomer(cust.id)}
+                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                                title="מחק לקוח"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -591,50 +784,48 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
 
       {/* Details Modal */}
       {selectedRequest && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-100 flex flex-col">
+        <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white/95 backdrop-blur-md rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/60 flex flex-col">
             {/* Modal Header */}
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+            <div className="p-6 border-b border-gray-200/50 flex items-center justify-between">
               <div>
-                <span className="text-gray-400 font-mono text-sm block">קריאת שירות #GW-{selectedRequest.requestNumber}</span>
-                <h2 className="text-2xl font-bold text-gray-800 mt-1">
+                <span className="text-gray-400 font-mono text-sm block">קריאת שירות #{tenantId.substring(0, 2).toUpperCase()}-{selectedRequest.requestNumber}</span>
+                <h2 className="text-2xl font-black text-gray-900 mt-1">
                   {selectedRequest.customer?.firstName} {selectedRequest.customer?.lastName}
                 </h2>
               </div>
               <button
                 onClick={() => setSelectedRequest(null)}
-                className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-700 transition-colors"
+                className="p-2 hover:bg-gray-150 rounded-full text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-4 md:p-6 space-y-6 md:space-y-8 flex-1">
+            <div className="p-4 md:p-6 space-y-6 md:space-y-8 flex-1" dir="rtl">
               {/* Client & Device Details Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-5 bg-gray-50 rounded-2xl text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-5 bg-slate-50/60 border border-slate-100/80 rounded-2xl text-sm shadow-sm">
                 <div>
-                  <span className="block text-gray-400 text-xs mb-1">שם החנות:</span>
+                  <span className="block text-gray-400 text-xs mb-1 font-bold">שם החנות:</span>
                   <strong className="text-gray-800 text-base">{selectedRequest.storeName}</strong>
                 </div>
                 <div>
-                  <span className="block text-gray-400 text-xs mb-1">שם בעל הכלי:</span>
+                  <span className="block text-gray-400 text-xs mb-1 font-bold">שם בעל הכלי:</span>
                   <strong className="text-gray-800 text-base">{selectedRequest.toolOwnerName}</strong>
                 </div>
                 <div>
-                  <span className="block text-gray-400 text-xs mb-1">טלפון:</span>
+                  <span className="block text-gray-400 text-xs mb-1 font-bold">טלפון:</span>
                   <strong className="text-gray-800 text-base font-mono">{selectedRequest.customer?.phone || '-'}</strong>
                 </div>
                 <div>
-                  <span className="block text-gray-400 text-xs mb-1">כתובת:</span>
+                  <span className="block text-gray-400 text-xs mb-1 font-bold">כתובת:</span>
                   <strong className="text-gray-800 text-base truncate block" title={selectedRequest.customer?.address}>{selectedRequest.customer?.address || '-'}</strong>
                 </div>
               </div>
 
               {/* Status Update Component */}
-              <div className="space-y-3">
+              <div className="space-y-3 text-right">
                 <span className="block text-gray-400 text-xs font-bold">עדכן סטטוס קריאה:</span>
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                   {statuses.map(st => (
@@ -642,9 +833,11 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                       key={st.key}
                       onClick={() => handleStatusChange(selectedRequest.id, st.key)}
                       disabled={isUpdatingStatus}
-                      className={`px-4 py-3 sm:py-2.5 w-full sm:w-auto rounded-xl text-xs font-bold border transition-all ${
+                      className={`px-4 py-3 sm:py-2.5 w-full sm:w-auto rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${
                         selectedRequest.status === st.key
-                          ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                          ? st.key === 'COMPLETED'
+                            ? 'bg-green-600 border-green-600 text-white shadow-sm shadow-green-500/10'
+                            : 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-500/10'
                           : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 active:scale-[0.98]'
                       }`}
                     >
@@ -656,21 +849,21 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
 
               {/* Action Buttons (Delete & Info) */}
               <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex-1 p-4 bg-orange-50/50 border border-orange-100 rounded-2xl flex items-center justify-between text-orange-800 text-sm">
-                  <span className="font-semibold">אישור דמי בדיקה (150 ש&quot;ח):</span>
-                  <span className="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs font-bold">מאושר</span>
+                <div className="flex-1 p-4 bg-orange-50/50 border border-orange-100/50 rounded-2xl flex items-center justify-between text-orange-850 text-sm shadow-sm">
+                  <span className="font-bold">אישור דמי בדיקה (150 ש&quot;ח):</span>
+                  <span className="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs font-black shadow-sm">מאושר</span>
                 </div>
                 
                 <button
                   onClick={() => handleDeleteRequest(selectedRequest.id)}
                   disabled={isDeleting}
-                  className="px-6 py-4 sm:py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl text-sm font-bold border border-red-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                  className="px-6 py-4 sm:py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl text-sm font-bold border border-red-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {isDeleting ? (
                     <span className="animate-pulse">מוחק...</span>
                   ) : (
                     <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      <Trash2 className="w-4 h-4" />
                       מחק קריאה
                     </>
                   )}
@@ -678,7 +871,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
               </div>
 
               {/* Images Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-right">
                 
                  {/* Tool Photos (Supports up to 3 images) */}
                  <div className="space-y-2">
@@ -799,7 +992,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
               {/* Dynamic Search Results */}
               {createSearch.trim().length > 0 && !selectedCustomerForCreate && (
                 <div className="border border-gray-100 rounded-2xl overflow-hidden divide-y divide-gray-50 bg-white max-h-48 overflow-y-auto shadow-inner">
-                  {customers
+                  {customersList
                     .filter(cust => {
                       const name = `${cust.firstName} ${cust.lastName}`.toLowerCase();
                       const phone = (cust.phone || '').toLowerCase();
@@ -823,7 +1016,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                         <span className="text-xs text-blue-600 font-bold hover:underline">בחר ↙</span>
                       </div>
                     ))}
-                  {customers.filter(cust => {
+                  {customersList.filter(cust => {
                     const name = `${cust.firstName} ${cust.lastName}`.toLowerCase();
                     const phone = (cust.phone || '').toLowerCase();
                     const search = createSearch.toLowerCase();
@@ -866,10 +1059,23 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                     />
                   </div>
 
+                  {/* Tool Phone Input */}
+                  <div className="space-y-1.5 text-right">
+                    <label className="block text-gray-700 text-xs font-bold">מספר טלפון בעל הכלי (אופציונלי):</label>
+                    <input
+                      type="tel"
+                      placeholder="הזן מספר טלפון ליצירת קשר"
+                      value={adminToolOwnerPhone}
+                      onChange={(e) => setAdminToolOwnerPhone(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all text-right"
+                      dir="rtl"
+                    />
+                  </div>
+
                   {selectedCustomerForCreate.phone ? (
                     <a
                       href={`https://wa.me/${selectedCustomerForCreate.phone.startsWith('0') ? '972' + selectedCustomerForCreate.phone.slice(1) : selectedCustomerForCreate.phone}?text=${encodeURIComponent(
-                        `שלום ${selectedCustomerForCreate.firstName} ${selectedCustomerForCreate.lastName},\nלהלן קישור לפתיחת קריאת שירות מ-Gowheels עבור הכלי שלך:\n${baseUrl}/request/${selectedCustomerForCreate.id}`
+                        `שלום ${selectedCustomerForCreate.firstName} ${selectedCustomerForCreate.lastName},\nלהלן קישור לפתיחת קריאת שירות מ-${businessName} עבור הכלי שלך:\n${baseUrl}/request/${selectedCustomerForCreate.id}`
                       )}`}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -944,14 +1150,14 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
 
             {/* Flyer Container (The Printable Area) */}
             <div className="p-8 flex flex-col items-center text-center bg-white space-y-6 flex-1 print:p-12 print:justify-center" dir="rtl">
-              {/* Gowheels Header */}
+              {/* Flyer Header */}
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-blue-500/20">G</div>
-                <span className="text-3xl font-black tracking-tight text-gray-900">Gowheels</span>
+                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-blue-500/20">{businessName.charAt(0)}</div>
+                <span className="text-3xl font-black tracking-tight text-gray-900">{businessName}</span>
               </div>
               
               <div className="space-y-2">
-                <h1 className="text-3xl font-extrabold text-gray-950 tracking-tight">לקבלת שירות Gowheels</h1>
+                <h1 className="text-3xl font-extrabold text-gray-950 tracking-tight">לקבלת שירות {businessName}</h1>
                 <p className="text-gray-500 text-sm font-medium">סרקו את קוד ה-QR לפתיחת קריאת שירות מהירה במכשיר שלכם</p>
               </div>
 
@@ -962,7 +1168,7 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
                     `${baseUrl}/request/${selectedCustomerForQr.id}`
                   )}`}
-                  alt="Gowheels Service QR Code"
+                  alt={`${businessName} Service QR Code`}
                   className="w-56 h-56 print:w-72 print:h-72"
                 />
               </div>
@@ -991,6 +1197,163 @@ export default function AdminDashboard({ initialRequests, customers }: AdminDash
               <button
                 onClick={() => setSelectedCustomerForQr(null)}
                 className="px-6 py-3 bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
+              >
+                סגור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Customer Modal */}
+      {isAddCustomerModalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">הוסף לקוח חדש</h2>
+                <p className="text-gray-400 text-xs mt-1">מלא את פרטי הלקוח כדי להוסיף אותו למערכת</p>
+              </div>
+              <button
+                onClick={() => setIsAddCustomerModalOpen(false)}
+                className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-700 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body - Form */}
+            <form onSubmit={handleAddCustomer} className="p-6 space-y-4 max-h-[65vh] overflow-y-auto" dir="rtl">
+              {/* Name Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">שם פרטי <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    placeholder="ישראל"
+                    value={newCustomer.firstName}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, firstName: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">שם משפחה <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    placeholder="ישראלי"
+                    value={newCustomer.lastName}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, lastName: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Phone & Email Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">טלפון</label>
+                  <input
+                    type="tel"
+                    placeholder="052-1234567"
+                    value={newCustomer.phone}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">אימייל</label>
+                  <input
+                    type="email"
+                    placeholder="email@example.com"
+                    value={newCustomer.email}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              {/* Address */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">כתובת</label>
+                <input
+                  type="text"
+                  placeholder="דרך מנחם בגין 121, תל אביב"
+                  value={newCustomer.address}
+                  onChange={(e) => setNewCustomer(prev => ({ ...prev, address: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                />
+              </div>
+
+              {/* Vehicle Details Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">לוחית רישוי</label>
+                  <input
+                    type="text"
+                    placeholder="12-345-67"
+                    value={newCustomer.licensePlate}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, licensePlate: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">צבע</label>
+                  <input
+                    type="text"
+                    placeholder="שחור מטאלי"
+                    value={newCustomer.color}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, color: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Serial Number */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">מספר סריאלי</label>
+                <input
+                  type="text"
+                  placeholder="GW-88392-XL"
+                  value={newCustomer.serialNumber}
+                  onChange={(e) => setNewCustomer(prev => ({ ...prev, serialNumber: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  dir="ltr"
+                />
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={isSavingCustomer}
+                className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+              >
+                {isSavingCustomer ? (
+                  <svg className="w-5 h-5 animate-spin text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                )}
+                {isSavingCustomer ? 'שומר...' : 'הוסף לקוח למערכת'}
+              </button>
+            </form>
+
+            {/* Modal Footer */}
+            <div className="p-5 bg-gray-50/70 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setIsAddCustomerModalOpen(false)}
+                className="px-5 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
               >
                 סגור
               </button>

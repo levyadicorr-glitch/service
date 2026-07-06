@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { createServiceRequest, getCustomerById, getServiceRequests } from '@/lib/db';
 
-export async function GET() {
+export async function GET(request: Request, props: { params: Promise<{ tenantId: string }> }) {
+  const params = await props.params;
   try {
-    const requests = await getServiceRequests();
+    const requests = await getServiceRequests(params.tenantId);
     return NextResponse.json({ requests });
   } catch (err: unknown) {
     console.error('Error fetching requests:', err);
@@ -13,12 +14,15 @@ export async function GET() {
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest, props: { params: Promise<{ tenantId: string }> }) {
   try {
+    const params = await props.params;
+    const { tenantId } = params;
     const formData = await req.formData();
     const customerId = formData.get('customerId') as string;
     const storeName = formData.get('storeName') as string;
     const toolOwnerName = formData.get('toolOwnerName') as string;
+    const toolOwnerPhone = formData.get('toolOwnerPhone') as string;
     const hasWarranty = formData.get('hasWarranty') === 'true';
     const agreedToInspectionFee = formData.get('agreedToInspectionFee') === 'true';
     
@@ -47,7 +51,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'שדות חובה חסרים' }, { status: 400 });
     }
 
-    const customer = await getCustomerById(customerId);
+    const customer = await getCustomerById(tenantId, customerId);
     if (!customer) {
       return NextResponse.json({ error: 'לקוח לא נמצא במערכת' }, { status: 404 });
     }
@@ -83,10 +87,11 @@ export async function POST(req: NextRequest) {
       warrantyReceiptImageUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
     }
 
-    const newRequest = await createServiceRequest({
+    const newRequest = await createServiceRequest(tenantId, {
       customerId,
       storeName,
       toolOwnerName,
+      toolOwnerPhone: toolOwnerPhone || undefined,
       hasWarranty,
       warrantyReceiptImage: warrantyReceiptImageUrl,
       toolImage: toolImageUrls[0], // for backward compatibility
