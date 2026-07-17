@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRequest, getCustomerById } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
+import { checkCsrf } from '@/lib/csrf';
 
 export async function POST(req: NextRequest, props: { params: Promise<{ tenantId: string }> }) {
+  const csrfError = checkCsrf(req);
+  if (csrfError) return csrfError;
+
   try {
     const params = await props.params;
     const { tenantId } = params;

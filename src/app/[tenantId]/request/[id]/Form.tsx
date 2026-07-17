@@ -23,9 +23,10 @@ interface FormProps {
   tenantId: string;
   businessName: string;
   whatsappTemplate: string;
+  logoUrl?: string;
 }
 
-export default function RequestForm({ customer, tenantId, businessName, whatsappTemplate }: FormProps) {
+export default function RequestForm({ customer, tenantId, businessName, whatsappTemplate, logoUrl = '' }: FormProps) {
   const [storeName, setStoreName] = useState(`${customer.firstName} ${customer.lastName}`.trim());
   const [toolOwnerName, setToolOwnerName] = useState('');
   const [toolOwnerPhone, setToolOwnerPhone] = useState('');
@@ -274,14 +275,20 @@ export default function RequestForm({ customer, tenantId, businessName, whatsapp
               </p>
             </div>
             
-            {/* Glowing client initials badge */}
+            {/* Glowing client initials badge or custom logo */}
             <motion.div 
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.3, type: "spring" }}
-              className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-extrabold text-lg md:text-xl shadow-lg shadow-blue-500/30 border-2 border-white/20 select-none flex-shrink-0"
+              className="w-12 h-12 md:w-14 md:h-14 rounded-2xl overflow-hidden bg-white flex items-center justify-center shadow-lg shadow-blue-500/30 border-2 border-white/20 select-none flex-shrink-0"
             >
-              {customer.firstName[0]}{customer.lastName[0]}
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-extrabold text-lg md:text-xl">
+                  {customer.firstName[0]}{customer.lastName[0]}
+                </div>
+              )}
             </motion.div>
           </div>
         </div>

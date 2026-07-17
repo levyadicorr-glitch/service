@@ -14,6 +14,7 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const tenantObj = await getTenantById(tenantId);
   const businessName = tenantObj?.businessName || 'העסק';
   const whatsappTemplate = tenantObj?.whatsappTemplate || '';
+  const logoUrl = tenantObj?.logoUrl || '';
 
   // No data leaves the server before a valid admin session exists for this tenant.
   const cookieStore = await cookies();
@@ -25,5 +26,5 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const requests = await getServiceRequests(tenantId);
   const customers = await getCustomers(tenantId);
 
-  return <AdminDashboard initialRequests={requests} customers={customers} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} />;
+  return <AdminDashboard initialRequests={requests} customers={customers} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} logoUrl={logoUrl} />;
 }

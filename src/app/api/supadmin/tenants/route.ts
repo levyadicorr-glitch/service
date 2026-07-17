@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenants, createTenant, deleteTenant } from '@/lib/db';
 import { hashPassword, requireSupAdmin } from '@/lib/auth';
+import { checkCsrf } from '@/lib/csrf';
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,6 +17,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const csrfError = checkCsrf(req);
+  if (csrfError) return csrfError;
+
   try {
     const denied = requireSupAdmin(req);
     if (denied) return denied;
@@ -55,6 +59,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const csrfError = checkCsrf(req);
+  if (csrfError) return csrfError;
+
   try {
     const denied = requireSupAdmin(req);
     if (denied) return denied;

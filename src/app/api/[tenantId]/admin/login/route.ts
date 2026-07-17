@@ -8,8 +8,19 @@ import {
   sessionCookieOptions,
   verifyPassword,
 } from '@/lib/auth';
+import { checkCsrf } from '@/lib/csrf';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 export async function POST(req: NextRequest, props: { params: Promise<{ tenantId: string }> }) {
+  const csrfError = checkCsrf(req);
+  if (csrfError) return csrfError;
+
+  const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
+  const { allowed } = checkRateLimit(`login_${ip}`, 5, 900000);
+  if (!allowed) {
+    return NextResponse.json({ error: 'יותר מדי בקשות. נסה שוב מאוחר יותר.' }, { status: 429 });
+  }
+
   try {
     const { tenantId } = await props.params;
     if (!(await tenantExists(tenantId))) {

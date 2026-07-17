@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
-import { createServiceRequest, getCustomerById, getServiceRequests, tenantExists, ServiceRequest } from '@/lib/db';
+import { createServiceRequest, getCustomerById, getServiceRequests, tenantExists, ServiceRequest, ensureIndexes } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
+import { checkCsrf } from '@/lib/csrf';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB per file, before compression
 const MAX_TOOL_IMAGES = 3;
@@ -23,8 +24,18 @@ export async function GET(req: NextRequest, props: { params: Promise<{ tenantId:
     const denied = requireTenantAdmin(req, params.tenantId);
     if (denied) return denied;
 
-    const requests = await getServiceRequests(params.tenantId);
-    return NextResponse.json({ requests });
+    await ensureIndexes(params.tenantId);
+
+    const searchParams = req.nextUrl.searchParams;
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '100', 10);
+
+    const { requests, total } = await getServiceRequests(params.tenantId, {
+      page,
+      limit,
+      excludeImages: true
+    });
+    return NextResponse.json({ requests, total, page, limit });
   } catch (err: unknown) {
     console.error('Error fetching requests:', err);
     return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
@@ -32,6 +43,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ tenantId:
 }
 
 export async function POST(req: NextRequest, props: { params: Promise<{ tenantId: string }> }) {
+  const csrfError = checkCsrf(req);
+  if (csrfError) return csrfError;
+
   try {
     const params = await props.params;
     const { tenantId } = params;

@@ -42,6 +42,8 @@ export default async function PortalPage({ params }: PageProps) {
   const tenantObj = await getTenantById(tenantId);
   const businessName = tenantObj?.businessName || 'העסק';
   const whatsappTemplate = tenantObj?.whatsappTemplate || '';
+  const logoUrl = tenantObj?.logoUrl || '';
+  const primaryColor = tenantObj?.primaryColor || '';
 
-  return <CustomerPortal customer={customer} initialRequests={requests} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} />;
+  return <CustomerPortal customer={customer} initialRequests={requests} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} logoUrl={logoUrl} primaryColor={primaryColor} />;
 }

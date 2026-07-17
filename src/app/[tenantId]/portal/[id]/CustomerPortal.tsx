@@ -7,7 +7,7 @@ import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
 import {
   FileText, Clock, AlertCircle, CheckCircle2, Search, Plus,
   RotateCw, Trash2, Calendar, Phone, Copy, Printer, Eye,
-  Store, User, Barcode, ShieldCheck, ShieldAlert, UploadCloud, Check, Loader2, X
+  Store, User, Barcode, ShieldCheck, ShieldAlert, UploadCloud, Check, Loader2, X, Settings
 } from 'lucide-react';
 
 interface CustomerPortalProps {
@@ -16,18 +16,129 @@ interface CustomerPortalProps {
   initialRequests: ServiceRequest[];
   businessName: string;
   whatsappTemplate: string;
+  logoUrl?: string;
+  primaryColor?: string;
 }
 
-export default function CustomerPortal({ customer, initialRequests, tenantId, businessName, whatsappTemplate }: CustomerPortalProps) {
+export default function CustomerPortal({ customer, initialRequests, tenantId, businessName, whatsappTemplate, logoUrl = '', primaryColor = '' }: CustomerPortalProps) {
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
+  const [currentCustomer, setCurrentCustomer] = useState<Customer>(customer);
   const [activeView, setActiveView] = useState<'requests' | 'qr'>('requests');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [baseUrl, setBaseUrl] = useState('');
+
+  // Customer Settings States
+  const [isCustomerSettingsOpen, setIsCustomerSettingsOpen] = useState(false);
+  const [settingsFirstName, setSettingsFirstName] = useState(customer.firstName);
+  const [settingsLastName, setSettingsLastName] = useState(customer.lastName);
+  const [settingsPhone, setSettingsPhone] = useState(customer.phone || '');
+  const [settingsEmail, setSettingsEmail] = useState(customer.email || '');
+  const [settingsAddress, setSettingsAddress] = useState(customer.address || '');
+  const [settingsLicensePlate, setSettingsLicensePlate] = useState(customer.licensePlate || '');
+  const [settingsColor, setSettingsColor] = useState(customer.color || '');
+  const [settingsSerialNumber, setSettingsSerialNumber] = useState(customer.serialNumber || '');
+  const [customerLogoFile, setCustomerLogoFile] = useState<File | null>(null);
+  const [customerLogoPreview, setCustomerLogoPreview] = useState<string | null>(customer.logoUrl || null);
+  const [removeCustomerLogoFlag, setRemoveCustomerLogoFlag] = useState(false);
+  const [isSavingCustomerSettings, setIsSavingCustomerSettings] = useState(false);
+  const [customerSettingsError, setCustomerSettingsError] = useState<string | null>(null);
+  const [customerSettingsSuccess, setCustomerSettingsSuccess] = useState(false);
+
+  const openCustomerSettingsModal = () => {
+    setSettingsFirstName(currentCustomer.firstName);
+    setSettingsLastName(currentCustomer.lastName);
+    setSettingsPhone(currentCustomer.phone || '');
+    setSettingsEmail(currentCustomer.email || '');
+    setSettingsAddress(currentCustomer.address || '');
+    setSettingsLicensePlate(currentCustomer.licensePlate || '');
+    setSettingsColor(currentCustomer.color || '');
+    setSettingsSerialNumber(currentCustomer.serialNumber || '');
+    setCustomerLogoFile(null);
+    setCustomerLogoPreview(currentCustomer.logoUrl || null);
+    setRemoveCustomerLogoFlag(false);
+    setCustomerSettingsError(null);
+    setCustomerSettingsSuccess(false);
+    setIsCustomerSettingsOpen(true);
+  };
+
+  const handleCustomerLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setCustomerLogoFile(file);
+      setCustomerLogoPreview(URL.createObjectURL(file));
+      setRemoveCustomerLogoFlag(false);
+    }
+  };
+
+  const handleRemoveCustomerLogo = () => {
+    setCustomerLogoFile(null);
+    setCustomerLogoPreview(null);
+    setRemoveCustomerLogoFlag(true);
+  };
+
+  const handleSaveCustomerSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingCustomerSettings(true);
+    setCustomerSettingsError(null);
+    setCustomerSettingsSuccess(false);
+
+    try {
+      const formData = new FormData();
+      formData.append('firstName', settingsFirstName.trim());
+      formData.append('lastName', settingsLastName.trim());
+      formData.append('phone', settingsPhone.trim());
+      formData.append('email', settingsEmail.trim());
+      formData.append('address', settingsAddress.trim());
+      formData.append('licensePlate', settingsLicensePlate.trim());
+      formData.append('color', settingsColor.trim());
+      formData.append('serialNumber', settingsSerialNumber.trim());
+      if (removeCustomerLogoFlag) {
+        formData.append('removeLogo', 'true');
+      } else if (customerLogoFile) {
+        formData.append('logo', customerLogoFile);
+      }
+
+      const res = await fetch(`/api/${tenantId}/customers/${currentCustomer.id}/settings`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'שגיאה בשמירת ההגדרות');
+      }
+
+      const updatedCust: Customer = {
+        ...currentCustomer,
+        firstName: settingsFirstName.trim(),
+        lastName: settingsLastName.trim(),
+        phone: settingsPhone.trim(),
+        email: settingsEmail.trim(),
+        address: settingsAddress.trim(),
+        licensePlate: settingsLicensePlate.trim(),
+        color: settingsColor.trim(),
+        serialNumber: settingsSerialNumber.trim(),
+        logoUrl: removeCustomerLogoFlag ? '' : (data.logoUrl || currentCustomer.logoUrl)
+      };
+
+      setCurrentCustomer(updatedCust);
+      setCustomerSettingsSuccess(true);
+      setTimeout(() => setIsCustomerSettingsOpen(false), 1000);
+    } catch (err: unknown) {
+      setCustomerSettingsError(err instanceof Error ? err.message : 'שגיאה בשמירת ההגדרות');
+    } finally {
+      setIsSavingCustomerSettings(false);
+    }
+  };
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
+    // Simulate a slight delay to show the beautiful skeleton loader (UX effect)
+    const timer = setTimeout(() => setIsInitialLoading(false), 100);
+    return () => clearTimeout(timer);
   }, []);
 
   // Details Modal state
@@ -62,8 +173,8 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
   const warrantyImageInputRef = useRef<HTMLInputElement>(null);
 
   const openCreateModal = () => {
-    setStoreName(`${customer.firstName} ${customer.lastName}`);
-    setToolOwnerName(`${customer.firstName} ${customer.lastName}`);
+    setStoreName(`${currentCustomer.firstName} ${currentCustomer.lastName}`);
+    setToolOwnerName(`${currentCustomer.firstName} ${currentCustomer.lastName}`);
     setToolOwnerPhone('');
     setIssueDescription('');
     setHasWarranty('no');
@@ -161,7 +272,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
 
     try {
       const formData = new FormData();
-      formData.append('customerId', customer.id);
+      formData.append('customerId', currentCustomer.id);
       formData.append('storeName', storeName.trim());
       formData.append('toolOwnerName', toolOwnerName.trim());
       if (toolOwnerPhone.trim()) {
@@ -244,7 +355,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/${tenantId}/requests/by-customer/${customer.id}`);
+      const res = await fetch(`/api/${tenantId}/requests/by-customer/${currentCustomer.id}`);
       if (res.ok) {
         const data = await res.json();
         if (data.requests) setRequests(data.requests);
@@ -261,7 +372,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
     if (!window.confirm('האם אתה בטוח שברצונך למחוק קריאת שירות זו?')) return;
     
     try {
-      const res = await fetch(`/api/${tenantId}/requests/${requestId}?customerId=${customer.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/${tenantId}/requests/${requestId}?customerId=${currentCustomer.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('שגיאה במחיקת קריאת השירות');
       
       setRequests(prev => prev.filter(r => r.id !== requestId));
@@ -270,20 +381,29 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
     }
   };
 
-  const formUrl = `${baseUrl}/${tenantId}/request/${customer.id}`;
-  const portalUrl = `${baseUrl}/${tenantId}/portal/${customer.id}`;
+  const formUrl = `${baseUrl}/${tenantId}/request/${currentCustomer.id}`;
+  const portalUrl = `${baseUrl}/${tenantId}/portal/${currentCustomer.id}`;
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20" dir="rtl">
-      {/* Top Navbar */}
-      <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50 transition-all duration-300">
+    <div 
+      className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20 print:bg-white print:pb-0" 
+      dir="rtl"
+      style={{ '--theme-color': primaryColor || '#2563eb', '--theme-color-light': `${primaryColor || '#2563eb'}1A` } as React.CSSProperties}
+    >
+      <div className="print:hidden">
+        {/* Top Navbar */}
+        <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50 transition-all duration-300">
         <div className="max-w-5xl mx-auto px-4 md:px-6 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-500/20 active:scale-95 transition-all select-none">
-              {customer.firstName[0]}
+            <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all select-none">
+              {currentCustomer.logoUrl ? (
+                <img src={currentCustomer.logoUrl} alt="Customer Avatar" className="w-full h-full object-contain" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{currentCustomer.firstName[0]}</div>
+              )}
             </div>
             <div>
-              <span className="text-lg font-black tracking-tight block leading-none text-gray-900">{customer.firstName} {customer.lastName}</span>
+              <span className="text-lg font-black tracking-tight block leading-none text-gray-900">{currentCustomer.firstName} {currentCustomer.lastName}</span>
               <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mt-1 block">{businessName} פורטל לקוח</span>
             </div>
           </div>
@@ -293,16 +413,25 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="p-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer"
+              className="p-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center justify-center"
               title="רענן נתונים"
             >
               <RotateCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
             </button>
 
+            {/* Profile Settings */}
+            <button
+              onClick={openCustomerSettingsModal}
+              className="p-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center justify-center"
+              title="הגדרות פרופיל"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+
             {/* New Request */}
             <button
               onClick={openCreateModal}
-              className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer"
+              className="px-5 py-2.5 bg-[var(--theme-color,#2563eb)] hover:opacity-90 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-[var(--theme-color-light,#2563eb1A)] transition-all active:scale-[0.98] cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               פתח קריאה חדשה
@@ -314,6 +443,27 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
       {/* Main Content */}
       <main className="max-w-5xl mx-auto px-4 md:px-6 pt-6 md:pt-10">
         <div className="space-y-8">
+          {/* Branded Welcome Hero Banner */}
+          <div className="relative overflow-hidden bg-white/70 backdrop-blur-xl border border-white/60 p-6 md:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -mr-10 -mt-10 animate-pulse"></div>
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl -ml-10 -mb-10"></div>
+            
+            <div className="relative z-10 flex flex-col md:flex-row items-center gap-4 text-center md:text-right">
+              {logoUrl ? (
+                <div className="w-16 h-16 rounded-2xl overflow-hidden border bg-white flex items-center justify-center shadow-md p-1 flex-shrink-0">
+                  <img src={logoUrl} alt="Store Logo" className="w-full h-full object-contain" />
+                </div>
+              ) : (
+                <div className="w-16 h-16 rounded-2xl bg-[var(--theme-color,#2563eb)] flex items-center justify-center text-white font-black text-2xl shadow-md flex-shrink-0">
+                  {businessName.charAt(0)}
+                </div>
+              )}
+              <div>
+                <h1 className="text-xl md:text-2xl font-black text-gray-900">שירות לקוחות {businessName}</h1>
+                <p className="text-gray-500 text-sm mt-1 font-medium">שלום {currentCustomer.firstName} {currentCustomer.lastName}, עקוב אחר קריאות השירות או פתח פנייה חדשה בכפתור למעלה.</p>
+              </div>
+            </div>
+          </div>
 
           {/* Stats + QR Section */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -370,13 +520,19 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
             {/* QR Card */}
             <div className="bg-white/75 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 flex flex-col items-center text-center space-y-4">
               <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">קוד QR לפתיחת קריאות</span>
-              <div className="p-3.5 bg-white rounded-2xl border border-gray-200/50 shadow-inner">
+              <div className="p-3.5 bg-white rounded-2xl border border-gray-200/50 shadow-inner relative flex items-center justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(formUrl)}`}
                   alt="QR Code"
                   className="w-32 h-32"
                 />
+                {currentCustomer.logoUrl && (
+                  <div className="absolute w-8 h-8 bg-white p-0.5 rounded-lg border border-gray-150 shadow-sm overflow-hidden flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={currentCustomer.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                  </div>
+                )}
               </div>
               <p className="text-[11px] text-gray-400 leading-relaxed">
                 הדפיסו והציגו בחנות — לקוחות שיסרקו יגיעו<br/>ישירות לטופס פתיחת קריאת שירות
@@ -478,7 +634,19 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200/40">
-                  {filteredRequests.length > 0 ? (
+                  {isInitialLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={`skeleton-${i}`} className="animate-pulse">
+                        <td className="p-5"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+                        <td className="p-5"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+                        <td className="p-5"><div className="h-4 bg-gray-200 rounded w-20"></div></td>
+                        <td className="p-5"><div className="h-6 bg-gray-200 rounded-full w-12"></div></td>
+                        <td className="p-5"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+                        <td className="p-5"><div className="h-6 bg-gray-200 rounded-xl w-24"></div></td>
+                        <td className="p-5"><div className="h-8 bg-gray-200 rounded-xl w-16 mx-auto"></div></td>
+                      </tr>
+                    ))
+                  ) : filteredRequests.length > 0 ? (
                     filteredRequests.map((req) => {
                       const statusObj = statuses.find(s => s.key === req.status) || statuses[0];
                       return (
@@ -590,19 +758,19 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
               <div>
                 <span className="text-gray-400 text-xs block">טלפון</span>
-                <strong className="text-gray-800 font-mono">{customer.phone || 'לא מעודכן'}</strong>
+                <strong className="text-gray-800 font-mono">{currentCustomer.phone || 'לא מעודכן'}</strong>
               </div>
               <div>
                 <span className="text-gray-400 text-xs block">כתובת</span>
-                <strong className="text-gray-800">{customer.address || 'לא צוינה'}</strong>
+                <strong className="text-gray-800">{currentCustomer.address || 'לא צוינה'}</strong>
               </div>
               <div>
                 <span className="text-gray-400 text-xs block">מספר סריאלי</span>
-                <strong className="text-gray-800 font-mono">{customer.serialNumber || 'לא זמין'}</strong>
+                <strong className="text-gray-800 font-mono">{currentCustomer.serialNumber || 'לא זמין'}</strong>
               </div>
               <div>
                 <span className="text-gray-400 text-xs block">לוחית רישוי</span>
-                <strong className="text-gray-800 font-mono">{customer.licensePlate || 'לא זמין'}</strong>
+                <strong className="text-gray-800 font-mono">{currentCustomer.licensePlate || 'לא זמין'}</strong>
               </div>
             </div>
           </div>
@@ -1274,12 +1442,257 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
           </div>
         )}
       </AnimatePresence>
+    </div>
+
+      {/* Print Flyer Container - Visible ONLY when printing */}
+      <div className="hidden print:flex flex-col items-center justify-center min-h-screen text-center bg-white p-8" dir="rtl">
+        <div className="max-w-2xl w-full mx-auto border-8 border-double border-gray-900 rounded-[2.5rem] p-16 bg-white space-y-10 my-auto shadow-sm">
+          <div className="flex flex-col items-center">
+            {logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="Logo" className="w-20 h-20 object-contain mb-4" />
+            )}
+            <span className="text-sm font-extrabold text-blue-600 tracking-widest uppercase block mb-3">שירות לקוחות {businessName}</span>
+            <h1 className="text-4xl font-black text-gray-900 leading-tight">סרקו לפתיחת קריאת שירות מהירה! 🛴</h1>
+          </div>
+
+          <div className="p-6 bg-white rounded-[2rem] border-2 border-gray-200/60 shadow-lg max-w-max mx-auto relative flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(formUrl)}`}
+              alt="QR Code"
+              className="w-64 h-64 mx-auto"
+            />
+            {currentCustomer.logoUrl && (
+              <div className="absolute w-14 h-14 bg-white p-1 rounded-2xl border border-gray-150 shadow-md overflow-hidden flex items-center justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={currentCustomer.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <p className="text-lg text-gray-750 font-bold leading-relaxed">
+              סרקו את הקוד עם מצלמת הטלפון הנייד שלכם <br />
+              כדי למלא את פרטי הכלי והתקלה במהירות ובקלות
+            </p>
+            <p className="text-xs text-gray-400 font-semibold">
+              מאפשר לנו לטפל בכלי שלכם בצורה המהירה והמקצועית ביותר!
+            </p>
+          </div>
+
+          <div className="pt-8 border-t-2 border-dashed border-gray-200 flex justify-between items-center text-gray-500 text-xs font-bold px-4">
+            <span>{businessName}</span>
+            <span>מערכת קריאות שירות דיגיטלית</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Customer Profile Settings Modal */}
+      {isCustomerSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-950/40 backdrop-blur-sm print:hidden">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-150 flex flex-col text-right" dir="rtl">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <button
+                onClick={() => setIsCustomerSettingsOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 active:scale-95 transition-all cursor-pointer border-0 bg-transparent"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                <User className="w-5 h-5 text-blue-600" />
+                הגדרות פרופיל
+              </h2>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSaveCustomerSettings} className="p-6 space-y-5">
+              {customerSettingsError && (
+                <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-650 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span>{customerSettingsError}</span>
+                </div>
+              )}
+
+              {customerSettingsSuccess && (
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-emerald-650 text-xs font-bold flex items-center gap-2">
+                  <Check className="w-5 h-5 flex-shrink-0" />
+                  <span>השינויים נשמרו בהצלחה!</span>
+                </div>
+              )}
+
+              {/* Logo/Avatar Upload Section */}
+              <div className="space-y-2">
+                <label className="block text-gray-700 text-xs font-bold">לוגו או תמונת פרופיל אישית</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-xl border overflow-hidden bg-gray-50 flex items-center justify-center shadow-inner flex-shrink-0">
+                    {customerLogoPreview ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={customerLogoPreview} alt="Profile Preview" className="w-full h-full object-contain" />
+                    ) : (
+                      <User className="w-6 h-6 text-gray-300" />
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('customer-logo-upload')?.click()}
+                      className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100/50 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      בחר תמונה
+                    </button>
+                    <input
+                      id="customer-logo-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleCustomerLogoChange}
+                      className="hidden"
+                    />
+                    {customerLogoPreview && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveCustomerLogo}
+                        className="px-4 py-2 bg-red-50 hover:bg-red-100/75 text-red-650 border border-red-100/50 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        הסר
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400">תמונת הלוגו תוצג במרכז קוד ה-QR שלך.</p>
+              </div>
+
+              {/* Name fields */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">שם פרטי *</label>
+                  <input
+                    type="text"
+                    value={settingsFirstName}
+                    onChange={(e) => setSettingsFirstName(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">שם משפחה *</label>
+                  <input
+                    type="text"
+                    value={settingsLastName}
+                    onChange={(e) => setSettingsLastName(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Contact fields */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">טלפון</label>
+                  <input
+                    type="text"
+                    value={settingsPhone}
+                    onChange={(e) => setSettingsPhone(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">אימייל</label>
+                  <input
+                    type="email"
+                    value={settingsEmail}
+                    onChange={(e) => setSettingsEmail(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              {/* Address */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">כתובת</label>
+                <input
+                  type="text"
+                  value={settingsAddress}
+                  onChange={(e) => setSettingsAddress(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                />
+              </div>
+
+              {/* Vehicle specific fields */}
+              <div className="border-t border-gray-100 pt-4 space-y-4">
+                <span className="block text-gray-400 text-[10px] font-bold uppercase tracking-wider">פרטי כלי ברירת מחדל</span>
+                
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-700 text-[11px] font-bold">מספר סריאלי</label>
+                    <input
+                      type="text"
+                      value={settingsSerialNumber}
+                      onChange={(e) => setSettingsSerialNumber(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all font-mono"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-700 text-[11px] font-bold">צבע כלי</label>
+                    <input
+                      type="text"
+                      value={settingsColor}
+                      onChange={(e) => setSettingsColor(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-700 text-[11px] font-bold">לוחית רישוי</label>
+                    <input
+                      type="text"
+                      value={settingsLicensePlate}
+                      onChange={(e) => setSettingsLicensePlate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all font-mono"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={isSavingCustomerSettings}
+                className="w-full py-3 bg-gray-950 hover:bg-gray-900 text-white rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+              >
+                {isSavingCustomerSettings ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
+                {isSavingCustomerSettings ? 'שומר הגדרות...' : 'שמור שינויים'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Print Styles - QR Flyer */}
       <style jsx global>{`
         @media print {
-          body * { visibility: hidden; }
-          nav, .search-bar { display: none !important; }
+          @page {
+            size: A4 portrait;
+            margin: 0 !important;
+          }
+          html, body {
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .print\:hidden {
+            display: none !important;
+          }
         }
       `}</style>
     </div>

@@ -8,6 +8,8 @@ export interface Tenant {
   businessName?: string;
   adminPassword?: string;
   whatsappTemplate?: string;
+  logoUrl?: string;
+  primaryColor?: string;
   createdAt: string;
 }
 
@@ -22,6 +24,7 @@ export interface Customer {
   licensePlate?: string;
   color?: string;
   serialNumber?: string;
+  logoUrl?: string;
 }
 
 export interface ServiceRequest {
@@ -60,6 +63,14 @@ export async function getDb(tenantId: string) {
     throw new Error('tenantId is required to access a tenant database');
   }
   return client.db(tenantId);
+}
+
+export async function ensureIndexes(tenantId: string) {
+  const db = await getDb(tenantId);
+  await db.collection('customers').createIndex({ id: 1 }, { unique: true });
+  await db.collection('serviceRequests').createIndex({ id: 1 }, { unique: true });
+  await db.collection('serviceRequests').createIndex({ customerId: 1 });
+  await db.collection('serviceRequests').createIndex({ requestNumber: -1 });
 }
 
 // ---------------- Tenant Management ----------------
@@ -116,6 +127,25 @@ export async function updateTenantAdminPassword(id: string, adminPassword: strin
   await db.collection('tenants').updateOne({ id }, { $set: { adminPassword } });
 }
 
+export async function updateTenantSettings(
+  id: string,
+  update: { name?: string; businessName?: string; logoUrl?: string; adminPassword?: string; whatsappTemplate?: string }
+): Promise<void> {
+  const db = await getMasterDb();
+  const setObj: Record<string, any> = {};
+  if (update.businessName !== undefined) {
+    setObj.name = update.businessName;
+    setObj.businessName = update.businessName;
+  }
+  if (update.whatsappTemplate !== undefined) setObj.whatsappTemplate = update.whatsappTemplate;
+  if (update.logoUrl !== undefined) setObj.logoUrl = update.logoUrl;
+  if (update.adminPassword !== undefined) setObj.adminPassword = update.adminPassword;
+  
+  if (Object.keys(setObj).length > 0) {
+    await db.collection('tenants').updateOne({ id }, { $set: setObj });
+  }
+}
+
 export async function deleteTenant(id: string): Promise<boolean> {
   const db = await getMasterDb();
   const result = await db.collection('tenants').deleteOne({ id });
@@ -141,18 +171,54 @@ export async function getCustomerById(tenantId: string, id: string): Promise<Cus
   return rest as Customer;
 }
 
-export async function getServiceRequests(tenantId: string): Promise<ServiceRequest[]> {
+export async function getServiceRequests(tenantId: string): Promise<ServiceRequest[]>;
+export async function getServiceRequests(tenantId: string, options: { 
+  page?: number; 
+  limit?: number; 
+  excludeImages?: boolean; 
+}): Promise<{ requests: ServiceRequest[]; total: number }>;
+export async function getServiceRequests(tenantId: string, options?: { 
+  page?: number; 
+  limit?: number; 
+  excludeImages?: boolean; 
+}): Promise<any> {
   const db = await getDb(tenantId);
-  const requests = await db.collection('serviceRequests').find({}).toArray();
+  
+  const page = options?.page || 1;
+  const limit = options?.limit || 100;
+  const skip = (page - 1) * limit;
+  const excludeImages = options?.excludeImages || false;
+
+  const projection: any = {};
+  if (excludeImages) {
+    projection.toolImages = 0;
+    projection.toolImage = 0;
+    projection.warrantyReceiptImage = 0;
+  }
+
+  const cursor = db.collection('serviceRequests').find({}, { projection })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  const requests = await cursor.toArray();
+  const total = await db.collection('serviceRequests').countDocuments({});
+  
   const customers = await getCustomers(tenantId);
   
-  return requests.map(req => {
+  const mappedRequests = requests.map(req => {
     const { _id, ...rest } = req;
     return {
       ...(rest as ServiceRequest),
       customer: customers.find(c => c.id === rest.customerId)
     };
   });
+
+  if (!options) {
+    return mappedRequests;
+  }
+  
+  return { requests: mappedRequests, total };
 }
 
 export async function createServiceRequest(
@@ -161,16 +227,12 @@ export async function createServiceRequest(
 ): Promise<ServiceRequest> {
   const db = await getDb(tenantId);
   
-  const lastRequest = await db.collection('serviceRequests')
-    .find({}, { projection: { requestNumber: 1 } })
-    .sort({ requestNumber: -1 })
-    .limit(1)
-    .toArray();
-    
-  let requestNumber = 1000;
-  if (lastRequest.length > 0 && lastRequest[0].requestNumber) {
-    requestNumber = lastRequest[0].requestNumber + 1;
-  }
+  const counterResult = await db.collection('counters').findOneAndUpdate(
+    { _id: 'requestNumber' as any },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  const requestNumber = counterResult?.seq || 1;
   
   const newRequest: ServiceRequest = {
     ...request,
@@ -275,4 +337,17 @@ export async function deleteCustomer(tenantId: string, id: string): Promise<bool
   
   const result = await db.collection('customers').deleteOne(filter);
   return result.deletedCount === 1;
+}
+
+export async function updateCustomer(
+  tenantId: string,
+  id: string,
+  update: Partial<Omit<Customer, 'id' | 'excelId'>>
+): Promise<boolean> {
+  const db = await getDb(tenantId);
+  const result = await db.collection('customers').updateOne(
+    { id },
+    { $set: update }
+  );
+  return result.matchedCount === 1;
 }

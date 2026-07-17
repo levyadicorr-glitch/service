@@ -6,7 +6,7 @@ import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
 import { 
   Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock, 
   Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone, 
-  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw
+  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -15,9 +15,10 @@ interface AdminDashboardProps {
   tenantId: string;
   businessName: string;
   whatsappTemplate: string;
+  logoUrl?: string;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, tenantId, businessName, whatsappTemplate }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, tenantId, businessName, whatsappTemplate, logoUrl = '' }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [activeTab, setActiveTab] = useState<'requests' | 'customers'>('requests');
@@ -26,6 +27,95 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [requestSearch, setRequestSearch] = useState('');
   const [requestStatusFilter, setRequestStatusFilter] = useState<string>('ALL');
   const [customerSearch, setCustomerSearch] = useState('');
+
+  // Settings States
+  const [currentBusinessName, setCurrentBusinessName] = useState(businessName);
+  const [currentWhatsappTemplate, setCurrentWhatsappTemplate] = useState(whatsappTemplate);
+  const [currentLogoUrl, setCurrentLogoUrl] = useState(logoUrl);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  
+  const [settingsBusinessName, setSettingsBusinessName] = useState(businessName);
+  const [settingsWhatsappTemplate, setSettingsWhatsappTemplate] = useState(whatsappTemplate);
+  const [settingsPassword, setSettingsPassword] = useState('');
+  const [settingsLogoFile, setSettingsLogoFile] = useState<File | null>(null);
+  const [settingsLogoPreview, setSettingsLogoPreview] = useState<string | null>(null);
+  const [removeLogoFlag, setRemoveLogoFlag] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSuccess, setSettingsSuccess] = useState(false);
+
+  const openSettingsModal = () => {
+    setSettingsBusinessName(currentBusinessName);
+    setSettingsWhatsappTemplate(currentWhatsappTemplate);
+    setSettingsPassword('');
+    setSettingsLogoFile(null);
+    setSettingsLogoPreview(currentLogoUrl);
+    setRemoveLogoFlag(false);
+    setSettingsError(null);
+    setSettingsSuccess(false);
+    setIsSettingsModalOpen(true);
+  };
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSettingsLogoFile(file);
+      setSettingsLogoPreview(URL.createObjectURL(file));
+      setRemoveLogoFlag(false);
+    }
+  };
+
+  const handleRemoveLogo = () => {
+    setSettingsLogoFile(null);
+    setSettingsLogoPreview(null);
+    setRemoveLogoFlag(true);
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    setSettingsError(null);
+    setSettingsSuccess(false);
+
+    try {
+      const formData = new FormData();
+      formData.append('businessName', settingsBusinessName.trim());
+      formData.append('whatsappTemplate', settingsWhatsappTemplate.trim());
+      if (settingsPassword.trim()) {
+        formData.append('password', settingsPassword.trim());
+      }
+      if (removeLogoFlag) {
+        formData.append('removeLogo', 'true');
+      } else if (settingsLogoFile) {
+        formData.append('logo', settingsLogoFile);
+      }
+
+      const res = await fetch(`/api/${tenantId}/admin/settings`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'שגיאה בשמירת ההגדרות');
+      }
+
+      setCurrentBusinessName(settingsBusinessName);
+      setCurrentWhatsappTemplate(settingsWhatsappTemplate);
+      if (removeLogoFlag) {
+        setCurrentLogoUrl('');
+      } else if (data.logoUrl) {
+        setCurrentLogoUrl(data.logoUrl);
+      }
+      
+      setSettingsSuccess(true);
+      setTimeout(() => setIsSettingsModalOpen(false), 1000);
+    } catch (err: unknown) {
+      setSettingsError(err instanceof Error ? err.message : 'שגיאה בחיבור לשרת');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
   
   // Dropdown open states
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
@@ -68,7 +158,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const refreshRequests = async (showLoader = false) => {
     if (showLoader) setIsAdminRefreshing(true);
     try {
-      const res = await fetch(`/api/${tenantId}/requests`);
+      const res = await fetch(`/api/${tenantId}/requests?excludeImages=true&limit=200`);
       const data = await res.json();
       if (res.ok && data.requests) {
         // Preserving the selected request reference to keep modal details updated if open
@@ -92,10 +182,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   }, []);
 
   useEffect(() => {
-    // Set polling interval for 15 seconds
+    // Set polling interval for 30 seconds
     const interval = setInterval(() => {
       refreshRequests(false);
-    }, 15000);
+    }, 30000);
 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -300,30 +390,46 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50 print:hidden transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-all cursor-pointer">{businessName.charAt(0)}</div>
-            <span className="text-xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-l from-gray-900 via-gray-800 to-blue-700">{businessName} <span className="font-normal text-blue-600">ניהול</span></span>
+            <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all cursor-pointer">
+              {currentLogoUrl ? (
+                <img src={currentLogoUrl} alt="Logo" className="w-full h-full object-contain" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl">{currentBusinessName.charAt(0)}</div>
+              )}
+            </div>
+            <span className="text-xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-l from-gray-900 via-gray-800 to-blue-700">{currentBusinessName} <span className="font-normal text-blue-600">ניהול</span></span>
           </div>
 
-          <div className="flex gap-1 p-1 bg-gray-200/60 backdrop-blur rounded-xl border border-gray-300/10">
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1 p-1 bg-gray-200/60 backdrop-blur rounded-xl border border-gray-300/10">
+              <button
+                onClick={() => setActiveTab('requests')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
+                  activeTab === 'requests'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                קריאות שירות
+              </button>
+              <button
+                onClick={() => setActiveTab('customers')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
+                  activeTab === 'customers'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                רשימת לקוחות
+              </button>
+            </div>
+
             <button
-              onClick={() => setActiveTab('requests')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
-                activeTab === 'requests'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
+              onClick={openSettingsModal}
+              className="p-2.5 bg-white hover:bg-gray-55 rounded-xl text-gray-500 border border-gray-200 shadow-sm active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+              title="הגדרות עסק"
             >
-              קריאות שירות
-            </button>
-            <button
-              onClick={() => setActiveTab('customers')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
-                activeTab === 'customers'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              רשימת לקוחות
+              <Settings className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -537,7 +643,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                               {req.customer?.phone && (
                                 <a
                                   href={`https://wa.me/${req.customer.phone.startsWith('0') ? '972' + req.customer.phone.slice(1) : req.customer.phone}?text=${encodeURIComponent(
-                                    buildWhatsAppMessage(whatsappTemplate, `${baseUrl}/${tenantId}/request/${req.customer.id}`, businessName)
+                                    buildWhatsAppMessage(currentWhatsappTemplate, `${baseUrl}/${tenantId}/request/${req.customer.id}`, currentBusinessName)
                                   )}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
@@ -1167,25 +1273,37 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
             <div className="p-8 flex flex-col items-center text-center bg-white space-y-6 flex-1 print:p-12 print:justify-center" dir="rtl">
               {/* Flyer Header */}
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-blue-500/20">{businessName.charAt(0)}</div>
-                <span className="text-3xl font-black tracking-tight text-gray-900">{businessName}</span>
+                <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5">
+                  {currentLogoUrl ? (
+                    <img src={currentLogoUrl} alt="Logo" className="w-full h-full object-contain" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-2xl">{currentBusinessName.charAt(0)}</div>
+                  )}
+                </div>
+                <span className="text-3xl font-black tracking-tight text-gray-900">{currentBusinessName}</span>
               </div>
               
               <div className="space-y-2">
-                <h1 className="text-3xl font-extrabold text-gray-950 tracking-tight">לקבלת שירות {businessName}</h1>
+                <h1 className="text-3xl font-extrabold text-gray-950 tracking-tight">לקבלת שירות {currentBusinessName}</h1>
                 <p className="text-gray-500 text-sm font-medium">סרקו את קוד ה-QR לפתיחת קריאת שירות מהירה במכשיר שלכם</p>
               </div>
 
               {/* QR Code Container */}
-              <div className="p-4 bg-gray-50 rounded-3xl border border-gray-100 shadow-inner flex items-center justify-center print:border-none print:bg-white print:shadow-none">
+              <div className="p-4 bg-gray-50 rounded-3xl border border-gray-100 shadow-inner flex items-center justify-center print:border-none print:bg-white print:shadow-none relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
                     `${baseUrl}/${tenantId}/request/${selectedCustomerForQr.id}`
                   )}`}
-                  alt={`${businessName} Service QR Code`}
+                  alt={`${currentBusinessName} Service QR Code`}
                   className="w-56 h-56 print:w-72 print:h-72"
                 />
+                {selectedCustomerForQr.logoUrl && (
+                  <div className="absolute w-12 h-12 print:w-16 print:h-16 bg-white p-1 rounded-2xl border-2 border-gray-150 shadow-md overflow-hidden flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={selectedCustomerForQr.logoUrl} alt="Customer Logo" className="w-full h-full object-contain" />
+                  </div>
+                )}
               </div>
 
               {/* Customer info footer on the flyer */}
@@ -1330,7 +1448,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   />
                 </div>
               </div>
-
               {/* Serial Number */}
               <div className="space-y-1.5">
                 <label className="block text-gray-700 text-xs font-bold">מספר סריאלי</label>
@@ -1373,6 +1490,135 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 סגור
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {isSettingsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-950/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-150 flex flex-col text-right">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <button
+                onClick={() => setIsSettingsModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 active:scale-95 transition-all cursor-pointer border-0 bg-transparent"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-600" />
+                הגדרות עסק
+              </h2>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSaveSettings} className="p-6 space-y-6">
+              {settingsError && (
+                <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-650 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span>{settingsError}</span>
+                </div>
+              )}
+
+              {settingsSuccess && (
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl text-emerald-650 text-xs font-bold flex items-center gap-2">
+                  <Check className="w-5 h-5 flex-shrink-0" />
+                  <span>ההגדרות נשמרו בהצלחה!</span>
+                </div>
+              )}
+
+              {/* Logo Upload Section */}
+              <div className="space-y-2">
+                <label className="block text-gray-700 text-xs font-bold">לוגו העסק</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-xl border overflow-hidden bg-gray-50 flex items-center justify-center shadow-inner flex-shrink-0">
+                    {settingsLogoPreview ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={settingsLogoPreview} alt="Logo Preview" className="w-full h-full object-contain" />
+                    ) : (
+                      <Store className="w-6 h-6 text-gray-300" />
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('logo-upload-input')?.click()}
+                      className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100/50 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      העלה לוגו
+                    </button>
+                    <input
+                      id="logo-upload-input"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoChange}
+                      className="hidden"
+                    />
+                    {settingsLogoPreview && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        className="px-4 py-2 bg-red-50 hover:bg-red-100/70 text-red-600 border border-red-100/50 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        הסר
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400">הלוגו יוצג ב-QR, בפורטל הלקוחות ובדף הציבורי.</p>
+              </div>
+
+              {/* Business Name */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">שם העסק *</label>
+                <input
+                  type="text"
+                  value={settingsBusinessName}
+                  onChange={(e) => setSettingsBusinessName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-semibold"
+                  required
+                />
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">שינוי סיסמה (השאר ריק כדי לא לשנות)</label>
+                <input
+                  type="password"
+                  placeholder="סיסמת מנהל חדשה"
+                  value={settingsPassword}
+                  onChange={(e) => setSettingsPassword(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  dir="ltr"
+                />
+              </div>
+
+              {/* WhatsApp Template */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">תבנית הודעת וואטסאפ ללקוחות</label>
+                <textarea
+                  rows={3}
+                  value={settingsWhatsappTemplate}
+                  onChange={(e) => setSettingsWhatsappTemplate(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all resize-none text-right"
+                  dir="rtl"
+                />
+                <p className="text-[10px] text-gray-400">השתמש ב-<code>{"{link}"}</code> עבור קישור לפתיחת קריאה, וב-<code>{"{businessName}"}</code> עבור שם העסק.</p>
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={isSavingSettings}
+                className="w-full py-3.5 bg-gray-950 hover:bg-gray-900 text-white rounded-xl text-sm font-black flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+              >
+                {isSavingSettings ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
+                {isSavingSettings ? 'שומר הגדרות...' : 'שמור שינויים'}
+              </button>
+            </form>
           </div>
         </div>
       )}

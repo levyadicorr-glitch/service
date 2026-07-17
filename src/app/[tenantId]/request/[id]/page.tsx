@@ -41,10 +41,11 @@ export default async function CustomerRequestPage({ params }: PageProps) {
   const tenantObj = await getTenantById(tenantId);
   const businessName = tenantObj?.businessName || 'העסק';
   const whatsappTemplate = tenantObj?.whatsappTemplate || '';
+  const logoUrl = tenantObj?.logoUrl || '';
 
   return (
     <div className="min-h-screen bg-gray-50/50 py-8 px-4 sm:px-6 lg:px-8" dir="rtl">
-      <RequestForm customer={customer} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} />
+      <RequestForm customer={customer} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} logoUrl={logoUrl} />
     </div>
   );
 }

@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteServiceRequest, getServiceRequestById, updateServiceRequestStatus } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
+import { checkCsrf } from '@/lib/csrf';
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ tenantId: string; id: string }> }
 ) {
+  const csrfError = checkCsrf(req);
+  if (csrfError) return csrfError;
+
   try {
     const { tenantId, id } = await params;
     const denied = requireTenantAdmin(req, tenantId);
@@ -34,6 +38,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ tenantId: string; id: string }> }
 ) {
+  const csrfError = checkCsrf(req);
+  if (csrfError) return csrfError;
+
   try {
     const { tenantId, id } = await params;
 
