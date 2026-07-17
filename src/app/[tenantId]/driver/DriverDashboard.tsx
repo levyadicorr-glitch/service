@@ -19,6 +19,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { ServiceRequest, Customer } from '@/lib/db';
+import { formatRequestNumber } from '@/lib/format';
 
 interface DriverDashboardProps {
   initialRequests: ServiceRequest[];
@@ -156,7 +157,7 @@ export default function DriverDashboard({ initialRequests, tenantId, businessNam
                         קריאת שירות
                       </span>
                       <strong className="text-md text-gray-800 font-extrabold font-mono tracking-tight block mt-0.5">
-                        #GW-{req.requestNumber}
+                        {formatRequestNumber(tenantId, req.requestNumber)}
                       </strong>
                     </div>
 

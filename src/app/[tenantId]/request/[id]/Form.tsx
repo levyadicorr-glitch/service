@@ -29,6 +29,7 @@ export default function RequestForm({ customer, tenantId, businessName, whatsapp
   const [storeName, setStoreName] = useState(`${customer.firstName} ${customer.lastName}`.trim());
   const [toolOwnerName, setToolOwnerName] = useState('');
   const [toolOwnerPhone, setToolOwnerPhone] = useState('');
+  const [issueDescription, setIssueDescription] = useState('');
   const [hasWarranty, setHasWarranty] = useState<string>('no');
   const [toolImages, setToolImages] = useState<File[]>([]);
   const [toolImagePreviews, setToolImagePreviews] = useState<string[]>([]);
@@ -36,6 +37,13 @@ export default function RequestForm({ customer, tenantId, businessName, whatsapp
   const [warrantyReceiptPreview, setWarrantyReceiptPreview] = useState<string | null>(null);
   const [agreedToInspectionFee, setAgreedToInspectionFee] = useState(false);
   
+  // New fields states
+  const [comments, setComments] = useState('');
+  const [repairLevel, setRepairLevel] = useState<'RIDE_ONLY' | 'SAFE_RIDE' | 'LIKE_NEW' | ''>('');
+  const [isPreApprovedBudgetEnabled, setIsPreApprovedBudgetEnabled] = useState(false);
+  const [preApprovedAmount, setPreApprovedAmount] = useState<string>('500');
+  const [preApprovedNotes, setPreApprovedNotes] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -47,17 +55,19 @@ export default function RequestForm({ customer, tenantId, businessName, whatsapp
   const handleToolImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
-      const newImages = [...toolImages, ...files].slice(0, 3);
-      setToolImages(newImages);
-      
-      const newPreviews = newImages.map(file => URL.createObjectURL(file));
-      setToolImagePreviews(newPreviews);
+      // Create object URLs only for the newly added files, so existing previews
+      // stay valid and no blob URLs are leaked.
+      const addedFiles = files.slice(0, 3 - toolImages.length);
+      if (addedFiles.length === 0) return;
+      setToolImages([...toolImages, ...addedFiles]);
+      setToolImagePreviews([...toolImagePreviews, ...addedFiles.map(file => URL.createObjectURL(file))]);
     }
   };
 
   const handleWarrantyImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      if (warrantyReceiptPreview) URL.revokeObjectURL(warrantyReceiptPreview);
       setWarrantyReceiptImage(file);
       setWarrantyReceiptPreview(URL.createObjectURL(file));
     }
@@ -95,9 +105,25 @@ export default function RequestForm({ customer, tenantId, businessName, whatsapp
       setSubmitError('סימנת שיש אחריות - חובה לצרף צילום חשבונית או תעודת אחריות.');
       return;
     }
+    if (!issueDescription.trim()) {
+      setSubmitError('חובה לתאר את התקלה בכלי.');
+      return;
+    }
     if (!agreedToInspectionFee) {
       setSubmitError('חובה לאשר את תנאי הבדיקה בסך 150 ש"ח.');
       return;
+    }
+    if (!repairLevel) {
+      setSubmitError('חובה לבחור לאיזו רמה תרצו שנגיע בתיקון הכלי.');
+      return;
+    }
+    
+    if (isPreApprovedBudgetEnabled) {
+      const amount = Number(preApprovedAmount);
+      if (isNaN(amount) || amount < 500) {
+        setSubmitError('סכום האישור מראש חייב להיות לפחות 500 ₪.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -110,8 +136,18 @@ export default function RequestForm({ customer, tenantId, businessName, whatsapp
       if (toolOwnerPhone.trim()) {
         formData.append('toolOwnerPhone', toolOwnerPhone.trim());
       }
+      formData.append('issueDescription', issueDescription.trim());
       formData.append('hasWarranty', hasWarranty === 'yes' ? 'true' : 'false');
       formData.append('agreedToInspectionFee', agreedToInspectionFee ? 'true' : 'false');
+      
+      // Append new fields
+      formData.append('comments', comments.trim());
+      formData.append('repairLevel', repairLevel);
+      if (isPreApprovedBudgetEnabled) {
+        formData.append('preApprovedAmount', preApprovedAmount);
+        formData.append('preApprovedNotes', preApprovedNotes.trim());
+      }
+
       toolImages.forEach(file => {
         formData.append('toolImages', file);
       });
@@ -311,6 +347,158 @@ export default function RequestForm({ customer, tenantId, businessName, whatsapp
               dir="rtl"
             />
           </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <label className="block text-gray-700 text-sm font-bold flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-gray-400" />
+              מה התקלה בכלי? <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={issueDescription}
+              onChange={(e) => setIssueDescription(e.target.value)}
+              placeholder="תאר את הבעיה בכלי (לדוגמה: פנצ'ר בגלגל קדמי, המנוע לא נדלק, בעיה בבלמים...)"
+              rows={3}
+              className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium text-right resize-none"
+              required
+            />
+          </div>
+
+          {/* Desired Repair Level Selection */}
+          <div className="space-y-3 md:col-span-2">
+            <label className="block text-gray-700 text-sm font-bold flex items-center gap-1.5">
+              <span className="text-gray-400 text-xs">⚡</span>
+              לאיזו רמה תרצו שנגיע בתיקון? <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Option 1: Basic Ride */}
+              <button
+                type="button"
+                onClick={() => setRepairLevel('RIDE_ONLY')}
+                className={`py-4 px-4 rounded-2xl border text-right transition-all flex flex-col justify-between group active:scale-[0.98] cursor-pointer ${
+                  repairLevel === 'RIDE_ONLY'
+                    ? 'border-blue-500 bg-gradient-to-br from-blue-50/90 to-sky-50/50 text-blue-950 shadow-md shadow-blue-500/5 ring-4 ring-blue-500/10'
+                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+              >
+                <div className="flex justify-between items-center w-full mb-1.5">
+                  <span className={`text-xs font-black transition-colors ${repairLevel === 'RIDE_ONLY' ? 'text-blue-600' : 'text-gray-700'}`}>מצב נסיעה בלבד 🛴</span>
+                  <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all ${repairLevel === 'RIDE_ONLY' ? 'border-blue-500 bg-blue-500 scale-110' : 'border-gray-300 bg-white'}`}>
+                    {repairLevel === 'RIDE_ONLY' && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+                  </span>
+                </div>
+                <span className="block text-[10px] text-gray-400 font-medium leading-tight group-hover:text-gray-500 transition-colors">תיקון בסיסי שיחזיר את הכלי למצב נסיעה (ללא תוספות)</span>
+              </button>
+
+              {/* Option 2: Safe Ride */}
+              <button
+                type="button"
+                onClick={() => setRepairLevel('SAFE_RIDE')}
+                className={`py-4 px-4 rounded-2xl border text-right transition-all flex flex-col justify-between group active:scale-[0.98] cursor-pointer ${
+                  repairLevel === 'SAFE_RIDE'
+                    ? 'border-emerald-500 bg-gradient-to-br from-emerald-50/90 to-teal-50/50 text-emerald-950 shadow-md shadow-emerald-500/5 ring-4 ring-emerald-500/10'
+                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+              >
+                <div className="flex justify-between items-center w-full mb-1.5">
+                  <span className={`text-xs font-black transition-colors ${repairLevel === 'SAFE_RIDE' ? 'text-emerald-600' : 'text-gray-700'}`}>נסיעה בטוחה 🛑</span>
+                  <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all ${repairLevel === 'SAFE_RIDE' ? 'border-emerald-500 bg-emerald-500 scale-110' : 'border-gray-300 bg-white'}`}>
+                    {repairLevel === 'SAFE_RIDE' && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+                  </span>
+                </div>
+                <span className="block text-[10px] text-gray-400 font-medium leading-tight group-hover:text-gray-500 transition-colors">נסיעה תקינה כולל בדיקה קפדנית של בלמים וצמיגים (מומלץ)</span>
+              </button>
+
+              {/* Option 3: Like New */}
+              <button
+                type="button"
+                onClick={() => setRepairLevel('LIKE_NEW')}
+                className={`py-4 px-4 rounded-2xl border text-right transition-all flex flex-col justify-between group active:scale-[0.98] cursor-pointer ${
+                  repairLevel === 'LIKE_NEW'
+                    ? 'border-purple-500 bg-gradient-to-br from-purple-50/90 to-indigo-50/50 text-purple-950 shadow-md shadow-purple-500/5 ring-4 ring-purple-500/10'
+                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
+                }`}
+              >
+                <div className="flex justify-between items-center w-full mb-1.5">
+                  <span className={`text-xs font-black transition-colors ${repairLevel === 'LIKE_NEW' ? 'text-purple-600' : 'text-gray-700'}`}>כמו חדש! ✨</span>
+                  <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all ${repairLevel === 'LIKE_NEW' ? 'border-purple-500 bg-purple-500 scale-110' : 'border-gray-300 bg-white'}`}>
+                    {repairLevel === 'LIKE_NEW' && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+                  </span>
+                </div>
+                <span className="block text-[10px] text-gray-400 font-medium leading-tight group-hover:text-gray-500 transition-colors">יישור קו מלא כולל הכל: תאורה, פלסטיקה, קוסמטיקה ושיפוץ כללי</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Pre-approved Budget Section */}
+          <div className="space-y-3.5 md:col-span-2 p-5 bg-blue-50/30 border border-blue-100/30 rounded-2xl shadow-sm text-right">
+            <label className="flex items-start cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isPreApprovedBudgetEnabled}
+                onChange={(e) => setIsPreApprovedBudgetEnabled(e.target.checked)}
+                className="w-5 h-5 mt-0.5 text-blue-600 border-gray-300 rounded cursor-pointer"
+              />
+              <div className="mr-3">
+                <span className="block text-sm font-bold text-gray-800">אישור תקציב לתיקון מראש (מהיר יותר!) ⚡</span>
+                <span className="block text-[11px] text-gray-500 font-medium">מאפשר לנו להתחיל לעבוד מיד ללא צורך בשיחת אישור טלפונית</span>
+              </div>
+            </label>
+
+            <AnimatePresence>
+              {isPreApprovedBudgetEnabled && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="space-y-3 pt-3 border-t border-blue-100/30 overflow-hidden"
+                >
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-700 text-xs font-bold">
+                      סכום אישור מקסימלי לתיקון (₪) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={preApprovedAmount}
+                      onChange={(e) => setPreApprovedAmount(e.target.value)}
+                      min="500"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-bold text-right"
+                      required
+                    />
+                    <p className="text-[10px] text-gray-400">מינימום 500 ₪. לא נחרוג מסכום זה ללא אישורכם מראש.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-700 text-xs font-bold">
+                      הנחיות או דגשים לגבי התקציב <span className="text-gray-400 font-normal text-[10px]">(אופציונלי)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={preApprovedNotes}
+                      onChange={(e) => setPreApprovedNotes(e.target.value)}
+                      placeholder="לדוגמה: אל תחליפו סוללה בלי לדבר איתי קודם..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* General Comments Section */}
+          <div className="space-y-2 md:col-span-2">
+            <label className="block text-gray-700 text-sm font-bold flex items-center gap-1.5">
+              <span>📝</span>
+              הערות נוספות לצוות המעבדה <span className="text-gray-400 font-normal text-xs">(אופציונלי)</span>
+            </label>
+            <textarea
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              placeholder="הערות או דגשים נוספים לצוות המעבדה..."
+              rows={2}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium text-right resize-none"
+            />
+          </div>
         </div>
 
         {/* Info Grid */}
@@ -499,6 +687,15 @@ export default function RequestForm({ customer, tenantId, businessName, whatsapp
                 <span className="text-gray-400 text-[10px] mt-0.5">עד 3 תמונות</span>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Personal Items Disclaimer */}
+        <div className="p-4 bg-indigo-50/40 border border-indigo-100/50 rounded-2xl flex items-start gap-3 text-indigo-900 text-xs shadow-sm text-right" dir="rtl">
+          <span className="text-xl flex-shrink-0 select-none">🎒</span>
+          <div className="leading-relaxed">
+            <strong className="block text-indigo-950 font-bold mb-0.5">קחו איתכם ציוד אישי!</strong>
+            מטענים, תיקים, קסדות או כל חפץ אישי אחר שנשארים על הכלי הם באחריותכם בלבד. מומלץ לקחת אותם כדי לשמור עליהם מכל משמר! ❤️
           </div>
         </div>
 

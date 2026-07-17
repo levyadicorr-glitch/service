@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceRequestsByCustomerId, getCustomerById } from '@/lib/db';
+import { getServiceRequestsByCustomerId, getCustomerById, tenantExists } from '@/lib/db';
 
 export async function GET(
   req: NextRequest,
@@ -7,6 +7,12 @@ export async function GET(
 ) {
   try {
     const { tenantId, customerId } = await params;
+
+    // Public endpoint (customer portal) — access is gated by knowing the
+    // customer's unguessable UUID; validate the tenant before touching its DB.
+    if (!(await tenantExists(tenantId))) {
+      return NextResponse.json({ error: 'סביבה לא נמצאה' }, { status: 404 });
+    }
 
     const customer = await getCustomerById(tenantId, customerId);
     if (!customer) {
@@ -17,7 +23,6 @@ export async function GET(
     return NextResponse.json({ requests });
   } catch (err: unknown) {
     console.error('Error fetching customer requests:', err);
-    const errorMessage = err instanceof Error ? err.message : 'שגיאת שרת פנימית';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
   }
 }

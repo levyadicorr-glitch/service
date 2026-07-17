@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRequest, getCustomerById } from '@/lib/db';
+import { requireTenantAdmin } from '@/lib/auth';
 
 export async function POST(req: NextRequest, props: { params: Promise<{ tenantId: string }> }) {
   try {
     const params = await props.params;
     const { tenantId } = params;
+    const denied = requireTenantAdmin(req, tenantId);
+    if (denied) return denied;
+
     const body = await req.json();
     const { customerId, toolOwnerName, toolOwnerPhone } = body;
 
@@ -37,7 +41,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     return NextResponse.json({ success: true, request: responseData });
   } catch (err: unknown) {
     console.error('Error creating direct request:', err);
-    const errorMessage = err instanceof Error ? err.message : 'שגיאת שרת פנימית';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
   }
 }

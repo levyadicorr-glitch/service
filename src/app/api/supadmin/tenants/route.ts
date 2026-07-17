@@ -1,35 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTenants, createTenant } from '@/lib/db';
-
-const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD || '12341234';
-
-function checkAuth(req: NextRequest) {
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
-  const token = authHeader.split(' ')[1];
-  return token === SUPER_ADMIN_PASSWORD;
-}
+import { getTenants, createTenant, deleteTenant } from '@/lib/db';
+import { hashPassword, requireSupAdmin } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   try {
-    if (!checkAuth(req)) {
-      return NextResponse.json({ error: 'לא מורשה' }, { status: 401 });
-    }
+    const denied = requireSupAdmin(req);
+    if (denied) return denied;
 
     const tenants = await getTenants();
     return NextResponse.json({ tenants });
   } catch (err: unknown) {
     console.error('Error fetching tenants:', err);
-    const errorMessage = err instanceof Error ? err.message : 'שגיאת שרת פנימית';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    if (!checkAuth(req)) {
-      return NextResponse.json({ error: 'לא מורשה' }, { status: 401 });
-    }
+    const denied = requireSupAdmin(req);
+    if (denied) return denied;
 
     const body = await req.json();
     const { tenantId, businessName, adminPassword, whatsappTemplate } = body;
@@ -47,17 +36,45 @@ export async function POST(req: NextRequest) {
       id: tenantId.toLowerCase(),
       name: businessName,
       businessName: businessName,
-      adminPassword,
+      adminPassword: hashPassword(adminPassword),
       whatsappTemplate: whatsappTemplate || `היי! פתחנו עבורך קריאת שירות עבור הכלי שלך 🛴\nכדי שנוכל להתחיל בטיפול, לחץ על הקישור הבא ומלא את הפרטים:\n{link}\n\nתודה מצוות {businessName}!`,
     });
 
-    return NextResponse.json({ success: true, tenant: newTenant });
+    // The plaintext password is returned once for the creator to hand off;
+    // only a hash is stored and it is never listed again.
+    const { adminPassword: _stored, ...tenantWithoutPassword } = newTenant;
+    void _stored;
+    return NextResponse.json({ success: true, tenant: tenantWithoutPassword });
   } catch (err: unknown) {
     console.error('Error creating tenant:', err);
     if (err instanceof Error && err.message.includes('already exists')) {
       return NextResponse.json({ error: 'מזהה סביבה זה כבר קיים במערכת. אנא בחר מזהה אחר.' }, { status: 409 });
     }
-    const errorMessage = err instanceof Error ? err.message : 'שגיאת שרת פנימית';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const denied = requireSupAdmin(req);
+    if (denied) return denied;
+
+    const { searchParams } = new URL(req.url);
+    const tenantId = searchParams.get('tenantId');
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'מזהה סביבה חסר' }, { status: 400 });
+    }
+
+    const deleted = await deleteTenant(tenantId);
+
+    if (!deleted) {
+      return NextResponse.json({ error: 'הסביבה לא נמצאה' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    console.error('Error deleting tenant:', err);
+    return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
   }
 }

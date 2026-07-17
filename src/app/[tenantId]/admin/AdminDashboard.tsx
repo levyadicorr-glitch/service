@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Customer, ServiceRequest } from '@/lib/db';
+import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
 import { 
   Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock, 
   Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone, 
@@ -35,11 +36,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [isDeleting, setIsDeleting] = useState(false);
   const [copiedCustomerId, setCopiedCustomerId] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
-  
-  // Auth State
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
 
   // Create Request Flow State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -90,38 +86,20 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   };
 
   useEffect(() => {
-    // eslint-disable-next-line
     setBaseUrl(window.location.origin);
-    const auth = localStorage.getItem('admin_auth');
-    if (auth === 'true') {
-      setIsAuthenticated(true);
-    }
+    // Legacy client-side auth flag, no longer used (auth is a server session cookie)
+    localStorage.removeItem('admin_auth');
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-
-    // Refresh immediately on auth
-    refreshRequests(false);
-
     // Set polling interval for 15 seconds
     const interval = setInterval(() => {
       refreshRequests(false);
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [isAuthenticated]);
-
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password === '123123') {
-      setIsAuthenticated(true);
-      localStorage.setItem('admin_auth', 'true');
-      setLoginError('');
-    } else {
-      setLoginError('סיסמה שגויה');
-    }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Status mapping
   const statuses = [
@@ -316,38 +294,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     setTimeout(() => setCopiedCustomerId(null), 2000);
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#fbfbfd] flex items-center justify-center p-4" dir="rtl">
-        <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 max-w-sm w-full text-center">
-          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black text-3xl mx-auto mb-6 shadow-lg shadow-blue-500/30">{businessName.charAt(0)}</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">כניסת מנהל</h1>
-          <p className="text-gray-500 text-sm mb-8">הזן סיסמה כדי לגשת לפאנל הניהול</p>
-          
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <input
-                type="password"
-                placeholder="סיסמה..."
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest"
-                autoFocus
-              />
-              {loginError && <p className="text-red-500 text-xs mt-2 font-bold">{loginError}</p>}
-            </div>
-            <button
-              type="submit"
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
-            >
-              התחבר
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20" dir="rtl">
       {/* Top Navbar */}
@@ -522,10 +468,26 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                         return (
                           <tr key={req.id} className="hover:bg-gray-50/30 transition-colors whitespace-nowrap">
                             <td className="p-5 text-gray-400 font-mono text-sm font-semibold">
-                              #{tenantId.substring(0, 2).toUpperCase()}-{req.requestNumber}
+                              {formatRequestNumber(tenantId, req.requestNumber)}
                             </td>
-                            <td className="p-5 font-bold text-gray-800">
-                              {req.customer?.firstName} {req.customer?.lastName}
+                            <td className="p-5 font-bold text-gray-800 text-right">
+                              <div className="flex items-center gap-1.5 justify-start">
+                                <span>{req.customer?.firstName} {req.customer?.lastName}</span>
+                                {req.repairLevel === 'RIDE_ONLY' && (
+                                  <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded text-[9px] font-bold">נסיעה 🛴</span>
+                                )}
+                                {req.repairLevel === 'SAFE_RIDE' && (
+                                  <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded text-[9px] font-bold">בטוח 🛑</span>
+                                )}
+                                {req.repairLevel === 'LIKE_NEW' && (
+                                  <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded text-[9px] font-bold">כמו חדש ✨</span>
+                                )}
+                              </div>
+                              {req.issueDescription && (
+                                <div className="text-[10px] text-blue-600 font-normal truncate max-w-[150px] mt-0.5 inline-block" title={req.issueDescription}>
+                                  תקלה: {req.issueDescription}
+                                </div>
+                              )}
                             </td>
                             <td className="p-5 text-gray-600">{req.storeName}</td>
                             <td className="p-5 text-gray-500 font-mono text-sm">{req.customer?.phone || '-'}</td>
@@ -575,7 +537,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                               {req.customer?.phone && (
                                 <a
                                   href={`https://wa.me/${req.customer.phone.startsWith('0') ? '972' + req.customer.phone.slice(1) : req.customer.phone}?text=${encodeURIComponent(
-                                    whatsappTemplate.replace('{link}', `${baseUrl}/${tenantId}/request/${req.customer.id}`).replace('{businessName}', businessName)
+                                    buildWhatsAppMessage(whatsappTemplate, `${baseUrl}/${tenantId}/request/${req.customer.id}`, businessName)
                                   )}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
@@ -789,7 +751,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
             {/* Modal Header */}
             <div className="p-6 border-b border-gray-200/50 flex items-center justify-between">
               <div>
-                <span className="text-gray-400 font-mono text-sm block">קריאת שירות #{tenantId.substring(0, 2).toUpperCase()}-{selectedRequest.requestNumber}</span>
+                <span className="text-gray-400 font-mono text-sm block">קריאת שירות {formatRequestNumber(tenantId, selectedRequest.requestNumber)}</span>
                 <h2 className="text-2xl font-black text-gray-900 mt-1">
                   {selectedRequest.customer?.firstName} {selectedRequest.customer?.lastName}
                 </h2>
@@ -846,6 +808,59 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   ))}
                 </div>
               </div>
+
+              {/* Issue Description */}
+              {selectedRequest.issueDescription && (
+                <div className="p-4 bg-blue-50/30 border border-blue-100/30 rounded-2xl text-sm shadow-sm text-right space-y-1">
+                  <span className="block text-gray-400 text-xs font-bold">תיאור התקלה:</span>
+                  <p className="text-gray-800 font-medium whitespace-pre-wrap">{selectedRequest.issueDescription}</p>
+                </div>
+              )}
+
+              {/* Repair Level and Pre-Approved Budget Displays */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-right">
+                {/* Desired Repair Level */}
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm shadow-sm space-y-1.5">
+                  <span className="block text-gray-400 text-xs font-bold">רמת תיקון מבוקשת:</span>
+                  <div className="pt-0.5">
+                    {selectedRequest.repairLevel === 'RIDE_ONLY' && (
+                      <span className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold border border-blue-100">מצב נסיעה בלבד 🛴</span>
+                    )}
+                    {selectedRequest.repairLevel === 'SAFE_RIDE' && (
+                      <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold border border-emerald-100">נסיעה בטוחה 🛑</span>
+                    )}
+                    {selectedRequest.repairLevel === 'LIKE_NEW' && (
+                      <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold border border-indigo-100">כמו חדש! ✨</span>
+                    )}
+                    {!selectedRequest.repairLevel && (
+                      <span className="px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg text-xs font-bold border border-gray-100">נסיעה בטוחה 🛑</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pre-Approved Budget */}
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm shadow-sm space-y-1.5">
+                  <span className="block text-gray-400 text-xs font-bold">תקציב תיקון מאושר מראש:</span>
+                  {selectedRequest.preApprovedAmount ? (
+                    <div>
+                      <strong className="text-gray-800 text-sm">₪{selectedRequest.preApprovedAmount}</strong>
+                      {selectedRequest.preApprovedNotes && (
+                        <p className="text-[10px] text-gray-450 mt-1 leading-tight">דגש: {selectedRequest.preApprovedNotes}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-xs font-medium">לא הוגדר (דרוש אישור טלפוני)</span>
+                  )}
+                </div>
+              </div>
+
+              {/* General Comments */}
+              {selectedRequest.comments && (
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm shadow-sm text-right space-y-1">
+                  <span className="block text-gray-400 text-xs font-bold">הערות לקוח נוספות:</span>
+                  <p className="text-gray-700 font-medium whitespace-pre-wrap">{selectedRequest.comments}</p>
+                </div>
+              )}
 
               {/* Action Buttons (Delete & Info) */}
               <div className="flex flex-col sm:flex-row gap-3">
@@ -1075,7 +1090,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   {selectedCustomerForCreate.phone ? (
                     <a
                       href={`https://wa.me/${selectedCustomerForCreate.phone.startsWith('0') ? '972' + selectedCustomerForCreate.phone.slice(1) : selectedCustomerForCreate.phone}?text=${encodeURIComponent(
-                        `שלום ${selectedCustomerForCreate.firstName} ${selectedCustomerForCreate.lastName},\nלהלן קישור לפתיחת קריאת שירות מ-${businessName} עבור הכלי שלך:\n${baseUrl}/request/${selectedCustomerForCreate.id}`
+                        `שלום ${selectedCustomerForCreate.firstName} ${selectedCustomerForCreate.lastName},\nלהלן קישור לפתיחת קריאת שירות מ-${businessName} עבור הכלי שלך:\n${baseUrl}/${tenantId}/request/${selectedCustomerForCreate.id}`
                       )}`}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -1166,7 +1181,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
-                    `${baseUrl}/request/${selectedCustomerForQr.id}`
+                    `${baseUrl}/${tenantId}/request/${selectedCustomerForQr.id}`
                   )}`}
                   alt={`${businessName} Service QR Code`}
                   className="w-56 h-56 print:w-72 print:h-72"

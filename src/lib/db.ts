@@ -40,6 +40,11 @@ export interface ServiceRequest {
   status: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' | 'COMPLETED';
   createdAt: string;
   updatedAt: string;
+  issueDescription?: string;
+  comments?: string;
+  repairLevel?: 'RIDE_ONLY' | 'SAFE_RIDE' | 'LIKE_NEW';
+  preApprovedAmount?: number;
+  preApprovedNotes?: string;
 }
 
 // ---------------- MongoDB Collections ----------------
@@ -59,11 +64,24 @@ export async function getDb(tenantId: string) {
 
 // ---------------- Tenant Management ----------------
 
+const TENANT_ID_PATTERN = /^[a-z0-9]+$/;
+
+// Guards API routes: only slugs of existing tenants may be used as database
+// names, otherwise arbitrary URLs would open/create arbitrary databases.
+export async function tenantExists(tenantId: string): Promise<boolean> {
+  if (!tenantId || !TENANT_ID_PATTERN.test(tenantId)) return false;
+  const db = await getMasterDb();
+  const tenant = await db.collection('tenants').findOne({ id: tenantId }, { projection: { _id: 1 } });
+  return !!tenant;
+}
+
+// adminPassword is intentionally stripped — this list is returned to the browser.
 export async function getTenants(): Promise<Tenant[]> {
   const db = await getMasterDb();
   const tenants = await db.collection('tenants').find({}).toArray();
   return tenants.map(t => {
-    const { _id, ...rest } = t;
+    const { _id, adminPassword, ...rest } = t;
+    void adminPassword;
     return rest as Tenant;
   });
 }
@@ -91,6 +109,11 @@ export async function createTenant(tenant: Omit<Tenant, 'createdAt'>): Promise<T
   };
   await db.collection('tenants').insertOne(newTenant as unknown as import('mongodb').Document);
   return newTenant;
+}
+
+export async function updateTenantAdminPassword(id: string, adminPassword: string): Promise<void> {
+  const db = await getMasterDb();
+  await db.collection('tenants').updateOne({ id }, { $set: { adminPassword } });
 }
 
 export async function deleteTenant(id: string): Promise<boolean> {
@@ -224,6 +247,15 @@ export async function getServiceRequestsByCustomerId(tenantId: string, customerI
       customer: customer || undefined,
     };
   });
+}
+
+export async function getServiceRequestById(tenantId: string, id: string): Promise<ServiceRequest | undefined> {
+  const db = await getDb(tenantId);
+  const request = await db.collection('serviceRequests').findOne({ id });
+  if (!request) return undefined;
+  const { _id, ...rest } = request;
+  void _id;
+  return rest as unknown as ServiceRequest;
 }
 
 export async function deleteServiceRequest(tenantId: string, id: string): Promise<boolean> {
