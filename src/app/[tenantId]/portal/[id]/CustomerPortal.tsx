@@ -386,7 +386,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
 
   return (
     <div 
-      className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20 print:bg-white print:pb-0" 
+      className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20 print:bg-white print:pb-0 print:min-h-0 print:h-auto" 
       dir="rtl"
       style={{ '--theme-color': primaryColor || '#2563eb', '--theme-color-light': `${primaryColor || '#2563eb'}1A` } as React.CSSProperties}
     >
@@ -1683,14 +1683,15 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
             margin: 0 !important;
           }
           html, body {
-            height: 100% !important;
+            height: auto !important;
+            min-height: 100vh !important;
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .print\:hidden {
+          .print\\:hidden {
             display: none !important;
           }
         }
