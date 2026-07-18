@@ -80,14 +80,22 @@ export async function getDb(tenantId: string) {
   return client.db(tenantId);
 }
 
+// Index creation only needs to happen once per tenant per warm server process —
+// running it on every request added 6 blocking round-trips to MongoDB per request.
+const indexedTenants = new Set<string>();
+
 export async function ensureIndexes(tenantId: string) {
+  if (indexedTenants.has(tenantId)) return;
   const db = await getDb(tenantId);
-  await db.collection('customers').createIndex({ id: 1 }, { unique: true });
-  await db.collection('serviceRequests').createIndex({ id: 1 }, { unique: true });
-  await db.collection('serviceRequests').createIndex({ customerId: 1 });
-  await db.collection('serviceRequests').createIndex({ requestNumber: -1 });
-  await db.collection('serviceRequests').createIndex({ driverId: 1 });
-  await db.collection('drivers').createIndex({ id: 1 }, { unique: true });
+  await Promise.all([
+    db.collection('customers').createIndex({ id: 1 }, { unique: true }),
+    db.collection('serviceRequests').createIndex({ id: 1 }, { unique: true }),
+    db.collection('serviceRequests').createIndex({ customerId: 1 }),
+    db.collection('serviceRequests').createIndex({ requestNumber: -1 }),
+    db.collection('serviceRequests').createIndex({ driverId: 1 }),
+    db.collection('drivers').createIndex({ id: 1 }, { unique: true }),
+  ]);
+  indexedTenants.add(tenantId);
 }
 
 // ---------------- Tenant Management ----------------
@@ -330,11 +338,14 @@ export async function getServiceRequests(tenantId: string, options?: {
     .skip(skip)
     .limit(limit);
 
-  const requests = await cursor.toArray();
-  const total = await db.collection('serviceRequests').countDocuments({});
-  
-  const customers = await getCustomers(tenantId);
-  const drivers = await getDrivers(tenantId);
+  // These four queries are independent — running them in parallel instead of
+  // sequentially avoids paying round-trip latency to MongoDB Atlas four times over.
+  const [requests, total, customers, drivers] = await Promise.all([
+    cursor.toArray(),
+    db.collection('serviceRequests').countDocuments({}),
+    getCustomers(tenantId),
+    getDrivers(tenantId),
+  ]);
 
   const mappedRequests = requests.map(req => {
     const { _id, ...rest } = req;
