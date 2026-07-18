@@ -38,9 +38,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       return NextResponse.json({ error: 'סיסמה שגויה' }, { status: 401 });
     }
 
-    // Lazy migration: upgrade legacy plaintext passwords to a hash on first successful login.
-    if (!isHashedPassword(tenant.adminPassword)) {
-      await updateTenantAdminPassword(tenantId, hashPassword(password));
+    // Lazy migration: upgrade legacy plaintext passwords to a hash and save plain copy on first successful login.
+    if (!tenant.adminPasswordPlain || !isHashedPassword(tenant.adminPassword)) {
+      await updateTenantAdminPassword(tenantId, hashPassword(password), password);
     }
 
     const res = NextResponse.json({ success: true });

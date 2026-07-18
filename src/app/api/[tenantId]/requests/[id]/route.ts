@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteServiceRequest, getServiceRequestById, updateServiceRequestStatus } from '@/lib/db';
+import { assignDriverToRequest, deleteServiceRequest, getDriverById, getServiceRequestById, updateServiceRequestStatus } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
 
@@ -12,17 +12,42 @@ export async function PATCH(
 
   try {
     const { tenantId, id } = await params;
-    const denied = requireTenantAdmin(req, tenantId);
-    if (denied) return denied;
-
     const body = await req.json();
-    const { status } = body;
+    const { status, driverId, driverToken } = body;
 
-    if (!status || !['NEW', 'WAITING_FOR_PICKUP', 'PICKED_UP_BY_DRIVER', 'COMPLETED'].includes(status)) {
+    // Allowed with an admin session, or from the driver panel when the caller
+    // proves identity by supplying his own driver UUID — in which case he may
+    // only mark a request assigned to him as picked up (same capability model
+    // as the customer-portal DELETE below).
+    const denied = requireTenantAdmin(req, tenantId);
+    if (denied) {
+      if (!driverToken || status !== 'PICKED_UP_BY_DRIVER' || driverId !== undefined) return denied;
+      const request = await getServiceRequestById(tenantId, id);
+      if (!request || request.driverId !== driverToken) return denied;
+    }
+
+    if (status === undefined && driverId === undefined) {
       return NextResponse.json({ error: 'סטטוס לא תקין' }, { status: 400 });
     }
 
-    const updated = await updateServiceRequestStatus(tenantId, id, status as 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' | 'COMPLETED');
+    if (status !== undefined && !['NEW', 'WAITING_FOR_PICKUP', 'PICKED_UP_BY_DRIVER', 'COMPLETED'].includes(status)) {
+      return NextResponse.json({ error: 'סטטוס לא תקין' }, { status: 400 });
+    }
+
+    if (driverId !== undefined && driverId !== null) {
+      const driver = await getDriverById(tenantId, driverId);
+      if (!driver) {
+        return NextResponse.json({ error: 'נהג לא נמצא' }, { status: 400 });
+      }
+    }
+
+    let updated;
+    if (driverId !== undefined) {
+      updated = await assignDriverToRequest(tenantId, id, driverId);
+    }
+    if (status !== undefined) {
+      updated = await updateServiceRequestStatus(tenantId, id, status as 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' | 'COMPLETED');
+    }
     if (!updated) {
       return NextResponse.json({ error: 'קריאת שירות לא נמצאה' }, { status: 404 });
     }

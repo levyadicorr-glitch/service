@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Tenant } from '@/lib/db';
 import {
   Building2, Users, Search, Plus, ShieldCheck,
-  Settings, Loader2, ArrowRight, Lock, Copy, Trash2, AlertCircle
+  Settings, Loader2, ArrowRight, Lock, Copy, Trash2, AlertCircle,
+  Eye, EyeOff, Edit2, Check, X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -26,6 +27,12 @@ export default function SupAdminDashboard() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Password Visibility & Edit State
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+  const [editingPasswordId, setEditingPasswordId] = useState<string | null>(null);
+  const [editPasswordValue, setEditPasswordValue] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
@@ -144,6 +151,36 @@ export default function SupAdminDashboard() {
     }
   };
 
+  const handleSavePassword = async (tenantId: string) => {
+    if (!editPasswordValue.trim()) {
+      alert('הסיסמה לא יכולה להיות ריקה');
+      return;
+    }
+    setIsSavingPassword(true);
+    try {
+      const res = await fetch('/api/supadmin/tenants', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${password}`
+        },
+        body: JSON.stringify({
+          tenantId,
+          adminPassword: editPasswordValue.trim()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בעדכון הסיסמה');
+      
+      setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, adminPasswordPlain: editPasswordValue.trim() } : t));
+      setEditingPasswordId(null);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בעדכון הסיסמה');
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
   const handleWhatsApp = (tenant: Tenant) => {
     const adminUrl = `${baseUrl}/${tenant.id}/admin`;
     const message = `היי! 👋\nהנה הקישור לממשק הניהול של ${tenant.businessName || tenant.name}:\n${adminUrl}\n\nסיסמת הכניסה תימסר בנפרד.\n\nבהצלחה! 🚀`;
@@ -253,6 +290,7 @@ export default function SupAdminDashboard() {
                 <tr>
                   <th className="p-4 font-bold">מזהה URL (Tenant ID)</th>
                   <th className="p-4 font-bold">שם עסק במערכת</th>
+                  <th className="p-4 font-bold">סיסמת אדמין</th>
                   <th className="p-4 font-bold">תאריך הקמה</th>
                   <th className="p-4 font-bold text-center">פעולות</th>
                 </tr>
@@ -267,6 +305,70 @@ export default function SupAdminDashboard() {
                   <tr key={tenant.id} className="hover:bg-gray-50/30 transition-colors">
                     <td className="p-4 font-mono font-bold text-blue-600">{tenant.id}</td>
                     <td className="p-4 font-bold">{tenant.name || tenant.businessName}</td>
+                    <td className="p-4 font-mono text-sm">
+                      {editingPasswordId === tenant.id ? (
+                        <div className="flex items-center gap-2 justify-end" dir="ltr">
+                          <input
+                            type="text"
+                            value={editPasswordValue}
+                            onChange={(e) => setEditPasswordValue(e.target.value)}
+                            className="px-2 py-1 bg-white border border-gray-300 rounded-lg text-xs font-mono w-32 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-left"
+                            dir="ltr"
+                            disabled={isSavingPassword}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSavePassword(tenant.id)}
+                            disabled={isSavingPassword || !editPasswordValue.trim()}
+                            className="p-1 hover:bg-green-50 text-green-600 rounded-lg border border-green-100 disabled:opacity-50 cursor-pointer flex items-center justify-center"
+                            title="שמור סיסמה"
+                          >
+                            {isSavingPassword ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => setEditingPasswordId(null)}
+                            disabled={isSavingPassword}
+                            className="p-1 hover:bg-red-50 text-red-600 rounded-lg border border-red-100 cursor-pointer flex items-center justify-center"
+                            title="ביטול"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 justify-end" dir="ltr">
+                          {tenant.adminPasswordPlain ? (
+                            <>
+                              <span className="font-semibold text-gray-700 min-w-[70px] text-right">
+                                {visiblePasswords[tenant.id] ? tenant.adminPasswordPlain : '••••••••'}
+                              </span>
+                              <button
+                                onClick={() => setVisiblePasswords(prev => ({ ...prev, [tenant.id]: !prev[tenant.id] }))}
+                                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer flex items-center justify-center"
+                                title={visiblePasswords[tenant.id] ? 'הסתר סיסמה' : 'הצג סיסמה'}
+                              >
+                                {visiblePasswords[tenant.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-gray-400 italic text-xs">לא ידוע</span>
+                          )}
+                          <button
+                            onClick={() => {
+                              setEditingPasswordId(tenant.id);
+                              setEditPasswordValue(tenant.adminPasswordPlain || '');
+                            }}
+                            className="p-1 text-gray-400 hover:text-blue-600 hover:bg-gray-100 rounded-lg cursor-pointer flex items-center justify-center"
+                            title="ערוך סיסמה"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                     <td className="p-4 text-gray-500 text-xs">
                       {new Date(tenant.createdAt).toLocaleDateString('he-IL')}
                     </td>

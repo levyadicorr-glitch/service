@@ -28,7 +28,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     const update: any = {};
     if (businessName) update.businessName = businessName.trim();
     if (whatsappTemplate) update.whatsappTemplate = whatsappTemplate.trim();
-    if (password && password.trim()) update.adminPassword = hashPassword(password.trim());
+    if (password && password.trim()) {
+      const trimmedPassword = password.trim();
+      update.adminPassword = hashPassword(trimmedPassword);
+      update.adminPasswordPlain = trimmedPassword;
+    }
 
     if (removeLogo) {
       update.logoUrl = '';

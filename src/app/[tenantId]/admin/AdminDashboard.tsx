@@ -1,25 +1,27 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Customer, ServiceRequest } from '@/lib/db';
+import { Customer, Driver, ServiceRequest } from '@/lib/db';
 import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
-import { 
-  Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock, 
-  Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone, 
-  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2
+import {
+  Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock,
+  Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone,
+  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2, Truck
 } from 'lucide-react';
 
 interface AdminDashboardProps {
   initialRequests: ServiceRequest[];
   customers: Customer[];
+  drivers: Driver[];
   tenantId: string;
   businessName: string;
   whatsappTemplate: string;
   logoUrl?: string;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, tenantId, businessName, whatsappTemplate, logoUrl = '' }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, tenantId, businessName, whatsappTemplate, logoUrl = '' }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
+  const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [activeTab, setActiveTab] = useState<'requests' | 'customers'>('requests');
   
@@ -149,6 +151,16 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     serialNumber: '',
   });
 
+  // Drivers Management State (settings modal section)
+  const [newDriverName, setNewDriverName] = useState('');
+  const [newDriverPhone, setNewDriverPhone] = useState('');
+  const [isSavingDriver, setIsSavingDriver] = useState(false);
+  const [copiedDriverId, setCopiedDriverId] = useState<string | null>(null);
+  const [updatingDriverRequestId, setUpdatingDriverRequestId] = useState<string | null>(null);
+  const [adminSelectedDriverId, setAdminSelectedDriverId] = useState('');
+
+  const multiDriver = driversList.length > 1;
+
   // QR Code Flyer State
   const [selectedCustomerForQr, setSelectedCustomerForQr] = useState<Customer | null>(null);
 
@@ -165,7 +177,9 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
         setRequests(data.requests);
         if (selectedRequest) {
           const updatedReq = data.requests.find((r: ServiceRequest) => r.id === selectedRequest.id);
-          if (updatedReq) setSelectedRequest(updatedReq);
+          if (updatedReq) {
+            setSelectedRequest(prev => prev ? { ...prev, ...updatedReq } : updatedReq);
+          }
         }
       }
     } catch (err) {
@@ -281,6 +295,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   // Handle direct request creation by admin
   const handleAdminSaveRequest = async () => {
     if (!selectedCustomerForCreate) return;
+    if (multiDriver && !adminSelectedDriverId) {
+      alert('נא לבחור נהג לקריאה');
+      return;
+    }
     setIsAdminSavingRequest(true);
     try {
       const res = await fetch(`/api/${tenantId}/requests/direct`, {
@@ -289,7 +307,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
         body: JSON.stringify({
           customerId: selectedCustomerForCreate.id,
           toolOwnerName: adminToolOwnerName.trim() || undefined,
-          toolOwnerPhone: adminToolOwnerPhone.trim() || undefined
+          toolOwnerPhone: adminToolOwnerPhone.trim() || undefined,
+          driverId: adminSelectedDriverId || undefined
         }),
       });
 
@@ -299,16 +318,19 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       }
 
       const data = await res.json();
-      
+
+      const assignedDriver = data.request.driverId ? driversList.find(d => d.id === data.request.driverId) : undefined;
+
       // Update local state by prepending the new request
-      setRequests(prev => [data.request, ...prev]);
-      
+      setRequests(prev => [{ ...data.request, driver: assignedDriver }, ...prev]);
+
       // Close & reset
       setIsCreateModalOpen(false);
       setSelectedCustomerForCreate(null);
       setCreateSearch('');
       setAdminToolOwnerName('');
       setAdminToolOwnerPhone('');
+      setAdminSelectedDriverId('');
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'שגיאה בשמירת הקריאה';
       alert(errorMessage);
@@ -379,9 +401,84 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const copyCustomerUrl = (customerId: string) => {
     const url = `${baseUrl}/${tenantId}/portal/${customerId}`;
     navigator.clipboard.writeText(url);
-    
+
     setCopiedCustomerId(customerId);
     setTimeout(() => setCopiedCustomerId(null), 2000);
+  };
+
+  // ---- Drivers management ----
+
+  const copyDriverUrl = (driverId: string) => {
+    const url = `${baseUrl}/${tenantId}/driver/${driverId}`;
+    navigator.clipboard.writeText(url);
+
+    setCopiedDriverId(driverId);
+    setTimeout(() => setCopiedDriverId(null), 2000);
+  };
+
+  const handleAddDriver = async () => {
+    if (!newDriverName.trim()) {
+      alert('שם הנהג הוא שדה חובה');
+      return;
+    }
+    setIsSavingDriver(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/drivers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newDriverName.trim(), phone: newDriverPhone.trim() || undefined }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to create driver');
+      }
+
+      const data = await res.json();
+      setDriversList(prev => [...prev, data.driver]);
+      setNewDriverName('');
+      setNewDriverPhone('');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בהוספת הנהג');
+    } finally {
+      setIsSavingDriver(false);
+    }
+  };
+
+  const handleDeleteDriver = async (driverId: string) => {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק נהג זה? קריאות המשויכות אליו יהפכו ללא משויכות והקישור האישי שלו יפסיק לעבוד.')) return;
+
+    try {
+      const res = await fetch(`/api/${tenantId}/drivers/${driverId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('שגיאה במחיקת הנהג');
+
+      setDriversList(prev => prev.filter(d => d.id !== driverId));
+      // Requests assigned to him become unassigned locally, matching the server
+      setRequests(prev => prev.map(r => r.driverId === driverId ? { ...r, driverId: undefined, driver: undefined } : r));
+    } catch {
+      alert('שגיאה במחיקת הנהג');
+    }
+  };
+
+  // Assign / unassign a driver on a request (admin only)
+  const handleDriverChange = async (reqId: string, driverId: string | null) => {
+    setUpdatingDriverRequestId(reqId);
+    try {
+      const res = await fetch(`/api/${tenantId}/requests/${reqId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driverId }),
+      });
+
+      if (!res.ok) throw new Error('Failed to assign driver');
+
+      const driver = driverId ? driversList.find(d => d.id === driverId) : undefined;
+      setRequests(prev => prev.map(r => r.id === reqId ? { ...r, driverId: driverId || undefined, driver } : r));
+    } catch {
+      alert('שגיאה בשיוך הנהג');
+    } finally {
+      setUpdatingDriverRequestId(null);
+    }
   };
 
   return (
@@ -516,6 +613,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                     setIsCreateModalOpen(true);
                     setCreateSearch('');
                     setSelectedCustomerForCreate(null);
+                    setAdminSelectedDriverId('');
                   }}
                   className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
                 >
@@ -564,6 +662,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                       <th className="p-5">אחריות</th>
                       <th className="p-5">תאריך פתיחה</th>
                       <th className="p-5">סטטוס</th>
+                      <th className="p-5">נהג</th>
                       <th className="p-5 text-center">פעולות</th>
                     </tr>
                   </thead>
@@ -639,6 +738,45 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                                 ))}
                               </select>
                             </td>
+                            {/* Driver Assignment Select */}
+                            <td className="p-5">
+                              {driversList.length === 0 ? (
+                                <span className="text-gray-300 text-xs font-bold">-</span>
+                              ) : (
+                                <select
+                                  value={req.driverId || ''}
+                                  onChange={(e) => handleDriverChange(req.id, e.target.value || null)}
+                                  disabled={updatingDriverRequestId === req.id}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
+                                    !req.driverId && multiDriver
+                                      ? 'bg-red-50 text-red-600 border-red-200 font-black animate-pulse'
+                                      : req.driverId
+                                        ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100'
+                                        : 'bg-gray-50 text-gray-500 border-gray-200'
+                                  }`}
+                                  style={{
+                                    WebkitAppearance: 'none',
+                                    MozAppearance: 'none',
+                                    appearance: 'none',
+                                    paddingLeft: '1.5rem',
+                                    paddingRight: '0.75rem',
+                                    backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                                    backgroundPosition: 'left 0.4rem center',
+                                    backgroundSize: '1rem',
+                                    backgroundRepeat: 'no-repeat'
+                                  }}
+                                >
+                                  <option value="" className="bg-white text-gray-800 font-semibold">
+                                    {multiDriver ? 'שייך נהג!' : 'ללא נהג'}
+                                  </option>
+                                  {driversList.map(d => (
+                                    <option key={d.id} value={d.id} className="bg-white text-gray-800 font-semibold">
+                                      {d.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </td>
                             <td className="p-5 flex items-center justify-end gap-1.5">
                               {req.customer?.phone && (
                                 <a
@@ -695,7 +833,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                       })
                     ) : (
                       <tr>
-                        <td colSpan={8} className="p-10 text-center text-gray-400 text-sm">
+                        <td colSpan={9} className="p-10 text-center text-gray-400 text-sm">
                           לא נמצאו קריאות שירות מתאימות.
                         </td>
                       </tr>
@@ -1053,6 +1191,79 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   )}
                 </div>
               </div>
+
+              {/* Handover Form Details */}
+              {selectedRequest.pickupSignedAt && (
+                <div className="border-t border-gray-100 pt-6 mt-6 space-y-4 text-right" dir="rtl">
+                  <h3 className="text-sm font-bold text-gray-800">פרטי מסירה למוביל (טופס מסירה דיגיטלי):</h3>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                    <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100 shadow-sm">
+                      <span className="text-gray-400 block font-bold">נציג החנות (המוסר):</span>
+                      <strong className="text-gray-800 font-bold text-sm mt-0.5 block">{selectedRequest.pickupSignerName}</strong>
+                    </div>
+                    <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100 shadow-sm">
+                      <span className="text-gray-400 block font-bold">זמן מסירה:</span>
+                      <strong className="text-gray-800 font-bold text-sm mt-0.5 block">
+                        {new Date(selectedRequest.pickupSignedAt).toLocaleString('he-IL')}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {selectedRequest.pickupConditionNotes && (
+                    <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-100 shadow-sm text-sm">
+                      <span className="text-gray-400 block font-bold text-xs">הערות מצב פיזי של הכלי בעת המסירה:</span>
+                      <p className="text-gray-800 font-bold mt-1.5 whitespace-pre-wrap">{selectedRequest.pickupConditionNotes}</p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {selectedRequest.pickupSignatureImage && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold text-gray-800 block">חתימת המוסר:</span>
+                        <div className="relative aspect-[4/3] rounded-2xl overflow-hidden border bg-gray-50 flex items-center justify-center">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img 
+                            src={selectedRequest.pickupSignatureImage} 
+                            alt="חתימת מסירה" 
+                            className="max-w-full max-h-full object-contain"
+                          />
+                        </div>
+                        <a 
+                          href={selectedRequest.pickupSignatureImage} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="inline-block text-xs text-blue-600 font-bold hover:underline"
+                        >
+                          פתח תמונה בחלון חדש ↗
+                        </a>
+                      </div>
+                    )}
+
+                    {selectedRequest.pickupPhotoImage && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold text-gray-800 block">צילום מסירה:</span>
+                        <div className="relative aspect-[4/3] rounded-2xl overflow-hidden border bg-gray-50 flex items-center justify-center">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img 
+                            src={selectedRequest.pickupPhotoImage} 
+                            alt="צילום מסירה" 
+                            className="max-w-full max-h-full object-contain"
+                          />
+                        </div>
+                        <a 
+                          href={selectedRequest.pickupPhotoImage} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="inline-block text-xs text-blue-600 font-bold hover:underline"
+                        >
+                          פתח תמונה בחלון חדש ↗
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Modal Footer */}
@@ -1192,6 +1403,25 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                       dir="rtl"
                     />
                   </div>
+
+                  {/* Driver Select — required when there is more than one driver */}
+                  {multiDriver && (
+                    <div className="space-y-1.5 text-right">
+                      <label className="block text-gray-700 text-xs font-bold">בחר נהג <span className="text-red-500">*</span></label>
+                      <select
+                        value={adminSelectedDriverId}
+                        onChange={(e) => setAdminSelectedDriverId(e.target.value)}
+                        className={`w-full px-4 py-3 rounded-xl border bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-xs transition-all cursor-pointer ${
+                          adminSelectedDriverId ? 'border-gray-200 text-gray-800' : 'border-red-200 text-red-600 font-bold'
+                        }`}
+                      >
+                        <option value="">בחר נהג לקריאה...</option>
+                        {driversList.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {selectedCustomerForCreate.phone ? (
                     <a
@@ -1619,6 +1849,118 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 {isSavingSettings ? 'שומר הגדרות...' : 'שמור שינויים'}
               </button>
             </form>
+
+            {/* Drivers Management Section — outside the multipart settings form */}
+            <div className="p-6 border-t border-gray-100 space-y-4">
+              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                <Truck className="w-4 h-4 text-blue-600" />
+                נהגים
+              </h3>
+              <p className="text-[10px] text-gray-400 leading-relaxed">
+                לכל נהג נוצר קישור אישי וסודי לפאנל הנהג שלו, שבו יופיעו רק הקריאות המשויכות אליו.
+                אם קיים נהג אחד בלבד — כל קריאה חדשה תשויך אליו אוטומטית. אם יש יותר מנהג אחד — יש לשייך נהג לכל קריאה מטבלת הקריאות.
+              </p>
+
+              {/* Existing Drivers List */}
+              {driversList.length > 0 && (
+                <div className="space-y-2">
+                  {driversList.map(d => (
+                    <div key={d.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <strong className="text-sm text-gray-800 font-bold block truncate">{d.name}</strong>
+                        {d.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{d.phone}</span>}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* Copy personal link */}
+                        <button
+                          type="button"
+                          onClick={() => copyDriverUrl(d.id)}
+                          className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer ${
+                            copiedDriverId === d.id
+                              ? 'bg-green-500 border-green-500 text-white'
+                              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                          }`}
+                          title="העתק קישור אישי לפאנל הנהג"
+                        >
+                          <Copy className="w-3 h-3 inline-block ml-1" />
+                          {copiedDriverId === d.id ? 'הועתק!' : 'העתק קישור'}
+                        </button>
+
+                        {/* WhatsApp share */}
+                        {d.phone && (
+                          <a
+                            href={`https://wa.me/${d.phone.startsWith('0') ? '972' + d.phone.slice(1) : d.phone}?text=${encodeURIComponent(
+                              `שלום ${d.name},\nזהו הקישור האישי שלך לפאנל הנהג של ${currentBusinessName}:\n${baseUrl}/${tenantId}/driver/${d.id}`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                            title="שלח קישור אישי בוואטסאפ"
+                          >
+                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
+                            </svg>
+                          </a>
+                        )}
+
+                        {/* Open panel */}
+                        <a
+                          href={`/${tenantId}/driver/${d.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
+                          title="פתח את פאנל הנהג"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </a>
+
+                        {/* Delete driver */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDriver(d.id)}
+                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                          title="מחק נהג"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add Driver Form */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  placeholder="שם הנהג *"
+                  value={newDriverName}
+                  onChange={(e) => setNewDriverName(e.target.value)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
+                />
+                <input
+                  type="tel"
+                  placeholder="טלפון (אופציונלי)"
+                  value={newDriverPhone}
+                  onChange={(e) => setNewDriverPhone(e.target.value)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
+                  dir="ltr"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddDriver}
+                  disabled={isSavingDriver}
+                  className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingDriver ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5" />
+                  )}
+                  הוסף נהג
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

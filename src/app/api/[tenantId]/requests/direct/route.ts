@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceRequest, getCustomerById } from '@/lib/db';
+import { createServiceRequest, getCustomerById, getDriverById } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
 
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     if (denied) return denied;
 
     const body = await req.json();
-    const { customerId, toolOwnerName, toolOwnerPhone } = body;
+    const { customerId, toolOwnerName, toolOwnerPhone, driverId } = body;
 
     if (!customerId) {
       return NextResponse.json({ error: 'נא לבחור חנות/לקוח' }, { status: 400 });
@@ -25,6 +25,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       return NextResponse.json({ error: 'הלקוח לא נמצא במערכת' }, { status: 404 });
     }
 
+    if (driverId) {
+      const driver = await getDriverById(tenantId, driverId);
+      if (!driver) {
+        return NextResponse.json({ error: 'נהג לא נמצא' }, { status: 400 });
+      }
+    }
+
     // Create a new request directly for the driver with WAITING_FOR_PICKUP status
     const newRequest = await createServiceRequest(tenantId, {
       customerId,
@@ -33,7 +40,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       toolOwnerPhone,
       hasWarranty: false,
       agreedToInspectionFee: true,
-      status: 'WAITING_FOR_PICKUP'
+      status: 'WAITING_FOR_PICKUP',
+      driverId: driverId || undefined
     });
 
     // Attach customer info for real-time frontend mapping

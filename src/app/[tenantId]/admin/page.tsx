@@ -1,6 +1,6 @@
 import React from 'react';
 import { cookies } from 'next/headers';
-import { getServiceRequests, getCustomers, getTenantById } from '@/lib/db';
+import { getServiceRequests, getCustomers, getDrivers, getTenantById } from '@/lib/db';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
 import AdminLogin from '../AdminLogin';
 import AdminDashboard from './AdminDashboard';
@@ -25,6 +25,7 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
 
   const requests = await getServiceRequests(tenantId);
   const customers = await getCustomers(tenantId);
+  const drivers = await getDrivers(tenantId);
 
-  return <AdminDashboard initialRequests={requests} customers={customers} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} logoUrl={logoUrl} />;
+  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} logoUrl={logoUrl} />;
 }

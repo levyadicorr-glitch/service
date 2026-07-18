@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTenants, createTenant, deleteTenant } from '@/lib/db';
+import { getTenantsWithPasswords, createTenant, deleteTenant, getTenantById, updateTenantAdminPassword } from '@/lib/db';
 import { hashPassword, requireSupAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
 
@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     const denied = requireSupAdmin(req);
     if (denied) return denied;
 
-    const tenants = await getTenants();
+    const tenants = await getTenantsWithPasswords();
     return NextResponse.json({ tenants });
   } catch (err: unknown) {
     console.error('Error fetching tenants:', err);
@@ -41,19 +41,49 @@ export async function POST(req: NextRequest) {
       name: businessName,
       businessName: businessName,
       adminPassword: hashPassword(adminPassword),
+      adminPasswordPlain: adminPassword,
       whatsappTemplate: whatsappTemplate || `היי! פתחנו עבורך קריאת שירות עבור הכלי שלך 🛴\nכדי שנוכל להתחיל בטיפול, לחץ על הקישור הבא ומלא את הפרטים:\n{link}\n\nתודה מצוות {businessName}!`,
     });
 
-    // The plaintext password is returned once for the creator to hand off;
-    // only a hash is stored and it is never listed again.
-    const { adminPassword: _stored, ...tenantWithoutPassword } = newTenant;
+    // The plaintext password is saved for the super-admin list but stripped from
+    // this specific creation response payload.
+    const { adminPassword: _stored, adminPasswordPlain: _plain, ...tenantWithoutPassword } = newTenant;
     void _stored;
+    void _plain;
     return NextResponse.json({ success: true, tenant: tenantWithoutPassword });
   } catch (err: unknown) {
     console.error('Error creating tenant:', err);
     if (err instanceof Error && err.message.includes('already exists')) {
       return NextResponse.json({ error: 'מזהה סביבה זה כבר קיים במערכת. אנא בחר מזהה אחר.' }, { status: 409 });
     }
+    return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  const csrfError = checkCsrf(req);
+  if (csrfError) return csrfError;
+
+  try {
+    const denied = requireSupAdmin(req);
+    if (denied) return denied;
+
+    const body = await req.json();
+    const { tenantId, adminPassword } = body;
+
+    if (!tenantId || !adminPassword) {
+      return NextResponse.json({ error: 'מזהה סביבה וסיסמה חדשה הם שדות חובה' }, { status: 400 });
+    }
+
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      return NextResponse.json({ error: 'הסביבה לא נמצאה' }, { status: 404 });
+    }
+
+    await updateTenantAdminPassword(tenantId, hashPassword(adminPassword), adminPassword);
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    console.error('Error updating tenant password:', err);
     return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
   }
 }
