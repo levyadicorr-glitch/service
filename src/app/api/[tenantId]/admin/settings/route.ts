@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantById, updateTenantSettings, tenantExists } from '@/lib/db';
 import { requireTenantAdmin, hashPassword } from '@/lib/auth';
-import sharp from 'sharp';
-import Vibrant from 'node-vibrant';
 import { checkCsrf } from '@/lib/csrf';
 
 export async function POST(req: NextRequest, props: { params: Promise<{ tenantId: string }> }) {
@@ -10,6 +8,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
   if (csrfError) return csrfError;
 
   try {
+    const sharp = (await import('sharp')).default;
     const { tenantId } = await props.params;
     if (!(await tenantExists(tenantId))) {
       return NextResponse.json({ error: 'סביבה לא נמצאה' }, { status: 404 });
@@ -51,6 +50,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       
       // Extract dynamic primary color from the logo
       try {
+        const Vibrant = (await import('node-vibrant')).default;
         const palette = await Vibrant.from(webpBuffer).getPalette();
         if (palette.Vibrant) {
           update.primaryColor = palette.Vibrant.hex;

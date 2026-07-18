@@ -7,7 +7,7 @@ import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
 import {
   FileText, Clock, AlertCircle, CheckCircle2, Search, Plus,
   RotateCw, Trash2, Calendar, Phone, Copy, Printer, Eye,
-  Store, User, Barcode, ShieldCheck, ShieldAlert, UploadCloud, Check, Loader2, X, Settings
+  User, Barcode, ShieldCheck, ShieldAlert, UploadCloud, Check, Loader2, X, Settings
 } from 'lucide-react';
 
 interface CustomerPortalProps {
@@ -147,7 +147,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
   // Create Request Modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [storeName, setStoreName] = useState(`${customer.firstName} ${customer.lastName}`);
-  const [toolOwnerName, setToolOwnerName] = useState(`${customer.firstName} ${customer.lastName}`);
+  const [toolOwnerName, setToolOwnerName] = useState('');
   const [toolOwnerPhone, setToolOwnerPhone] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [hasWarranty, setHasWarranty] = useState<string>('no');
@@ -174,7 +174,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
 
   const openCreateModal = () => {
     setStoreName(`${currentCustomer.firstName} ${currentCustomer.lastName}`);
-    setToolOwnerName(`${currentCustomer.firstName} ${currentCustomer.lastName}`);
+    setToolOwnerName('');
     setToolOwnerPhone('');
     setIssueDescription('');
     setHasWarranty('no');
@@ -302,7 +302,12 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
         body: formData,
       });
 
-      const data = await res.json();
+      let data: { error?: string; request?: ServiceRequest };
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error('שגיאת שרת זמנית, אנא נסה שנית בעוד רגע.');
+      }
       if (!res.ok) {
         throw new Error(data.error || 'ארעה שגיאה בשליחת הטופס.');
       }
@@ -312,7 +317,9 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
       }
       
       // Update local state live!
-      setRequests(prev => [data.request, ...prev]);
+      if (data.request) {
+        setRequests(prev => [data.request as ServiceRequest, ...prev]);
+      }
       setSubmitSuccess(true);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'שגיאה בחיבור לשרת, אנא נסה שנית.';
@@ -393,7 +400,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
       <div className="print:hidden">
         {/* Top Navbar */}
         <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50 transition-all duration-300">
-        <div className="max-w-5xl mx-auto px-4 md:px-6 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
+        <div className="w-full px-4 md:px-8 lg:px-12 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all select-none">
               {currentCustomer.logoUrl ? (
@@ -441,7 +448,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 md:px-6 pt-6 md:pt-10">
+      <main className="w-full px-4 md:px-8 lg:px-12 pt-6 md:pt-10">
         <div className="space-y-8">
           {/* Branded Welcome Hero Banner */}
           <div className="relative overflow-hidden bg-white/70 backdrop-blur-xl border border-white/60 p-6 md:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row items-center justify-between gap-6">
@@ -1059,19 +1066,11 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="block text-gray-750 text-xs font-bold flex items-center gap-1.5">
-                          <Store className="w-3.5 h-3.5 text-gray-400" />
-                          שם החנות <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={storeName}
-                          onChange={(e) => setStoreName(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium"
-                          required
-                        />
+                    {/* Card 1: Owner details */}
+                    <div className="p-4 bg-slate-50/60 border border-slate-100 rounded-2xl space-y-3">
+                      <div className="flex items-center gap-1.5 text-slate-500">
+                        <User className="w-3.5 h-3.5" />
+                        <span className="text-[11px] font-black uppercase tracking-wide">פרטי בעל הכלי</span>
                       </div>
 
                       <div className="space-y-1.5">
@@ -1083,12 +1082,13 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
                           type="text"
                           value={toolOwnerName}
                           onChange={(e) => setToolOwnerName(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium"
+                          placeholder="הזן את שמך המלא"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium"
                           required
                         />
                       </div>
 
-                      <div className="space-y-1.5 sm:col-span-2">
+                      <div className="space-y-1.5">
                         <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
                           <Phone className="w-3.5 h-3.5 text-gray-400" />
                           מספר טלפון בעל הכלי <span className="text-gray-450 font-normal text-[10px]">(אופציונלי)</span>
@@ -1098,12 +1098,110 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
                           value={toolOwnerPhone}
                           onChange={(e) => setToolOwnerPhone(e.target.value)}
                           placeholder="מספר טלפון ליצירת קשר"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right"
                           dir="rtl"
                         />
                       </div>
+                    </div>
 
-                      <div className="space-y-1.5 sm:col-span-2">
+                    {/* Card 2: Warranty (moved right after phone number) */}
+                    <div className="p-4 bg-blue-50/30 border border-blue-100/60 rounded-2xl space-y-3">
+                      <div className="flex items-center gap-1.5 text-blue-600">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span className="text-[11px] font-black uppercase tracking-wide">אחריות</span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="block text-gray-700 text-xs font-bold">
+                          האם יש אחריות לכלי? <span className="text-red-500">*</span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setHasWarranty('yes')}
+                            className={`py-3 px-4 rounded-xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer ${
+                              hasWarranty === 'yes'
+                                ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-2 ring-blue-500/10'
+                                : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div>
+                              <span className="block text-sm font-extrabold">כן</span>
+                              <span className="block text-[10px] text-gray-400 mt-0.5">צרף תעודה/חשבונית</span>
+                            </div>
+                            <ShieldCheck className={`w-5 h-5 ${hasWarranty === 'yes' ? 'text-blue-500' : 'text-gray-300'}`} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHasWarranty('no');
+                              setWarrantyReceiptImage(null);
+                              setWarrantyReceiptPreview(null);
+                            }}
+                            className={`py-3 px-4 rounded-xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer ${
+                              hasWarranty === 'no'
+                                ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-2 ring-blue-500/10'
+                                : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div>
+                              <span className="block text-sm font-extrabold">לא</span>
+                              <span className="block text-[10px] text-gray-400 mt-0.5">כלי ללא אחריות</span>
+                            </div>
+                            <ShieldAlert className={`w-5 h-5 ${hasWarranty === 'no' ? 'text-blue-500' : 'text-gray-300'}`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {hasWarranty === 'yes' && (
+                        <div className="space-y-1.5">
+                          <label className="block text-gray-700 text-xs font-bold">צילום חשבונית/תעודת אחריות:</label>
+                          <div
+                            onClick={() => warrantyImageInputRef.current?.click()}
+                            className="border border-dashed border-gray-300 rounded-xl p-4 text-center cursor-pointer hover:bg-blue-50/10 hover:border-blue-400 transition-all flex flex-col items-center justify-center min-h-[100px] bg-white"
+                          >
+                            <input
+                              type="file"
+                              accept="image/*"
+                              ref={warrantyImageInputRef}
+                              onChange={handleWarrantyImageChange}
+                              className="hidden"
+                            />
+                            {warrantyReceiptPreview ? (
+                              <div className="relative w-28 aspect-[4/3] rounded-lg overflow-hidden border bg-white">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={warrantyReceiptPreview} alt="Receipt preview" className="w-full h-full object-contain" />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeWarrantyImage(e);
+                                  }}
+                                  className="absolute top-1 right-1 p-1 bg-red-650 text-white rounded-md hover:scale-105 transition-all shadow"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <UploadCloud className="w-5 h-5 text-blue-600 mb-1" />
+                                <span className="text-blue-600 font-bold text-xs">לחץ כאן להעלאת קובץ</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card 3: Issue description + repair level */}
+                    <div className="p-4 bg-teal-50/30 border border-teal-100/60 rounded-2xl space-y-4">
+                      <div className="flex items-center gap-1.5 text-teal-600">
+                        <FileText className="w-3.5 h-3.5" />
+                        <span className="text-[11px] font-black uppercase tracking-wide">תיאור התקלה ורמת התיקון</span>
+                      </div>
+
+                      <div className="space-y-1.5">
                         <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
                           <FileText className="w-3.5 h-3.5 text-gray-400" />
                           מה התקלה בכלי? <span className="text-red-500">*</span>
@@ -1113,13 +1211,13 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
                           onChange={(e) => setIssueDescription(e.target.value)}
                           placeholder="תאר את הבעיה בכלי (לדוגמה: פנצ'ר בגלגל קדמי, המנוע לא נדלק, בעיה בבלמים...)"
                           rows={3}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right resize-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right resize-none"
                           required
                         />
                       </div>
 
                       {/* Desired Repair Level Selection */}
-                      <div className="space-y-1.5 sm:col-span-2">
+                      <div className="space-y-1.5">
                         <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
                           <span className="text-gray-450 text-[10px]">⚡</span>
                           לאיזו רמה תרצו שנגיע בתיקון? <span className="text-red-500">*</span>
@@ -1183,9 +1281,10 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
                           </button>
                         </div>
                       </div>
+                    </div>
 
-                      {/* Pre-approved Budget Section */}
-                      <div className="space-y-2.5 sm:col-span-2 p-4 bg-blue-50/20 border border-blue-100/30 rounded-2xl shadow-sm text-right">
+                    {/* Card 4: Pre-approved budget */}
+                    <div className="space-y-2.5 p-4 bg-blue-50/20 border border-blue-100/30 rounded-2xl shadow-sm text-right">
                         <label className="flex items-start cursor-pointer select-none">
                           <input
                             type="checkbox"
@@ -1241,7 +1340,7 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
                       </div>
 
                       {/* General Comments Section */}
-                      <div className="space-y-1.5 sm:col-span-2">
+                      <div className="space-y-1.5 p-4 bg-gray-50/40 border border-gray-100 rounded-2xl">
                         <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
                           <span>📝</span>
                           הערות נוספות לצוות המעבדה <span className="text-gray-400 font-normal text-[10px]">(אופציונלי)</span>
@@ -1251,97 +1350,16 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
                           onChange={(e) => setComments(e.target.value)}
                           placeholder="הערות או דגשים נוספים לצוות המעבדה..."
                           rows={2}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right resize-none"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right resize-none"
                         />
                       </div>
-                    </div>
 
-                    {/* Warranty */}
-                    <div className="space-y-2">
-                      <label className="block text-gray-700 text-xs font-bold">
-                        האם יש אחריות לכלי? <span className="text-red-500">*</span>
-                      </label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setHasWarranty('yes')}
-                          className={`py-3 px-4 rounded-xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer ${
-                            hasWarranty === 'yes'
-                              ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-2 ring-blue-500/10'
-                              : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div>
-                            <span className="block text-sm font-extrabold">כן</span>
-                            <span className="block text-[10px] text-gray-400 mt-0.5">צרף תעודה/חשבונית</span>
-                          </div>
-                          <ShieldCheck className={`w-5 h-5 ${hasWarranty === 'yes' ? 'text-blue-500' : 'text-gray-300'}`} />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHasWarranty('no');
-                            setWarrantyReceiptImage(null);
-                            setWarrantyReceiptPreview(null);
-                          }}
-                          className={`py-3 px-4 rounded-xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer ${
-                            hasWarranty === 'no'
-                              ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-2 ring-blue-500/10'
-                              : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div>
-                            <span className="block text-sm font-extrabold">לא</span>
-                            <span className="block text-[10px] text-gray-400 mt-0.5">כלי ללא אחריות</span>
-                          </div>
-                          <ShieldAlert className={`w-5 h-5 ${hasWarranty === 'no' ? 'text-blue-500' : 'text-gray-300'}`} />
-                        </button>
+                    {/* Card 6: Tool Images */}
+                    <div className="space-y-2 p-4 bg-cyan-50/20 border border-cyan-100/40 rounded-2xl">
+                      <div className="flex items-center gap-1.5 text-cyan-600">
+                        <UploadCloud className="w-3.5 h-3.5" />
+                        <span className="text-[11px] font-black uppercase tracking-wide">צילומי הכלי</span>
                       </div>
-                    </div>
-
-                    {/* Warranty File */}
-                    {hasWarranty === 'yes' && (
-                      <div className="space-y-1.5">
-                        <label className="block text-gray-700 text-xs font-bold">צילום חשבונית/תעודת אחריות:</label>
-                        <div 
-                          onClick={() => warrantyImageInputRef.current?.click()}
-                          className="border border-dashed border-gray-300 rounded-xl p-4 text-center cursor-pointer hover:bg-blue-50/10 hover:border-blue-400 transition-all flex flex-col items-center justify-center min-h-[100px]"
-                        >
-                          <input
-                            type="file"
-                            accept="image/*"
-                            ref={warrantyImageInputRef}
-                            onChange={handleWarrantyImageChange}
-                            className="hidden"
-                          />
-                          {warrantyReceiptPreview ? (
-                            <div className="relative w-28 aspect-[4/3] rounded-lg overflow-hidden border bg-white">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={warrantyReceiptPreview} alt="Receipt preview" className="w-full h-full object-contain" />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeWarrantyImage(e);
-                                }}
-                                className="absolute top-1 right-1 p-1 bg-red-650 text-white rounded-md hover:scale-105 transition-all shadow"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <UploadCloud className="w-5 h-5 text-blue-600 mb-1" />
-                              <span className="text-blue-600 font-bold text-xs">לחץ כאן להעלאת קובץ</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Tool Images */}
-                    <div className="space-y-2">
                       <div className="flex justify-between items-center">
                         <label className="block text-gray-700 text-xs font-bold">צילומי הכלי *</label>
                         <span className="text-[10px] text-gray-400 font-bold">({toolImages.length}/3)</span>

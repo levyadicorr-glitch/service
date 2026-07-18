@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import sharp from 'sharp';
 import { tenantExists, getDriverById, getServiceRequestById, markRequestsPickedUpWithSignature } from '@/lib/db';
 import { checkCsrf } from '@/lib/csrf';
 
@@ -21,6 +20,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
   if (csrfError) return csrfError;
 
   try {
+    const sharp = (await import('sharp')).default;
     const { tenantId } = await props.params;
     // Public endpoint (driver panel) — validate the tenant before touching its DB.
     if (!(await tenantExists(tenantId))) {

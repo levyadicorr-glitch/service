@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateCustomer, getCustomerById, tenantExists } from '@/lib/db';
-import sharp from 'sharp';
 import { checkCsrf } from '@/lib/csrf';
 
 export async function POST(
@@ -11,6 +10,7 @@ export async function POST(
   if (csrfError) return csrfError;
 
   try {
+    const sharp = (await import('sharp')).default;
     const { tenantId, id } = await params;
     if (!(await tenantExists(tenantId))) {
       return NextResponse.json({ error: 'סביבה לא נמצאה' }, { status: 404 });

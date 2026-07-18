@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import sharp from 'sharp';
 import { createServiceRequest, getCustomerById, getServiceRequests, tenantExists, ServiceRequest, ensureIndexes } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
@@ -47,6 +46,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
   if (csrfError) return csrfError;
 
   try {
+    const sharp = (await import('sharp')).default;
     const params = await props.params;
     const { tenantId } = params;
     // Public endpoint (customer form/portal) — validate the tenant before touching its DB.
