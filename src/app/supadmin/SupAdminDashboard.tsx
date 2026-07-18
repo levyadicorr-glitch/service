@@ -266,7 +266,7 @@ export default function SupAdminDashboard() {
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto p-6 mt-6">
+      <main className="w-full px-4 md:px-8 lg:px-12 py-6 mt-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
             <div>

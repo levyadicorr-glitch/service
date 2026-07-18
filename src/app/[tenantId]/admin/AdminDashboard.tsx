@@ -485,7 +485,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     <div className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20" dir="rtl">
       {/* Top Navbar */}
       <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50 print:hidden transition-all duration-300">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
+        <div className="w-full px-4 md:px-8 lg:px-12 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all cursor-pointer">
               {currentLogoUrl ? (
@@ -533,7 +533,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       </nav>
 
       {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 md:px-6 pt-6 md:pt-10 print:hidden">
+      <main className="w-full px-4 md:px-8 lg:px-12 pt-6 md:pt-10 print:hidden">
         {activeTab === 'requests' ? (
           <div className="space-y-10">
             {/* Stats Cards Section */}
