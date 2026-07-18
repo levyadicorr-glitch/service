@@ -15,13 +15,28 @@ const globalWithMongo = global as typeof globalThis & {
   _mongoClientPromise?: Promise<MongoClient>;
 };
 
-if (!globalWithMongo._mongoClientPromise) {
+function connect(): Promise<MongoClient> {
   if (!uri) throw new Error('Invalid/Missing environment variable: "MONGODB_URI"');
   const client = new MongoClient(uri, options);
-  globalWithMongo._mongoClientPromise = client.connect();
+  const promise = client.connect();
+  // A rejected connect() must not stay cached: if a transient network hiccup
+  // fails the very first connection attempt in a warm container, every request
+  // handled by that container afterwards would otherwise fail forever. Clearing
+  // the cache on failure lets the next call retry with a fresh connection.
+  promise.catch(() => {
+    if (globalWithMongo._mongoClientPromise === promise) {
+      globalWithMongo._mongoClientPromise = undefined;
+    }
+  });
+  return promise;
 }
 
-// Export a module-scoped MongoClient promise. By doing this in a
-// separate module, the client can be shared across functions.
-const clientPromise = globalWithMongo._mongoClientPromise;
-export default clientPromise;
+// Exported as a function (not a static promise binding) so every caller reads
+// the current global reference — necessary for the retry-after-failure logic
+// above to actually take effect for callers across the whole warm container.
+export default function getClientPromise(): Promise<MongoClient> {
+  if (!globalWithMongo._mongoClientPromise) {
+    globalWithMongo._mongoClientPromise = connect();
+  }
+  return globalWithMongo._mongoClientPromise;
+}

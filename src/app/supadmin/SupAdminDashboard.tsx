@@ -11,6 +11,7 @@ import Link from 'next/link';
 
 export default function SupAdminDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -36,12 +37,16 @@ export default function SupAdminDashboard() {
 
   useEffect(() => {
     setBaseUrl(window.location.origin);
+    const savedEmail = localStorage.getItem('supadmin_email');
     const savedPassword = localStorage.getItem('supadmin_password');
-    if (savedPassword) {
+    if (savedEmail && savedPassword) {
+      setEmail(savedEmail);
       setPassword(savedPassword);
       setRememberMe(true);
     }
   }, []);
+
+  const authHeader = () => ({ 'Authorization': `Bearer ${email}:${password}` });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,19 +54,19 @@ export default function SupAdminDashboard() {
     setError(null);
     try {
       const res = await fetch('/api/supadmin/tenants', {
-        headers: {
-          'Authorization': `Bearer ${password}`
-        }
+        headers: authHeader()
       });
       if (!res.ok) {
-        throw new Error('סיסמה שגויה או שגיאת שרת');
+        throw new Error('אימייל או סיסמה שגויים, או שגיאת שרת');
       }
       const data = await res.json();
       setTenants(data.tenants);
       setIsAuthenticated(true);
       if (rememberMe) {
+        localStorage.setItem('supadmin_email', email);
         localStorage.setItem('supadmin_password', password);
       } else {
+        localStorage.removeItem('supadmin_email');
         localStorage.removeItem('supadmin_password');
       }
     } catch (err: unknown) {
@@ -74,9 +79,7 @@ export default function SupAdminDashboard() {
   const loadTenants = async () => {
     try {
       const res = await fetch('/api/supadmin/tenants', {
-        headers: {
-          'Authorization': `Bearer ${password}`
-        }
+        headers: authHeader()
       });
       if (res.ok) {
         const data = await res.json();
@@ -97,7 +100,7 @@ export default function SupAdminDashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${password}`
+          ...authHeader()
         },
         body: JSON.stringify({
           tenantId: newTenantId,
@@ -129,9 +132,7 @@ export default function SupAdminDashboard() {
     try {
       const res = await fetch(`/api/supadmin/tenants?tenantId=${tenantId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${password}`
-        }
+        headers: authHeader()
       });
       
       if (!res.ok) {
@@ -162,7 +163,7 @@ export default function SupAdminDashboard() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${password}`
+          ...authHeader()
         },
         body: JSON.stringify({
           tenantId,
@@ -200,12 +201,22 @@ export default function SupAdminDashboard() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <input
+                type="email"
+                placeholder="אימייל"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full text-center px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium"
+                dir="ltr"
+                autoFocus
+              />
+            </div>
+            <div>
+              <input
                 type="password"
-                placeholder="סיסמת ניהול מרכזית"
+                placeholder="סיסמה"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full text-center px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium"
-                autoFocus
               />
             </div>
             <label className="flex items-center gap-2 cursor-pointer select-none justify-center">
@@ -215,12 +226,12 @@ export default function SupAdminDashboard() {
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
-              <span className="text-xs text-gray-500 font-medium">זכור סיסמה במכשיר זה</span>
+              <span className="text-xs text-gray-500 font-medium">זכור אותי במכשיר זה</span>
             </label>
             {error && <p className="text-red-500 text-xs font-bold">{error}</p>}
             <button
               type="submit"
-              disabled={isLoading || !password}
+              disabled={isLoading || !email || !password}
               className="w-full py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-sm font-bold shadow-lg shadow-gray-900/20 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}

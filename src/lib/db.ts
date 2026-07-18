@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import clientPromise from './mongodb';
+import getClientPromise from './mongodb';
 import { ObjectId, Document } from 'mongodb';
 
 export interface Tenant {
@@ -68,12 +68,12 @@ export interface ServiceRequest {
 // ---------------- MongoDB Collections ----------------
 
 export async function getMasterDb() {
-  const client = await clientPromise;
+  const client = await getClientPromise();
   return client.db('master_db');
 }
 
 export async function getDb(tenantId: string) {
-  const client = await clientPromise;
+  const client = await getClientPromise();
   if (!tenantId) {
     throw new Error('tenantId is required to access a tenant database');
   }

@@ -109,17 +109,25 @@ export function requireTenantAdmin(req: NextRequest, tenantId: string): NextResp
 }
 
 export function requireSupAdmin(req: NextRequest): NextResponse | null {
-  const expected = process.env.SUPER_ADMIN_PASSWORD;
-  if (!expected) {
-    console.error('SUPER_ADMIN_PASSWORD is not configured; refusing super-admin access');
+  const expectedEmail = process.env.SUPER_ADMIN_EMAIL;
+  const expectedPassword = process.env.SUPER_ADMIN_PASSWORD;
+  if (!expectedEmail || !expectedPassword) {
+    console.error('SUPER_ADMIN_EMAIL/SUPER_ADMIN_PASSWORD is not configured; refusing super-admin access');
     return NextResponse.json({ error: 'שגיאת תצורה בשרת' }, { status: 500 });
   }
   const authHeader = req.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return NextResponse.json({ error: 'לא מורשה' }, { status: 401 });
   }
+  // Token format is "email:password" — the email itself can't contain a colon.
   const token = authHeader.slice('Bearer '.length);
-  if (!safeEqual(token, expected)) {
+  const separatorIndex = token.indexOf(':');
+  if (separatorIndex === -1) {
+    return NextResponse.json({ error: 'לא מורשה' }, { status: 401 });
+  }
+  const email = token.slice(0, separatorIndex);
+  const password = token.slice(separatorIndex + 1);
+  if (!safeEqual(email, expectedEmail) || !safeEqual(password, expectedPassword)) {
     return NextResponse.json({ error: 'לא מורשה' }, { status: 401 });
   }
   return null;
