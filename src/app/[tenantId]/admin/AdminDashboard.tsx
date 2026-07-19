@@ -1,29 +1,32 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Customer, Driver, ServiceRequest } from '@/lib/db';
+import { Customer, Driver, PartRequest, ServiceRequest } from '@/lib/db';
 import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
 import {
   Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock,
   Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone,
-  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2, Truck
+  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2, Truck, Package
 } from 'lucide-react';
 
 interface AdminDashboardProps {
   initialRequests: ServiceRequest[];
   customers: Customer[];
   drivers: Driver[];
+  initialPartRequests: PartRequest[];
   tenantId: string;
   businessName: string;
   whatsappTemplate: string;
+  partsRequestPhone?: string;
   logoUrl?: string;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, tenantId, businessName, whatsappTemplate, logoUrl = '' }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, tenantId, businessName, whatsappTemplate, partsRequestPhone = '', logoUrl = '' }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
-  const [activeTab, setActiveTab] = useState<'requests' | 'customers'>('requests');
+  const [partRequestsList, setPartRequestsList] = useState<PartRequest[]>(initialPartRequests);
+  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'partRequests'>('requests');
   
   // Search & Filter States
   const [requestSearch, setRequestSearch] = useState('');
@@ -33,11 +36,14 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   // Settings States
   const [currentBusinessName, setCurrentBusinessName] = useState(businessName);
   const [currentWhatsappTemplate, setCurrentWhatsappTemplate] = useState(whatsappTemplate);
+  const [currentPartsRequestPhone, setCurrentPartsRequestPhone] = useState(partsRequestPhone);
   const [currentLogoUrl, setCurrentLogoUrl] = useState(logoUrl);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  
+
   const [settingsBusinessName, setSettingsBusinessName] = useState(businessName);
   const [settingsWhatsappTemplate, setSettingsWhatsappTemplate] = useState(whatsappTemplate);
+  const [settingsPartsRequestPhone, setSettingsPartsRequestPhone] = useState(partsRequestPhone);
+  const [settingsPartsDeletePassword, setSettingsPartsDeletePassword] = useState('');
   const [settingsPassword, setSettingsPassword] = useState('');
   const [settingsLogoFile, setSettingsLogoFile] = useState<File | null>(null);
   const [settingsLogoPreview, setSettingsLogoPreview] = useState<string | null>(null);
@@ -49,6 +55,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const openSettingsModal = () => {
     setSettingsBusinessName(currentBusinessName);
     setSettingsWhatsappTemplate(currentWhatsappTemplate);
+    setSettingsPartsRequestPhone(currentPartsRequestPhone);
+    setSettingsPartsDeletePassword('');
     setSettingsPassword('');
     setSettingsLogoFile(null);
     setSettingsLogoPreview(currentLogoUrl);
@@ -83,6 +91,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       const formData = new FormData();
       formData.append('businessName', settingsBusinessName.trim());
       formData.append('whatsappTemplate', settingsWhatsappTemplate.trim());
+      formData.append('partsRequestPhone', settingsPartsRequestPhone.trim());
+      if (settingsPartsDeletePassword.trim()) {
+        formData.append('partsDeletePassword', settingsPartsDeletePassword.trim());
+      }
       if (settingsPassword.trim()) {
         formData.append('password', settingsPassword.trim());
       }
@@ -104,6 +116,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
       setCurrentBusinessName(settingsBusinessName);
       setCurrentWhatsappTemplate(settingsWhatsappTemplate);
+      setCurrentPartsRequestPhone(settingsPartsRequestPhone);
       if (removeLogoFlag) {
         setCurrentLogoUrl('');
       } else if (data.logoUrl) {
@@ -481,60 +494,170 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     }
   };
 
+  // ---- Part requests management ----
+
+  const handleTogglePartRequestStatus = async (id: string, currentStatus: 'NEW' | 'FULFILLED') => {
+    const nextStatus = currentStatus === 'NEW' ? 'FULFILLED' : 'NEW';
+    try {
+      const res = await fetch(`/api/${tenantId}/parts-requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!res.ok) throw new Error('Failed to update part request');
+
+      setPartRequestsList(prev => prev.map(r => r.id === id ? { ...r, status: nextStatus } : r));
+    } catch {
+      alert('שגיאה בעדכון סטטוס הבקשה');
+    }
+  };
+
+  const handleDeletePartRequest = async (id: string) => {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק בקשת חלק זו?')) return;
+
+    try {
+      const res = await fetch(`/api/${tenantId}/parts-requests/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete part request');
+
+      setPartRequestsList(prev => prev.filter(r => r.id !== id));
+    } catch {
+      alert('שגיאה במחיקת הבקשה');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20" dir="rtl">
-      {/* Top Navbar */}
-      <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50 print:hidden transition-all duration-300">
-        <div className="w-full px-4 md:px-8 lg:px-12 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all cursor-pointer">
+      <div className="flex flex-col md:flex-row print:hidden">
+        {/* Mobile header + section switcher (below md) */}
+        <div className="md:hidden sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50">
+          <div className="px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-lg overflow-hidden border bg-gray-50 flex items-center justify-center flex-shrink-0">
+                {currentLogoUrl ? (
+                  <img src={currentLogoUrl} alt="Logo" className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xs">{currentBusinessName.charAt(0)}</div>
+                )}
+              </div>
+              <span className="text-sm font-black text-gray-900 truncate">{currentBusinessName} <span className="font-normal text-blue-600">ניהול</span></span>
+            </div>
+            <button
+              onClick={openSettingsModal}
+              className="p-2 bg-white hover:bg-gray-100 rounded-lg text-gray-500 border border-gray-200 shadow-sm active:scale-95 transition-all cursor-pointer flex items-center justify-center flex-shrink-0"
+              title="הגדרות עסק"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="px-4 pb-3 flex items-center gap-1.5 overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('requests')}
+              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                activeTab === 'requests' ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              קריאות שירות
+            </button>
+            <button
+              onClick={() => setActiveTab('customers')}
+              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                activeTab === 'customers' ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              רשימת לקוחות
+            </button>
+            <button
+              onClick={() => setActiveTab('drivers')}
+              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                activeTab === 'drivers' ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <Truck className="w-3.5 h-3.5" />
+              נהגים
+            </button>
+            <button
+              onClick={() => setActiveTab('partRequests')}
+              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                activeTab === 'partRequests' ? 'bg-[#14C425] text-white shadow-md' : 'bg-[#14C425]/10 text-[#0F9E1D]'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              בקשות חלקים
+            </button>
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <aside className="hidden md:flex md:flex-col w-64 shrink-0 sticky top-0 h-screen bg-white/70 backdrop-blur-xl border-l border-gray-200/50 px-4 py-6 overflow-y-auto">
+          <div className="flex items-center gap-3 mb-8 px-1">
+            <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all cursor-pointer flex-shrink-0">
               {currentLogoUrl ? (
                 <img src={currentLogoUrl} alt="Logo" className="w-full h-full object-contain" />
               ) : (
                 <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl">{currentBusinessName.charAt(0)}</div>
               )}
             </div>
-            <span className="text-xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-l from-gray-900 via-gray-800 to-blue-700">{currentBusinessName} <span className="font-normal text-blue-600">ניהול</span></span>
+            <span className="text-sm font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-l from-gray-900 via-gray-800 to-blue-700 min-w-0 truncate">{currentBusinessName} <span className="font-normal text-blue-600">ניהול</span></span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex gap-1 p-1 bg-gray-200/60 backdrop-blur rounded-xl border border-gray-300/10">
-              <button
-                onClick={() => setActiveTab('requests')}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
-                  activeTab === 'requests'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-              >
-                קריאות שירות
-              </button>
-              <button
-                onClick={() => setActiveTab('customers')}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
-                  activeTab === 'customers'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-              >
-                רשימת לקוחות
-              </button>
-            </div>
+          <nav className="flex-1 space-y-1.5">
+            <button
+              onClick={() => setActiveTab('requests')}
+              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                activeTab === 'requests' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              קריאות שירות
+            </button>
+            <button
+              onClick={() => setActiveTab('customers')}
+              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                activeTab === 'customers' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <User className="w-4 h-4" />
+              רשימת לקוחות
+            </button>
+            <button
+              onClick={() => setActiveTab('drivers')}
+              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                activeTab === 'drivers' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <Truck className="w-4 h-4" />
+              נהגים
+            </button>
+            <button
+              onClick={() => setActiveTab('partRequests')}
+              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                activeTab === 'partRequests'
+                  ? 'bg-[#14C425] text-white shadow-md shadow-[#14C425]/20'
+                  : 'bg-[#14C425]/10 text-[#0F9E1D] hover:bg-[#14C425]/15 border border-[#14C425]/20'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              בקשות חלקים
+            </button>
+          </nav>
 
+          <div className="pt-4 mt-4 border-t border-gray-100">
             <button
               onClick={openSettingsModal}
-              className="p-2.5 bg-white hover:bg-gray-55 rounded-xl text-gray-500 border border-gray-200 shadow-sm active:scale-95 transition-all cursor-pointer flex items-center justify-center"
-              title="הגדרות עסק"
+              className="w-full px-4 py-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center gap-2.5 text-xs font-bold"
             >
               <Settings className="w-4 h-4" />
+              הגדרות עסק
             </button>
           </div>
-        </div>
-      </nav>
+        </aside>
 
-      {/* Main Content Area */}
-      <main className="w-full px-4 md:px-8 lg:px-12 pt-6 md:pt-10 print:hidden">
-        {activeTab === 'requests' ? (
+        {/* Content Pane */}
+        <div className="flex-1 min-w-0">
+      <main className="w-full px-4 md:px-8 lg:px-12 pt-6 md:pt-10">
+        {activeTab === 'requests' && (
           <div className="space-y-10">
             {/* Stats Cards Section */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
@@ -843,7 +966,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
               </div>
             </div>
           </div>
-        ) : (
+        )}
+        {activeTab === 'customers' && (
           <div className="space-y-6">
             {/* Customer Search */}
             <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -986,7 +1110,184 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
             </div>
           </div>
         )}
+
+        {activeTab === 'drivers' && (
+          <div className="space-y-6">
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                <Truck className="w-4 h-4 text-blue-600" />
+                נהגים
+              </h3>
+              <p className="text-[10px] text-gray-400 leading-relaxed">
+                לכל נהג נוצר קישור אישי וסודי לפאנל הנהג שלו, שבו יופיעו רק הקריאות המשויכות אליו.
+                אם קיים נהג אחד בלבד — כל קריאה חדשה תשויך אליו אוטומטית. אם יש יותר מנהג אחד — יש לשייך נהג לכל קריאה מטבלת הקריאות.
+              </p>
+
+              {/* Existing Drivers List */}
+              {driversList.length > 0 && (
+                <div className="space-y-2">
+                  {driversList.map(d => (
+                    <div key={d.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <strong className="text-sm text-gray-800 font-bold block truncate">{d.name}</strong>
+                        {d.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{d.phone}</span>}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* Copy personal link */}
+                        <button
+                          type="button"
+                          onClick={() => copyDriverUrl(d.id)}
+                          className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer ${
+                            copiedDriverId === d.id
+                              ? 'bg-green-500 border-green-500 text-white'
+                              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                          }`}
+                          title="העתק קישור אישי לפאנל הנהג"
+                        >
+                          <Copy className="w-3 h-3 inline-block ml-1" />
+                          {copiedDriverId === d.id ? 'הועתק!' : 'העתק קישור'}
+                        </button>
+
+                        {/* WhatsApp share */}
+                        {d.phone && (
+                          <a
+                            href={`https://wa.me/${d.phone.startsWith('0') ? '972' + d.phone.slice(1) : d.phone}?text=${encodeURIComponent(
+                              `שלום ${d.name},\nזהו הקישור האישי שלך לפאנל הנהג של ${currentBusinessName}:\n${baseUrl}/${tenantId}/driver/${d.id}`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                            title="שלח קישור אישי בוואטסאפ"
+                          >
+                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
+                            </svg>
+                          </a>
+                        )}
+
+                        {/* Open panel */}
+                        <a
+                          href={`/${tenantId}/driver/${d.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
+                          title="פתח את פאנל הנהג"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </a>
+
+                        {/* Delete driver */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDriver(d.id)}
+                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                          title="מחק נהג"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add Driver Form */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  placeholder="שם הנהג *"
+                  value={newDriverName}
+                  onChange={(e) => setNewDriverName(e.target.value)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
+                />
+                <input
+                  type="tel"
+                  placeholder="טלפון (אופציונלי)"
+                  value={newDriverPhone}
+                  onChange={(e) => setNewDriverPhone(e.target.value)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
+                  dir="ltr"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddDriver}
+                  disabled={isSavingDriver}
+                  className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingDriver ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5" />
+                  )}
+                  הוסף נהג
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'partRequests' && (
+          <div className="space-y-6">
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                <Package className="w-4 h-4 text-[#0F9E1D]" />
+                בקשות חלקים
+              </h3>
+              <p className="text-[10px] text-gray-400 leading-relaxed">
+                בקשות חלק שנשלחו על ידי לקוחות דרך הפורטל האישי שלהם, כולל תמונת החלק המבוקש.
+              </p>
+
+              {partRequestsList.length === 0 ? (
+                <div className="p-10 text-center text-gray-400 text-sm">
+                  עדיין לא נשלחו בקשות חלקים.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {partRequestsList.map(pr => (
+                    <div key={pr.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pr.photoImage} alt="תמונת חלק" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <strong className="text-sm text-gray-800 font-bold block truncate">
+                          {pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}` : 'לקוח לא ידוע'}
+                        </strong>
+                        {pr.customer?.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{pr.customer.phone}</span>}
+                        <span className="text-xs text-gray-600 block mt-1 truncate">{pr.description}</span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">{new Date(pr.createdAt).toLocaleDateString('he-IL')}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePartRequestStatus(pr.id, pr.status)}
+                          className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer ${
+                            pr.status === 'FULFILLED'
+                              ? 'bg-green-50 border-green-100/50 text-green-600 hover:bg-green-100'
+                              : 'bg-blue-50 border-blue-100/50 text-blue-600 hover:bg-blue-100'
+                          }`}
+                        >
+                          {pr.status === 'FULFILLED' ? 'טופל' : 'חדש'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePartRequest(pr.id)}
+                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                          title="מחק בקשה"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
+        </div>
+      </div>
 
       {/* Details Modal */}
       {selectedRequest && (
@@ -1837,6 +2138,34 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 <p className="text-[10px] text-gray-400">השתמש ב-<code>{"{link}"}</code> עבור קישור לפתיחת קריאה, וב-<code>{"{businessName}"}</code> עבור שם העסק.</p>
               </div>
 
+              {/* Parts Request WhatsApp Number */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">מספר וואטסאפ לבקשות חלקים</label>
+                <input
+                  type="tel"
+                  placeholder="05XXXXXXXX"
+                  value={settingsPartsRequestPhone}
+                  onChange={(e) => setSettingsPartsRequestPhone(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  dir="ltr"
+                />
+                <p className="text-[10px] text-gray-400">המספר שאליו יישלחו הודעות וואטסאפ כשלקוח מבקש חלק דרך הפורטל האישי שלו.</p>
+              </div>
+
+              {/* Parts Request Delete Password */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">סיסמת מחיקת בקשות חלקים (פורטל לקוח)</label>
+                <input
+                  type="password"
+                  placeholder="השאר ריק כדי לא לשנות"
+                  value={settingsPartsDeletePassword}
+                  onChange={(e) => setSettingsPartsDeletePassword(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  dir="ltr"
+                />
+                <p className="text-[10px] text-gray-400">לקוחות יתבקשו להזין סיסמה זו כדי למחוק בקשת חלק מהפורטל האישי שלהם.</p>
+              </div>
+
               {/* Submit */}
               <button
                 type="submit"
@@ -1849,118 +2178,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 {isSavingSettings ? 'שומר הגדרות...' : 'שמור שינויים'}
               </button>
             </form>
-
-            {/* Drivers Management Section — outside the multipart settings form */}
-            <div className="p-6 border-t border-gray-100 space-y-4">
-              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                <Truck className="w-4 h-4 text-blue-600" />
-                נהגים
-              </h3>
-              <p className="text-[10px] text-gray-400 leading-relaxed">
-                לכל נהג נוצר קישור אישי וסודי לפאנל הנהג שלו, שבו יופיעו רק הקריאות המשויכות אליו.
-                אם קיים נהג אחד בלבד — כל קריאה חדשה תשויך אליו אוטומטית. אם יש יותר מנהג אחד — יש לשייך נהג לכל קריאה מטבלת הקריאות.
-              </p>
-
-              {/* Existing Drivers List */}
-              {driversList.length > 0 && (
-                <div className="space-y-2">
-                  {driversList.map(d => (
-                    <div key={d.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <strong className="text-sm text-gray-800 font-bold block truncate">{d.name}</strong>
-                        {d.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{d.phone}</span>}
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        {/* Copy personal link */}
-                        <button
-                          type="button"
-                          onClick={() => copyDriverUrl(d.id)}
-                          className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer ${
-                            copiedDriverId === d.id
-                              ? 'bg-green-500 border-green-500 text-white'
-                              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                          }`}
-                          title="העתק קישור אישי לפאנל הנהג"
-                        >
-                          <Copy className="w-3 h-3 inline-block ml-1" />
-                          {copiedDriverId === d.id ? 'הועתק!' : 'העתק קישור'}
-                        </button>
-
-                        {/* WhatsApp share */}
-                        {d.phone && (
-                          <a
-                            href={`https://wa.me/${d.phone.startsWith('0') ? '972' + d.phone.slice(1) : d.phone}?text=${encodeURIComponent(
-                              `שלום ${d.name},\nזהו הקישור האישי שלך לפאנל הנהג של ${currentBusinessName}:\n${baseUrl}/${tenantId}/driver/${d.id}`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
-                            title="שלח קישור אישי בוואטסאפ"
-                          >
-                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
-                            </svg>
-                          </a>
-                        )}
-
-                        {/* Open panel */}
-                        <a
-                          href={`/${tenantId}/driver/${d.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
-                          title="פתח את פאנל הנהג"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </a>
-
-                        {/* Delete driver */}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDriver(d.id)}
-                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
-                          title="מחק נהג"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Add Driver Form */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  placeholder="שם הנהג *"
-                  value={newDriverName}
-                  onChange={(e) => setNewDriverName(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
-                />
-                <input
-                  type="tel"
-                  placeholder="טלפון (אופציונלי)"
-                  value={newDriverPhone}
-                  onChange={(e) => setNewDriverPhone(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
-                  dir="ltr"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddDriver}
-                  disabled={isSavingDriver}
-                  className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
-                >
-                  {isSavingDriver ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="w-3.5 h-3.5" />
-                  )}
-                  הוסף נהג
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

@@ -2,28 +2,31 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Customer, ServiceRequest } from '@/lib/db';
+import { Customer, PartRequest, ServiceRequest } from '@/lib/db';
 import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
 import {
   FileText, Clock, AlertCircle, CheckCircle2, Search, Plus,
   RotateCw, Trash2, Calendar, Phone, Copy, Printer, Eye,
-  User, Barcode, ShieldCheck, ShieldAlert, UploadCloud, Check, Loader2, X, Settings
+  User, Barcode, ShieldCheck, ShieldAlert, UploadCloud, Check, Loader2, X, Settings, Package
 } from 'lucide-react';
 
 interface CustomerPortalProps {
   customer: Customer;
   tenantId: string;
   initialRequests: ServiceRequest[];
+  initialPartRequests: PartRequest[];
   businessName: string;
   whatsappTemplate: string;
+  partsRequestPhone?: string;
   logoUrl?: string;
   primaryColor?: string;
 }
 
-export default function CustomerPortal({ customer, initialRequests, tenantId, businessName, whatsappTemplate, logoUrl = '', primaryColor = '' }: CustomerPortalProps) {
+export default function CustomerPortal({ customer, initialRequests, initialPartRequests, tenantId, businessName, whatsappTemplate, partsRequestPhone = '', logoUrl = '', primaryColor = '' }: CustomerPortalProps) {
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
+  const [partRequestsHistory, setPartRequestsHistory] = useState<PartRequest[]>(initialPartRequests);
   const [currentCustomer, setCurrentCustomer] = useState<Customer>(customer);
-  const [activeView, setActiveView] = useState<'requests' | 'qr'>('requests');
+  const [activeView, setActiveView] = useState<'requests' | 'parts'>('requests');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -171,6 +174,134 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
 
   const toolImageInputRef = useRef<HTMLInputElement>(null);
   const warrantyImageInputRef = useRef<HTMLInputElement>(null);
+
+  // Part Request module state — up to MAX_PART_ITEMS parts submitted together
+  const MAX_PART_ITEMS = 10;
+  const createEmptyPartItem = () => ({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    description: '',
+    photo: null as File | null,
+    photoPreview: null as string | null,
+  });
+
+  const [isPartFormOpen, setIsPartFormOpen] = useState(false);
+  const [partItems, setPartItems] = useState<ReturnType<typeof createEmptyPartItem>[]>(() => [createEmptyPartItem()]);
+  const [isSubmittingPartRequest, setIsSubmittingPartRequest] = useState(false);
+  const [partRequestError, setPartRequestError] = useState<string | null>(null);
+  const [partRequestSuccess, setPartRequestSuccess] = useState(false);
+  const [submittedPartDescriptions, setSubmittedPartDescriptions] = useState<string[]>([]);
+
+  const startNewPartRequest = () => {
+    setPartItems([createEmptyPartItem()]);
+    setPartRequestError(null);
+    setPartRequestSuccess(false);
+    setSubmittedPartDescriptions([]);
+    setIsPartFormOpen(true);
+  };
+
+  const closePartModal = () => {
+    partItems.forEach(item => { if (item.photoPreview) URL.revokeObjectURL(item.photoPreview); });
+    setPartItems([createEmptyPartItem()]);
+    setPartRequestError(null);
+    setPartRequestSuccess(false);
+    setSubmittedPartDescriptions([]);
+    setIsPartFormOpen(false);
+  };
+
+  const addPartItem = () => {
+    setPartItems(prev => prev.length >= MAX_PART_ITEMS ? prev : [...prev, createEmptyPartItem()]);
+  };
+
+  const removePartItem = (id: string) => {
+    setPartItems(prev => {
+      if (prev.length <= 1) return prev;
+      const target = prev.find(i => i.id === id);
+      if (target?.photoPreview) URL.revokeObjectURL(target.photoPreview);
+      return prev.filter(i => i.id !== id);
+    });
+  };
+
+  const updatePartItemDescription = (id: string, value: string) => {
+    setPartItems(prev => prev.map(i => i.id === id ? { ...i, description: value } : i));
+  };
+
+  const handlePartItemPhotoChange = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setPartItems(prev => prev.map(i => {
+        if (i.id !== id) return i;
+        if (i.photoPreview) URL.revokeObjectURL(i.photoPreview);
+        return { ...i, photo: file, photoPreview: URL.createObjectURL(file) };
+      }));
+    }
+  };
+
+  const removePartItemPhoto = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPartItems(prev => prev.map(i => {
+      if (i.id !== id) return i;
+      if (i.photoPreview) URL.revokeObjectURL(i.photoPreview);
+      return { ...i, photo: null, photoPreview: null };
+    }));
+  };
+
+  const handleSubmitPartRequest = async () => {
+    setPartRequestError(null);
+
+    const incomplete = partItems.find(i => !i.description.trim() || !i.photo);
+    if (incomplete) {
+      setPartRequestError('יש למלא תיאור ולצרף תמונה לכל חלק שביקשתם.');
+      return;
+    }
+
+    setIsSubmittingPartRequest(true);
+
+    try {
+      const settled = await Promise.allSettled(partItems.map(async item => {
+        const formData = new FormData();
+        formData.append('customerId', currentCustomer.id);
+        formData.append('description', item.description.trim());
+        formData.append('photo', item.photo as File);
+
+        const res = await fetch(`/api/${tenantId}/parts-requests`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        let data: { error?: string; request?: PartRequest };
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error('שגיאת שרת זמנית, אנא נסה שנית בעוד רגע.');
+        }
+        if (!res.ok) {
+          throw new Error(data.error || 'ארעה שגיאה בשליחת הבקשה.');
+        }
+        return data.request as PartRequest;
+      }));
+
+      const succeeded = settled
+        .filter((r): r is PromiseFulfilledResult<PartRequest> => r.status === 'fulfilled')
+        .map(r => r.value);
+      const failedCount = settled.length - succeeded.length;
+
+      if (succeeded.length > 0) {
+        setPartRequestsHistory(prev => [...succeeded, ...prev]);
+      }
+
+      if (succeeded.length === 0) {
+        setPartRequestError('ארעה שגיאה בשליחת הבקשות, אנא נסו שנית.');
+      } else {
+        setSubmittedPartDescriptions(succeeded.map(r => r.description));
+        setPartRequestSuccess(true);
+        if (failedCount > 0) {
+          setPartRequestError(`${failedCount} מתוך ${settled.length} בקשות לא נשלחו, אנא נסו שוב עבורן.`);
+        }
+      }
+    } finally {
+      setIsSubmittingPartRequest(false);
+    }
+  };
 
   const openCreateModal = () => {
     setStoreName(`${currentCustomer.firstName} ${currentCustomer.lastName}`);
@@ -362,10 +493,17 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/${tenantId}/requests/by-customer/${currentCustomer.id}`);
-      if (res.ok) {
-        const data = await res.json();
+      const [reqRes, partRes] = await Promise.all([
+        fetch(`/api/${tenantId}/requests/by-customer/${currentCustomer.id}`),
+        fetch(`/api/${tenantId}/parts-requests/by-customer/${currentCustomer.id}`),
+      ]);
+      if (reqRes.ok) {
+        const data = await reqRes.json();
         if (data.requests) setRequests(data.requests);
+      }
+      if (partRes.ok) {
+        const data = await partRes.json();
+        if (data.requests) setPartRequestsHistory(data.requests);
       }
     } catch (err) {
       console.error('Error refreshing:', err);
@@ -377,14 +515,35 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
   // Delete service request
   const handleDeleteRequest = async (requestId: string) => {
     if (!window.confirm('האם אתה בטוח שברצונך למחוק קריאת שירות זו?')) return;
-    
+
     try {
       const res = await fetch(`/api/${tenantId}/requests/${requestId}?customerId=${currentCustomer.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('שגיאה במחיקת קריאת השירות');
-      
+
       setRequests(prev => prev.filter(r => r.id !== requestId));
     } catch (err: unknown) {
       alert('שגיאה במחיקת קריאת השירות');
+    }
+  };
+
+  // Delete part request — gated by a shop-configured password, not link possession
+  const handleDeletePartRequest = async (requestId: string) => {
+    const password = window.prompt('להשלמת המחיקה, יש להזין את סיסמת המחיקה:');
+    if (password === null) return;
+
+    try {
+      const res = await fetch(`/api/${tenantId}/parts-requests/${requestId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'שגיאה במחיקת הבקשה');
+      }
+      setPartRequestsHistory(prev => prev.filter(r => r.id !== requestId));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה במחיקת הבקשה');
     }
   };
 
@@ -398,57 +557,142 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
       style={{ '--theme-color': primaryColor || '#2563eb', '--theme-color-light': `${primaryColor || '#2563eb'}1A` } as React.CSSProperties}
     >
       <div className="print:hidden">
-        {/* Top Navbar */}
-        <nav className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50 transition-all duration-300">
-        <div className="w-full px-4 md:px-8 lg:px-12 py-3.5 md:h-16 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all select-none">
+      <div className="flex flex-col md:flex-row min-h-screen">
+        {/* Mobile header + section switcher (below md) */}
+        <div className="md:hidden sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50">
+          <div className="px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-lg overflow-hidden border bg-gray-50 flex items-center justify-center flex-shrink-0">
+                {currentCustomer.logoUrl ? (
+                  <img src={currentCustomer.logoUrl} alt="Customer Avatar" className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xs">{currentCustomer.firstName[0]}</div>
+                )}
+              </div>
+              <span className="text-sm font-black text-gray-900 truncate">{currentCustomer.firstName} {currentCustomer.lastName}</span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center justify-center"
+                title="רענן נתונים"
+              >
+                <RotateCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+              </button>
+              <button
+                onClick={openCustomerSettingsModal}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center justify-center"
+                title="הגדרות פרופיל"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+              <button
+                onClick={openCreateModal}
+                className="p-2 bg-[var(--theme-color,#2563eb)] hover:opacity-90 text-white rounded-lg shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center"
+                title="פתח קריאה חדשה"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div className="px-4 pb-3 flex items-center gap-2">
+            <button
+              onClick={() => setActiveView('requests')}
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                activeView === 'requests'
+                  ? 'bg-[var(--theme-color,#2563eb)] text-white shadow-md'
+                  : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              קריאות שירות
+            </button>
+            <button
+              onClick={() => setActiveView('parts')}
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                activeView === 'parts'
+                  ? 'bg-[#14C425] text-white shadow-md'
+                  : 'bg-[#14C425]/10 text-[#0F9E1D]'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              בקשות חלקים
+            </button>
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <aside className="hidden md:flex md:flex-col w-64 shrink-0 sticky top-0 h-screen bg-white/70 backdrop-blur-xl border-l border-gray-200/50 px-4 py-6 overflow-y-auto">
+          <div className="flex items-center gap-3 mb-8 px-1">
+            <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all select-none flex-shrink-0">
               {currentCustomer.logoUrl ? (
                 <img src={currentCustomer.logoUrl} alt="Customer Avatar" className="w-full h-full object-contain" />
               ) : (
                 <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg">{currentCustomer.firstName[0]}</div>
               )}
             </div>
-            <div>
-              <span className="text-lg font-black tracking-tight block leading-none text-gray-900">{currentCustomer.firstName} {currentCustomer.lastName}</span>
-              <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mt-1 block">{businessName} פורטל לקוח</span>
+            <div className="min-w-0">
+              <span className="text-sm font-black tracking-tight block leading-tight text-gray-900 truncate">{currentCustomer.firstName} {currentCustomer.lastName}</span>
+              <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mt-1 block truncate">{businessName} פורטל לקוח</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Refresh */}
+          <nav className="flex-1 space-y-1.5">
+            <button
+              onClick={() => setActiveView('requests')}
+              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                activeView === 'requests'
+                  ? 'bg-[var(--theme-color,#2563eb)] text-white shadow-md shadow-[var(--theme-color-light,#2563eb1A)]'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              קריאות שירות
+            </button>
+            <button
+              onClick={() => setActiveView('parts')}
+              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                activeView === 'parts'
+                  ? 'bg-[#14C425] text-white shadow-md shadow-[#14C425]/20'
+                  : 'bg-[#14C425]/10 text-[#0F9E1D] hover:bg-[#14C425]/15 border border-[#14C425]/20'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              בקשות חלקים
+            </button>
+          </nav>
+
+          <div className="space-y-1.5 pt-4 mt-4 border-t border-gray-100">
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="p-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center justify-center"
-              title="רענן נתונים"
+              className="w-full px-4 py-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center gap-2.5 text-xs font-bold"
             >
               <RotateCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+              רענן נתונים
             </button>
-
-            {/* Profile Settings */}
             <button
               onClick={openCustomerSettingsModal}
-              className="p-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center justify-center"
-              title="הגדרות פרופיל"
+              className="w-full px-4 py-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center gap-2.5 text-xs font-bold"
             >
               <Settings className="w-4 h-4" />
+              הגדרות פרופיל
             </button>
-
-            {/* New Request */}
             <button
               onClick={openCreateModal}
-              className="px-5 py-2.5 bg-[var(--theme-color,#2563eb)] hover:opacity-90 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-[var(--theme-color-light,#2563eb1A)] transition-all active:scale-[0.98] cursor-pointer"
+              className="w-full px-4 py-2.5 bg-[var(--theme-color,#2563eb)] hover:opacity-90 text-white rounded-xl text-xs font-bold flex items-center gap-2.5 shadow-lg shadow-[var(--theme-color-light,#2563eb1A)] transition-all active:scale-[0.98] cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               פתח קריאה חדשה
             </button>
           </div>
-        </div>
-      </nav>
+        </aside>
 
-      {/* Main Content */}
+        {/* Content Pane */}
+        <div className="flex-1 min-w-0">
       <main className="w-full px-4 md:px-8 lg:px-12 pt-6 md:pt-10">
+        {activeView === 'requests' && (
         <div className="space-y-8">
           {/* Branded Welcome Hero Banner */}
           <div className="relative overflow-hidden bg-white/70 backdrop-blur-xl border border-white/60 p-6 md:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row items-center justify-between gap-6">
@@ -783,7 +1027,95 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
           </div>
 
         </div>
+        )}
+
+        {activeView === 'parts' && (
+          <div className="space-y-8">
+            {/* Hero header — bold and unmistakable, with the primary CTA built in */}
+            <div className="relative overflow-hidden bg-white/70 backdrop-blur-xl border border-white/60 p-6 md:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-[#14C425]/10 rounded-full blur-3xl -mr-10 -mt-10 animate-pulse"></div>
+              <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#0F9E1D]/5 rounded-full blur-3xl -ml-10 -mb-10"></div>
+              <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-5">
+                <div className="flex items-center gap-4 text-center sm:text-right">
+                  <div className="w-16 h-16 rounded-2xl bg-[#14C425] flex items-center justify-center text-white shadow-md flex-shrink-0">
+                    <Package className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl md:text-2xl font-black text-gray-900">בקשות חלקים</h1>
+                    <p className="text-gray-500 text-sm mt-1 font-medium">חסר לכם חלק לכלי? אפשר לבקש עד {MAX_PART_ITEMS} חלקים בבת אחת.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={startNewPartRequest}
+                  className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-[#14C425] to-[#0F9E1D] text-white rounded-2xl text-sm font-bold shadow-lg shadow-[#14C425]/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer flex-shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  בקשת חלק חדש
+                </button>
+              </div>
+            </div>
+
+            {/* History table */}
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden">
+              <div className="p-5 border-b border-gray-100">
+                <h2 className="text-sm font-black text-gray-900">היסטוריית בקשות חלקים</h2>
+              </div>
+              {partRequestsHistory.length === 0 ? (
+                <div className="p-10 text-center text-gray-400 text-sm">עדיין לא נשלחו בקשות חלקים.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50 whitespace-nowrap">
+                        <th className="p-4">תמונה</th>
+                        <th className="p-4">תיאור</th>
+                        <th className="p-4">סטטוס</th>
+                        <th className="p-4">תאריך</th>
+                        <th className="p-4 text-center">פעולות</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {partRequestsHistory.map(pr => (
+                        <tr key={pr.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
+                          <td className="p-4">
+                            <div className="w-12 h-12 rounded-lg overflow-hidden border bg-white">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={pr.photoImage} alt="תמונת חלק" className="w-full h-full object-cover" />
+                            </div>
+                          </td>
+                          <td className="p-4 text-sm text-gray-700 max-w-xs truncate" title={pr.description}>{pr.description}</td>
+                          <td className="p-4">
+                            <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border inline-block ${
+                              pr.status === 'FULFILLED'
+                                ? 'bg-green-50/70 text-green-600 border-green-100'
+                                : 'bg-blue-50/70 text-blue-600 border-blue-100'
+                            }`}>
+                              {pr.status === 'FULFILLED' ? 'סופק' : 'ממתין לחלק'}
+                            </span>
+                          </td>
+                          <td className="p-4 text-xs text-gray-400 whitespace-nowrap">{new Date(pr.createdAt).toLocaleDateString('he-IL')}</td>
+                          <td className="p-4 text-center">
+                            <button
+                              onClick={() => handleDeletePartRequest(pr.id)}
+                              className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer inline-flex items-center justify-center"
+                              title="מחק בקשה"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
+        </div>
+      </div>
 
       {/* Read-Only Details Modal */}
       <AnimatePresence>
@@ -1460,6 +1792,219 @@ export default function CustomerPortal({ customer, initialRequests, tenantId, bu
           </div>
         )}
       </AnimatePresence>
+
+      {/* Request a Part Modal (Widget) */}
+      <AnimatePresence>
+        {isPartFormOpen && (
+          <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-gray-100 flex flex-col overflow-hidden max-h-[90vh]"
+            >
+              {/* Modal Header */}
+              <div className="p-6 border-b border-gray-200/50 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">בקשת חלק חדשה</h2>
+                  <p className="text-gray-400 text-xs mt-1">תארו את החלקים שאתם צריכים וצרפו תמונה לכל אחד ({partItems.length}/{MAX_PART_ITEMS})</p>
+                </div>
+                <button
+                  onClick={closePartModal}
+                  className="p-2 hover:bg-gray-150 rounded-full text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-6 overflow-y-auto flex-1 text-right" dir="rtl">
+                {partRequestSuccess ? (
+                  /* Success screen */
+                  <div className="text-center py-8 space-y-6">
+                    <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto border border-green-100 shadow-inner">
+                      <Check className="w-10 h-10 text-green-500" strokeWidth={3} />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black text-gray-900 mb-1">
+                        {submittedPartDescriptions.length > 1 ? `${submittedPartDescriptions.length} בקשות חלק נשלחו בהצלחה!` : 'הבקשה נשלחה בהצלחה!'}
+                      </h3>
+                      <p className="text-gray-500 text-sm">
+                        בקשת החלק נרשמה במערכת {businessName}.
+                      </p>
+                      {partRequestError && (
+                        <p className="text-amber-700 text-xs font-semibold mt-2">{partRequestError}</p>
+                      )}
+                    </div>
+
+                    {submittedPartDescriptions.length > 1 && (
+                      <ul className="text-xs text-gray-600 space-y-1 text-right max-w-sm mx-auto">
+                        {submittedPartDescriptions.map((d, i) => (
+                          <li key={i} className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0"></span>
+                            {d}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div className="flex flex-col gap-2.5 max-w-sm mx-auto pt-4">
+                      {partsRequestPhone ? (
+                        <a
+                          href={`https://wa.me/${partsRequestPhone.startsWith('0') ? '972' + partsRequestPhone.slice(1) : partsRequestPhone}?text=${encodeURIComponent(
+                            submittedPartDescriptions.length > 1
+                              ? `היי, ${currentCustomer.firstName} ${currentCustomer.lastName} מבקש/ת ${submittedPartDescriptions.length} חלקים:\n${submittedPartDescriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')}\n\nלצפייה בבקשות ובתמונות שצורפו, יש להיכנס לפאנל הניהול.`
+                              : `היי, ${currentCustomer.firstName} ${currentCustomer.lastName} מבקש/ת חלק:\n"${submittedPartDescriptions[0] || ''}"\n\nלצפייה בבקשה ובתמונה שצורפה, יש להיכנס לפאנל הניהול.`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-3.5 bg-green-500 hover:bg-green-600 text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-500/10 transition-all active:scale-[0.98] cursor-pointer"
+                        >
+                          <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.37 5.378 0 12.003 0a11.94 11.94 0 0 1 8.484 3.513 11.94 11.94 0 0 1 3.51 8.49c-.003 6.63-5.378 12-12.003 12-1.996-.001-3.957-.502-5.709-1.455L0 24zm6.59-14.859c-.12-.2-.24-.2-.35-.2-.11 0-.24-.03-.36-.03-.13 0-.34.05-.52.25-.18.2-.68.66-.68 1.6s.69 1.86.78 2.06c.1.13 1.36 2.07 3.29 2.91.46.2.82.32 1.1.41.47.15.89.13 1.22.08.38-.06 1.15-.47 1.31-.93.16-.46.16-.86.11-.93-.05-.08-.18-.13-.38-.23-.19-.1-.1.38-.1.74-.11.16-.36.23-.74.13-.38-.11-1.42-.52-2.71-1.68-.96-.86-1.61-1.92-1.8-2.25-.19-.33-.02-.51.15-.68.15-.15.33-.36.5-.54.17-.18.23-.3.33-.5.1-.2.05-.38-.03-.48z" />
+                          </svg>
+                          שלח בקשה בוואטסאפ לעסק
+                        </a>
+                      ) : (
+                        <div className="p-3 bg-amber-50 text-amber-700 rounded-xl text-xs font-semibold text-center">
+                          העסק טרם הגדיר מספר וואטסאפ לבקשות חלקים.
+                        </div>
+                      )}
+
+                      <button
+                        onClick={startNewPartRequest}
+                        className="w-full py-3 bg-white border border-gray-200 text-gray-700 rounded-2xl text-sm font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        בקשת חלק נוספת
+                      </button>
+
+                      <button
+                        onClick={closePartModal}
+                        className="w-full py-3.5 bg-gray-900 hover:bg-gray-800 text-white rounded-2xl text-sm font-bold transition-all active:scale-[0.98] cursor-pointer"
+                      >
+                        סגור חלון
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Form fields */
+                  <div className="space-y-5">
+                    {partRequestError && (
+                      <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-650 text-xs font-bold flex items-center gap-2">
+                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                        <span>{partRequestError}</span>
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      {partItems.map((item, idx) => (
+                        <div key={item.id} className="p-4 bg-gray-50/60 border border-gray-100 rounded-2xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-gray-500">חלק {idx + 1}</span>
+                            {partItems.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removePartItem(item.id)}
+                                className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
+                                title="הסר חלק"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          <textarea
+                            value={item.description}
+                            onChange={(e) => updatePartItemDescription(item.id, e.target.value)}
+                            placeholder="תארו את החלק המבוקש (לדוגמה: צמיג קדמי, ידית בלם שמאלית...)"
+                            rows={2}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-[#14C425]/10 focus:border-[#14C425] text-gray-800 text-xs font-medium text-right resize-none"
+                          />
+
+                          <div
+                            onClick={() => document.getElementById(`part-photo-input-${item.id}`)?.click()}
+                            className="border border-dashed border-gray-300 rounded-xl p-3 text-center cursor-pointer hover:bg-[#14C425]/10 hover:border-[#14C425] transition-all flex flex-col items-center justify-center min-h-[80px] bg-white"
+                          >
+                            <input
+                              id={`part-photo-input-${item.id}`}
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handlePartItemPhotoChange(item.id, e)}
+                              className="hidden"
+                            />
+                            {item.photoPreview ? (
+                              <div className="relative w-24 aspect-[4/3] rounded-lg overflow-hidden border bg-white">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={item.photoPreview} alt="Part preview" className="w-full h-full object-contain" />
+                                <button
+                                  type="button"
+                                  onClick={(e) => removePartItemPhoto(item.id, e)}
+                                  className="absolute top-1 right-1 p-1 bg-red-650 text-white rounded-md hover:scale-105 transition-all shadow"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <UploadCloud className="w-4 h-4 text-[#0F9E1D] mb-1" />
+                                <span className="text-[#0F9E1D] font-bold text-[11px]">לחץ כאן להעלאת תמונה</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {partItems.length < MAX_PART_ITEMS && (
+                      <button
+                        type="button"
+                        onClick={addPartItem}
+                        className="w-full py-2.5 border border-dashed border-[#14C425]/40 text-[#0F9E1D] rounded-xl text-xs font-bold hover:bg-[#14C425]/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        הוסף חלק נוסף
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              {!partRequestSuccess && (
+                <div className="p-5 bg-gray-50/70 border-t border-gray-200/50 flex justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={closePartModal}
+                    className="px-5 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl text-xs font-bold active:scale-95 transition-all cursor-pointer"
+                  >
+                    ביטול
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitPartRequest}
+                    disabled={isSubmittingPartRequest}
+                    className="px-6 py-2.5 bg-gradient-to-r from-[#14C425] to-[#0F9E1D] text-white rounded-xl text-xs font-bold shadow-md shadow-[#14C425]/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isSubmittingPartRequest ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>שולח...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{partItems.length > 1 ? `שלח ${partItems.length} בקשות` : 'שלח בקשה'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
 
       {/* Print Flyer Container - Visible ONLY when printing */}

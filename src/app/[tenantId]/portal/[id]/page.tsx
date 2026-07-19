@@ -1,5 +1,5 @@
 import React from 'react';
-import { getCustomerById, getServiceRequestsByCustomerId } from '@/lib/db';
+import { getCustomerById, getServiceRequestsByCustomerId, getPartRequestsByCustomerId } from '@/lib/db';
 import CustomerPortal from './CustomerPortal';
 import Link from 'next/link';
 
@@ -38,12 +38,14 @@ export default async function PortalPage({ params }: PageProps) {
   }
 
   const requests = await getServiceRequestsByCustomerId(tenantId, id);
+  const partRequests = await getPartRequestsByCustomerId(tenantId, id);
   const { getTenantById } = await import('@/lib/db');
   const tenantObj = await getTenantById(tenantId);
   const businessName = tenantObj?.businessName || 'העסק';
   const whatsappTemplate = tenantObj?.whatsappTemplate || '';
+  const partsRequestPhone = tenantObj?.partsRequestPhone || '';
   const logoUrl = tenantObj?.logoUrl || '';
   const primaryColor = tenantObj?.primaryColor || '';
 
-  return <CustomerPortal customer={customer} initialRequests={requests} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} logoUrl={logoUrl} primaryColor={primaryColor} />;
+  return <CustomerPortal customer={customer} initialRequests={requests} initialPartRequests={partRequests} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} logoUrl={logoUrl} primaryColor={primaryColor} />;
 }

@@ -11,6 +11,8 @@ export interface Tenant {
   whatsappTemplate?: string;
   logoUrl?: string;
   primaryColor?: string;
+  partsRequestPhone?: string;
+  partsDeletePassword?: string;
   createdAt: string;
 }
 
@@ -33,6 +35,18 @@ export interface Driver {
   name: string;
   phone?: string;
   createdAt: string;
+}
+
+export interface PartRequest {
+  id: string;
+  requestNumber: number;
+  customerId: string;
+  customer?: Customer;
+  description: string;
+  photoImage: string; // base64 webp data URI — required
+  status: 'NEW' | 'FULFILLED';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ServiceRequest {
@@ -94,6 +108,8 @@ export async function ensureIndexes(tenantId: string) {
     db.collection('serviceRequests').createIndex({ requestNumber: -1 }),
     db.collection('serviceRequests').createIndex({ driverId: 1 }),
     db.collection('drivers').createIndex({ id: 1 }, { unique: true }),
+    db.collection('partRequests').createIndex({ id: 1 }, { unique: true }),
+    db.collection('partRequests').createIndex({ customerId: 1 }),
   ]);
   indexedTenants.add(tenantId);
 }
@@ -167,7 +183,7 @@ export async function updateTenantAdminPassword(id: string, adminPassword: strin
 
 export async function updateTenantSettings(
   id: string,
-  update: { name?: string; businessName?: string; logoUrl?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string }
+  update: { name?: string; businessName?: string; logoUrl?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string }
 ): Promise<void> {
   const db = await getMasterDb();
   const setObj: Record<string, any> = {};
@@ -176,10 +192,12 @@ export async function updateTenantSettings(
     setObj.businessName = update.businessName;
   }
   if (update.whatsappTemplate !== undefined) setObj.whatsappTemplate = update.whatsappTemplate;
+  if (update.partsRequestPhone !== undefined) setObj.partsRequestPhone = update.partsRequestPhone;
+  if (update.partsDeletePassword !== undefined) setObj.partsDeletePassword = update.partsDeletePassword;
   if (update.logoUrl !== undefined) setObj.logoUrl = update.logoUrl;
   if (update.adminPassword !== undefined) setObj.adminPassword = update.adminPassword;
   if (update.adminPasswordPlain !== undefined) setObj.adminPasswordPlain = update.adminPasswordPlain;
-  
+
   if (Object.keys(setObj).length > 0) {
     await db.collection('tenants').updateOne({ id }, { $set: setObj });
   }
@@ -536,4 +554,102 @@ export async function updateCustomer(
     { $set: update }
   );
   return result.matchedCount === 1;
+}
+
+// ---------------- Part Requests ----------------
+
+export async function getPartRequests(tenantId: string): Promise<PartRequest[]> {
+  const db = await getDb(tenantId);
+  const [requests, customers] = await Promise.all([
+    db.collection('partRequests').find({}).sort({ createdAt: -1 }).toArray(),
+    getCustomers(tenantId),
+  ]);
+  return requests.map(r => {
+    const { _id, ...rest } = r;
+    void _id;
+    return {
+      ...(rest as unknown as PartRequest),
+      customer: customers.find(c => c.id === rest.customerId),
+    };
+  });
+}
+
+export async function getPartRequestById(tenantId: string, id: string): Promise<PartRequest | undefined> {
+  const db = await getDb(tenantId);
+  const request = await db.collection('partRequests').findOne({ id });
+  if (!request) return undefined;
+  const { _id, ...rest } = request;
+  void _id;
+  return rest as unknown as PartRequest;
+}
+
+export async function getPartRequestsByCustomerId(tenantId: string, customerId: string): Promise<PartRequest[]> {
+  const db = await getDb(tenantId);
+  const requests = await db.collection('partRequests')
+    .find({ customerId })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  const customer = await getCustomerById(tenantId, customerId);
+
+  return requests.map(r => {
+    const { _id, ...rest } = r;
+    void _id;
+    return {
+      ...(rest as unknown as PartRequest),
+      customer: customer || undefined,
+    };
+  });
+}
+
+export async function createPartRequest(
+  tenantId: string,
+  request: Omit<PartRequest, 'id' | 'requestNumber' | 'status' | 'createdAt' | 'updatedAt'>
+): Promise<PartRequest> {
+  const db = await getDb(tenantId);
+
+  const counterResult = await db.collection('counters').findOneAndUpdate(
+    { _id: 'partRequestNumber' as any },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  const requestNumber = counterResult?.seq || 1;
+
+  const newRequest: PartRequest = {
+    ...request,
+    id: crypto.randomUUID(),
+    requestNumber,
+    status: 'NEW',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await db.collection('partRequests').insertOne(newRequest as unknown as Document);
+  return newRequest;
+}
+
+export async function updatePartRequestStatus(
+  tenantId: string,
+  id: string,
+  status: 'NEW' | 'FULFILLED'
+): Promise<PartRequest | undefined> {
+  const db = await getDb(tenantId);
+  const updatedAt = new Date().toISOString();
+
+  const result = await db.collection('partRequests').findOneAndUpdate(
+    { id },
+    { $set: { status, updatedAt } },
+    { returnDocument: 'after' }
+  );
+
+  if (!result) return undefined;
+  const { _id, ...rest } = result;
+  void _id;
+  return rest as unknown as PartRequest;
+}
+
+export async function deletePartRequest(tenantId: string, id: string): Promise<boolean> {
+  const db = await getDb(tenantId);
+  const result = await db.collection('partRequests').deleteOne({ id });
+  return result.deletedCount === 1;
 }

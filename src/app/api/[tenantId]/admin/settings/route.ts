@@ -20,6 +20,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     const formData = await req.formData();
     const businessName = formData.get('businessName') as string;
     const whatsappTemplate = formData.get('whatsappTemplate') as string;
+    const partsRequestPhone = formData.get('partsRequestPhone') as string;
+    const partsDeletePassword = formData.get('partsDeletePassword') as string;
     const password = formData.get('password') as string;
     const logoFile = formData.get('logo') as File | null;
     const removeLogo = formData.get('removeLogo') === 'true';
@@ -27,6 +29,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     const update: any = {};
     if (businessName) update.businessName = businessName.trim();
     if (whatsappTemplate) update.whatsappTemplate = whatsappTemplate.trim();
+    if (partsRequestPhone) update.partsRequestPhone = partsRequestPhone.trim();
+    if (partsDeletePassword && partsDeletePassword.trim()) update.partsDeletePassword = partsDeletePassword.trim();
     if (password && password.trim()) {
       const trimmedPassword = password.trim();
       update.adminPassword = hashPassword(trimmedPassword);
