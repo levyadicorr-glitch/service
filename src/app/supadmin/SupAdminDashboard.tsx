@@ -208,6 +208,10 @@ export default function SupAdminDashboard() {
                 className="w-full text-center px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium"
                 dir="ltr"
                 autoFocus
+                // Password managers inject attributes (e.g. fdprocessedid) onto
+                // login inputs before React hydrates, which trips the hydration
+                // mismatch warning. Suppressing it here is the standard remedy.
+                suppressHydrationWarning
               />
             </div>
             <div>
@@ -217,6 +221,7 @@ export default function SupAdminDashboard() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full text-center px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-sm font-medium"
+                suppressHydrationWarning
               />
             </div>
             <label className="flex items-center gap-2 cursor-pointer select-none justify-center">

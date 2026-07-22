@@ -1,0 +1,128 @@
+{# ---------------------------------------------------------------------
+   WiseWheel design-system macros for Jinja2.
+   Import with:  {% from "_macros.html" import card, button, input_field,
+                                              status_select, modal, stat_tile %}
+   Every visual rule here is copied verbatim from DESIGN_GUIDE.md — do not
+   invent new spacing/radius/shadow values, reuse these.
+--------------------------------------------------------------------- #}
+
+{# ---- tiny Lucide-style icon set (stroke-based, 24x24 viewBox) ---- #}
+{% macro icon(name, class="w-4 h-4") %}
+  {% if name == "plus" %}
+    <svg class="{{ class }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+  {% elif name == "trash" %}
+    <svg class="{{ class }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" /></svg>
+  {% elif name == "search" %}
+    <svg class="{{ class }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="11" cy="11" r="8" /><path stroke-linecap="round" d="M21 21l-4.35-4.35" /></svg>
+  {% elif name == "x" %}
+    <svg class="{{ class }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+  {% elif name == "pencil" %}
+    <svg class="{{ class }}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" /><path stroke-linecap="round" stroke-linejoin="round" d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+  {% endif %}
+{% endmacro %}
+
+{# ---- Panel / card — the base surface for every section of a page.
+       padding: "p-6" (default, content lists) or "p-4" (compact, e.g. a
+       search/filter bar) or "p-0" (when the caller manages its own padding,
+       e.g. a table that needs edge-to-edge rows). Pass it explicitly rather
+       than appending an override — two padding utilities of equal
+       specificity don't reliably cascade by HTML attribute order. #}
+{% macro card(padding="p-6", extra_classes="") %}
+<div class="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] {{ padding }} {{ extra_classes }}">
+  {{ caller() }}
+</div>
+{% endmacro %}
+
+{# ---- Buttons — variant one of: primary | secondary | danger ---- #}
+{% macro button(label, variant="primary", icon_name=None, type="button", href=None, extra_classes="", name=None, value=None) %}
+{% set base = "rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer" %}
+{% if variant == "primary" %}
+  {% set classes = base ~ " px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/10" %}
+{% elif variant == "danger" %}
+  {% set classes = base ~ " p-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100/50 shadow-sm" %}
+{% else %}
+  {% set classes = base ~ " p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 border border-gray-200 shadow-sm" %}
+{% endif %}
+{% if href %}
+<a href="{{ href }}" class="{{ classes }} {{ extra_classes }}">
+{% else %}
+<button type="{{ type }}"{% if name %} name="{{ name }}"{% endif %}{% if value %} value="{{ value }}"{% endif %} class="{{ classes }} {{ extra_classes }}">
+{% endif %}
+  {% if icon_name %}{{ icon(icon_name) }}{% endif %}
+  {% if label %}{{ label }}{% endif %}
+{% if href %}</a>{% else %}</button>{% endif %}
+{% endmacro %}
+
+{# ---- Form input with a real <label> above it (never placeholder-only) ---- #}
+{% macro input_field(label, name, value="", type="text", placeholder="", required=False, field_dir="rtl") %}
+<div class="space-y-1.5">
+  <label for="{{ name }}" class="block text-gray-700 text-xs font-bold">
+    {{ label }}{% if required %} <span class="text-red-500">*</span>{% endif %}
+  </label>
+  <input
+    type="{{ type }}"
+    id="{{ name }}"
+    name="{{ name }}"
+    value="{{ value }}"
+    placeholder="{{ placeholder }}"
+    dir="{{ field_dir }}"
+    {% if required %}required{% endif %}
+    class="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+  >
+</div>
+{% endmacro %}
+
+{# ---- Colored status <select> — pass options as [(value, label, color), ...]
+       color is a Tailwind color name e.g. "green", "amber", "red", "gray", "cyan"
+
+       GOTCHA if you move off the Play CDN to a compiled Tailwind build:
+       classes assembled as bg-{{ color }}-50 only exist as concrete strings
+       AFTER Jinja renders — Tailwind's static content-scanner reads the
+       .html source files themselves and will never see "bg-green-50" as a
+       literal substring here, so it gets purged from the compiled CSS.
+       Fix: add a safelist in tailwind.config.js for every color you actually
+       use, e.g. safelist: [{ pattern: /bg-(green|amber|red|gray|cyan|blue)-(50|100|600|700)/ }] #}
+{% macro status_select(name, options, selected, on_change_url=None) %}
+{% set ns = namespace(color="gray") %}
+{% for value, label, color in options %}{% if value == selected %}{% set ns.color = color %}{% endif %}{% endfor %}
+<select
+  name="{{ name }}"
+  {% if on_change_url %}hx-post="{{ on_change_url }}" hx-trigger="change"{% endif %}
+  class="px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all bg-{{ ns.color }}-50 text-{{ ns.color }}-700 border-{{ ns.color }}-100"
+>
+  {% for value, label, _ in options %}
+  <option value="{{ value }}" {% if value == selected %}selected{% endif %}>{{ label }}</option>
+  {% endfor %}
+</select>
+{% endmacro %}
+
+{# ---- Modal shell — call it, the caller() content becomes the body.
+       Hidden by default; toggle by adding/removing the `hidden` class
+       (e.g. via a tiny bit of JS or an Alpine.js `x-show`, your call). ---- #}
+{% macro modal(id, title, subtitle="") %}
+<div id="{{ id }}" class="hidden fixed inset-0 bg-black/40 z-50 items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+  <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
+    <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+      <div>
+        <h2 class="text-xl font-bold text-gray-900">{{ title }}</h2>
+        {% if subtitle %}<p class="text-gray-400 text-xs mt-1">{{ subtitle }}</p>{% endif %}
+      </div>
+      <button type="button" onclick="document.getElementById('{{ id }}').classList.add('hidden')"
+              class="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-700 transition-colors cursor-pointer">
+        {{ icon("x", "w-5 h-5") }}
+      </button>
+    </div>
+    <div class="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+      {{ caller() }}
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+{# ---- Stat tile — a single KPI number with a label underneath ---- #}
+{% macro stat_tile(value, label, color="blue") %}
+<div class="p-4 rounded-2xl border border-gray-100 bg-white/80">
+  <div class="text-3xl font-black text-{{ color }}-600">{{ value }}</div>
+  <div class="text-xs text-gray-500 font-bold mt-1">{{ label }}</div>
+</div>
+{% endmacro %}

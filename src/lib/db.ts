@@ -24,6 +24,7 @@ export interface Customer {
   phone?: string;
   email?: string;
   address?: string;
+  region?: 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM';
   licensePlate?: string;
   color?: string;
   serialNumber?: string;
@@ -45,6 +46,22 @@ export interface PartRequest {
   description: string;
   photoImage: string; // base64 webp data URI — required
   status: 'NEW' | 'FULFILLED';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: number;
+  customerId: string;
+  customer?: Customer;
+  driverId?: string;
+  driver?: Driver;
+  deviceType: string; // e.g. 'קורקינט', 'אופניים', or a custom type entered by the sales agent
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number; // quantity * unitPrice, computed at creation
+  status: 'PENDING' | 'FULFILLED' | 'CANCELLED';
   createdAt: string;
   updatedAt: string;
 }
@@ -110,6 +127,9 @@ export async function ensureIndexes(tenantId: string) {
     db.collection('drivers').createIndex({ id: 1 }, { unique: true }),
     db.collection('partRequests').createIndex({ id: 1 }, { unique: true }),
     db.collection('partRequests').createIndex({ customerId: 1 }),
+    db.collection('orders').createIndex({ id: 1 }, { unique: true }),
+    db.collection('orders').createIndex({ customerId: 1 }),
+    db.collection('orders').createIndex({ driverId: 1 }),
   ]);
   indexedTenants.add(tenantId);
 }
@@ -275,11 +295,18 @@ export async function updateDriver(
 
 export async function deleteDriver(tenantId: string, id: string): Promise<boolean> {
   const db = await getDb(tenantId);
-  // Requests assigned to this driver become unassigned, never deleted.
-  await db.collection('serviceRequests').updateMany(
-    { driverId: id },
-    { $unset: { driverId: '' }, $set: { updatedAt: new Date().toISOString() } }
-  );
+  // Requests/orders assigned to this driver become unassigned, never deleted.
+  const updatedAt = new Date().toISOString();
+  await Promise.all([
+    db.collection('serviceRequests').updateMany(
+      { driverId: id },
+      { $unset: { driverId: '' }, $set: { updatedAt } }
+    ),
+    db.collection('orders').updateMany(
+      { driverId: id },
+      { $unset: { driverId: '' }, $set: { updatedAt } }
+    ),
+  ]);
   const result = await db.collection('drivers').deleteOne({ id });
   return result.deletedCount === 1;
 }
@@ -324,19 +351,23 @@ export async function getServiceRequestsByDriverId(tenantId: string, driverId: s
   });
 }
 
+// The `customers`/`drivers` options let a caller that has already loaded those
+// collections (e.g. the admin page, which needs them for several joins) pass
+// them in, so this function doesn't re-scan them — avoiding N redundant Atlas
+// round-trips per page load.
+type ServiceRequestsOptions = {
+  page?: number;
+  limit?: number;
+  excludeImages?: boolean;
+  customers?: Customer[];
+  drivers?: Driver[];
+};
+
 export async function getServiceRequests(tenantId: string): Promise<ServiceRequest[]>;
-export async function getServiceRequests(tenantId: string, options: { 
-  page?: number; 
-  limit?: number; 
-  excludeImages?: boolean; 
-}): Promise<{ requests: ServiceRequest[]; total: number }>;
-export async function getServiceRequests(tenantId: string, options?: { 
-  page?: number; 
-  limit?: number; 
-  excludeImages?: boolean; 
-}): Promise<any> {
+export async function getServiceRequests(tenantId: string, options: ServiceRequestsOptions): Promise<{ requests: ServiceRequest[]; total: number }>;
+export async function getServiceRequests(tenantId: string, options?: ServiceRequestsOptions): Promise<any> {
   const db = await getDb(tenantId);
-  
+
   const page = options?.page || 1;
   const limit = options?.limit || 100;
   const skip = (page - 1) * limit;
@@ -356,13 +387,14 @@ export async function getServiceRequests(tenantId: string, options?: {
     .skip(skip)
     .limit(limit);
 
-  // These four queries are independent — running them in parallel instead of
-  // sequentially avoids paying round-trip latency to MongoDB Atlas four times over.
+  // These queries are independent — running them in parallel instead of
+  // sequentially avoids paying round-trip latency to MongoDB Atlas over and
+  // over. When the caller already has customers/drivers, reuse them.
   const [requests, total, customers, drivers] = await Promise.all([
     cursor.toArray(),
     db.collection('serviceRequests').countDocuments({}),
-    getCustomers(tenantId),
-    getDrivers(tenantId),
+    options?.customers ? Promise.resolve(options.customers) : getCustomers(tenantId),
+    options?.drivers ? Promise.resolve(options.drivers) : getDrivers(tenantId),
   ]);
 
   const mappedRequests = requests.map(req => {
@@ -377,9 +409,11 @@ export async function getServiceRequests(tenantId: string, options?: {
   if (!options) {
     return mappedRequests;
   }
-  
+
   return { requests: mappedRequests, total };
 }
+// NOTE: getServiceRequestById (single request WITH images, used by the admin
+// detail modal to load images on demand) is defined further below.
 
 export async function createServiceRequest(
   tenantId: string,
@@ -558,11 +592,18 @@ export async function updateCustomer(
 
 // ---------------- Part Requests ----------------
 
-export async function getPartRequests(tenantId: string): Promise<PartRequest[]> {
+// excludeImages projects out the base64 photoImage so list views don't ship it
+// (thumbnails load on demand via the image endpoint). customers can be passed
+// in by a caller that already loaded them, to skip a redundant scan.
+export async function getPartRequests(
+  tenantId: string,
+  options?: { excludeImages?: boolean; customers?: Customer[] }
+): Promise<PartRequest[]> {
   const db = await getDb(tenantId);
+  const projection = options?.excludeImages ? { photoImage: 0 } : {};
   const [requests, customers] = await Promise.all([
-    db.collection('partRequests').find({}).sort({ createdAt: -1 }).toArray(),
-    getCustomers(tenantId),
+    db.collection('partRequests').find({}, { projection }).sort({ createdAt: -1 }).toArray(),
+    options?.customers ? Promise.resolve(options.customers) : getCustomers(tenantId),
   ]);
   return requests.map(r => {
     const { _id, ...rest } = r;
@@ -651,5 +692,102 @@ export async function updatePartRequestStatus(
 export async function deletePartRequest(tenantId: string, id: string): Promise<boolean> {
   const db = await getDb(tenantId);
   const result = await db.collection('partRequests').deleteOne({ id });
+  return result.deletedCount === 1;
+}
+
+// ---------------- Orders (merchandise) ----------------
+
+export async function getOrders(
+  tenantId: string,
+  options?: { customers?: Customer[]; drivers?: Driver[] }
+): Promise<Order[]> {
+  const db = await getDb(tenantId);
+  const [orders, customers, drivers] = await Promise.all([
+    db.collection('orders').find({}).sort({ createdAt: -1 }).toArray(),
+    options?.customers ? Promise.resolve(options.customers) : getCustomers(tenantId),
+    options?.drivers ? Promise.resolve(options.drivers) : getDrivers(tenantId),
+  ]);
+  return orders.map(o => {
+    const { _id, ...rest } = o;
+    void _id;
+    return {
+      ...(rest as unknown as Order),
+      customer: customers.find(c => c.id === rest.customerId),
+      driver: rest.driverId ? drivers.find(d => d.id === rest.driverId) : undefined,
+    };
+  });
+}
+
+export async function createOrder(
+  tenantId: string,
+  order: Omit<Order, 'id' | 'orderNumber' | 'totalPrice' | 'status' | 'driver' | 'createdAt' | 'updatedAt'>
+): Promise<Order> {
+  const db = await getDb(tenantId);
+
+  const counterResult = await db.collection('counters').findOneAndUpdate(
+    { _id: 'orderNumber' as any },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  const orderNumber = counterResult?.seq || 1;
+
+  const newOrder: Order = {
+    ...order,
+    id: crypto.randomUUID(),
+    orderNumber,
+    totalPrice: order.quantity * order.unitPrice,
+    status: 'PENDING',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await db.collection('orders').insertOne(newOrder as unknown as Document);
+  return newOrder;
+}
+
+export async function assignDriverToOrder(
+  tenantId: string,
+  orderId: string,
+  driverId: string | null
+): Promise<Order | undefined> {
+  const db = await getDb(tenantId);
+  const updatedAt = new Date().toISOString();
+  const update = driverId
+    ? { $set: { driverId, updatedAt } }
+    : { $set: { updatedAt }, $unset: { driverId: '' } };
+  const result = await db.collection('orders').findOneAndUpdate(
+    { id: orderId },
+    update,
+    { returnDocument: 'after' }
+  );
+  if (!result) return undefined;
+  const { _id, ...rest } = result;
+  void _id;
+  return rest as unknown as Order;
+}
+
+export async function updateOrderStatus(
+  tenantId: string,
+  id: string,
+  status: 'PENDING' | 'FULFILLED' | 'CANCELLED'
+): Promise<Order | undefined> {
+  const db = await getDb(tenantId);
+  const updatedAt = new Date().toISOString();
+
+  const result = await db.collection('orders').findOneAndUpdate(
+    { id },
+    { $set: { status, updatedAt } },
+    { returnDocument: 'after' }
+  );
+
+  if (!result) return undefined;
+  const { _id, ...rest } = result;
+  void _id;
+  return rest as unknown as Order;
+}
+
+export async function deleteOrder(tenantId: string, id: string): Promise<boolean> {
+  const db = await getDb(tenantId);
+  const result = await db.collection('orders').deleteOne({ id });
   return result.deletedCount === 1;
 }

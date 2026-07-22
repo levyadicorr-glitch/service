@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "_macros.html" import card, button, input_field, status_select, modal, stat_tile, icon %}
+
+{% block title %}לקוחות — דוגמה{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-6 space-y-6" dir="rtl">
+
+  {# ---- stat row ---- #}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    {{ stat_tile(customers | length, "סה\"כ לקוחות", "blue") }}
+    {{ stat_tile(customers | selectattr("region") | list | length, "עם אזור משויך", "cyan") }}
+    {{ stat_tile(customers | rejectattr("address") | list | length, "ללא כתובת", "amber") }}
+    {{ stat_tile(regions | length, "אזורים פעילים", "green") }}
+  </div>
+
+  {# ---- search + filter + add bar ---- #}
+  {% call card(padding="p-4") %}
+  <div class="flex flex-col md:flex-row gap-4 items-center justify-between">
+    <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+      <div class="relative w-full sm:w-80">
+        <input type="text" placeholder="חיפוש לקוח לפי שם או טלפון..."
+               class="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium">
+        <span class="absolute right-4 top-3.5 text-gray-400">{{ icon("search", "w-5 h-5") }}</span>
+      </div>
+      <select class="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer">
+        <option value="ALL">כל האזורים</option>
+        {% for r in regions %}
+        <option value="{{ r.key }}">{{ r.label }}</option>
+        {% endfor %}
+      </select>
+      {{ button("הוסף לקוח חדש", variant="primary", icon_name="plus", extra_classes="px-5 py-3 sm:py-2.5", type="button") }}
+    </div>
+    <span class="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">
+      נמצאו {{ customers | length }} לקוחות
+    </span>
+  </div>
+  {% endcall %}
+
+  {# ---- table ---- #}
+  {% call card(padding="p-0", extra_classes="overflow-hidden") %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-right border-collapse">
+      <thead>
+        <tr class="bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50">
+          <th class="p-5">שם הלקוח</th>
+          <th class="p-5">טלפון</th>
+          <th class="p-5">כתובת</th>
+          <th class="p-5">אזור</th>
+          <th class="p-5 text-center">פעולות</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200/40">
+        {% for cust in customers %}
+        <tr class="hover:bg-gray-50/50 transition-colors">
+          <td class="p-5 font-bold text-gray-800">{{ cust.first_name }} {{ cust.last_name }}</td>
+          <td class="p-5 text-gray-600 font-mono text-sm">{{ cust.phone or "-" }}</td>
+          <td class="p-5 text-gray-500 text-sm">{{ cust.address or "לא צוינה כתובת" }}</td>
+          <td class="p-5">
+            {{ status_select("region-" ~ cust.id, region_options, cust.region or "") }}
+          </td>
+          <td class="p-5 text-center">
+            <div class="flex items-center justify-center gap-1.5">
+              {{ button(None, variant="secondary", icon_name="pencil") }}
+              {{ button(None, variant="danger", icon_name="trash") }}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="p-10 text-center text-gray-400 text-sm">לא נמצאו לקוחות.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endcall %}
+</div>
+
+{# ---- add-customer modal (opened via onclick on the button above in a real app) ---- #}
+{% call modal("add-customer-modal", "הוסף לקוח חדש", "מלא את פרטי הלקוח כדי להוסיף אותו למערכת") %}
+<form method="post" action="/customers" class="space-y-4">
+  <div class="grid grid-cols-2 gap-3">
+    {{ input_field("שם פרטי", "first_name", required=True) }}
+    {{ input_field("שם משפחה", "last_name", required=True) }}
+  </div>
+  {{ input_field("טלפון", "phone", type="tel", field_dir="ltr") }}
+  {{ input_field("כתובת", "address") }}
+  {{ button("שמור לקוח", variant="primary", type="submit", extra_classes="w-full py-4 text-sm") }}
+</form>
+{% endcall %}
+{% endblock %}

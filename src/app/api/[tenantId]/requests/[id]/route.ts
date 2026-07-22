@@ -3,6 +3,30 @@ import { assignDriverToRequest, deleteServiceRequest, getDriverById, getServiceR
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
 
+// Returns a single request WITH its images. The admin list is loaded without
+// images to keep the payload small; the detail modal calls this on open to
+// fetch the images for just the one request being viewed.
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ tenantId: string; id: string }> }
+) {
+  try {
+    const { tenantId, id } = await params;
+    const denied = requireTenantAdmin(req, tenantId);
+    if (denied) return denied;
+
+    const request = await getServiceRequestById(tenantId, id);
+    if (!request) {
+      return NextResponse.json({ error: 'קריאת שירות לא נמצאה' }, { status: 404 });
+    }
+
+    return NextResponse.json({ request });
+  } catch (err: unknown) {
+    console.error('Error fetching request:', err);
+    return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
+  }
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ tenantId: string; id: string }> }

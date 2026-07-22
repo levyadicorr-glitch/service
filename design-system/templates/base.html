@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="he" dir="rtl" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}WiseWheel{% endblock %}</title>
+
+  <!-- Rubik — same font as the source app, incl. Hebrew subset -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+
+  <!--
+    Tailwind Play CDN — fine for a design reference / prototype.
+    For production, replace with a compiled Tailwind build (postcss/cli)
+    instead of shipping the CDN's runtime compiler to every visitor.
+  -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Rubik', 'sans-serif'] },
+        },
+      },
+    };
+  </script>
+
+  {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20">
+  {% block content %}{% endblock %}
+</body>
+</html>

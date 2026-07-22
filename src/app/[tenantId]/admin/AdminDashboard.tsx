@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Customer, Driver, PartRequest, ServiceRequest } from '@/lib/db';
+import { Customer, Driver, Order, PartRequest, ServiceRequest } from '@/lib/db';
 import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
 import {
   Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock,
   Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone,
-  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2, Truck, Package
+  Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2, Truck, Package,
+  Menu, ShoppingCart, Pencil, Route, MapPin
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -14,6 +15,7 @@ interface AdminDashboardProps {
   customers: Customer[];
   drivers: Driver[];
   initialPartRequests: PartRequest[];
+  initialOrders: Order[];
   tenantId: string;
   businessName: string;
   whatsappTemplate: string;
@@ -21,17 +23,29 @@ interface AdminDashboardProps {
   logoUrl?: string;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, tenantId, businessName, whatsappTemplate, partsRequestPhone = '', logoUrl = '' }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, tenantId, businessName, whatsappTemplate, partsRequestPhone = '', logoUrl = '' }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [partRequestsList, setPartRequestsList] = useState<PartRequest[]>(initialPartRequests);
-  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'partRequests'>('requests');
-  
+  const [ordersList, setOrdersList] = useState<Order[]>(initialOrders);
+  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'partRequests' | 'orders' | 'dispatch'>('requests');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  const REGIONS: { key: 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM'; label: string }[] = [
+    { key: 'CENTER', label: 'מרכז' },
+    { key: 'SOUTH', label: 'דרום' },
+    { key: 'NORTH', label: 'צפון' },
+    { key: 'JERUSALEM', label: 'ירושלים' },
+  ];
+
   // Search & Filter States
   const [requestSearch, setRequestSearch] = useState('');
   const [requestStatusFilter, setRequestStatusFilter] = useState<string>('ALL');
   const [customerSearch, setCustomerSearch] = useState('');
+  const [customerRegionFilter, setCustomerRegionFilter] = useState<string>('ALL');
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderRegionFilter, setOrderRegionFilter] = useState<string>('ALL');
 
   // Settings States
   const [currentBusinessName, setCurrentBusinessName] = useState(businessName);
@@ -137,6 +151,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
   // Modal State
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
+  const [isLoadingRequestImages, setIsLoadingRequestImages] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copiedCustomerId, setCopiedCustomerId] = useState<string | null>(null);
@@ -164,6 +179,23 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     serialNumber: '',
   });
 
+  // Customer Card (edit) Modal State
+  const [isCustomerCardOpen, setIsCustomerCardOpen] = useState(false);
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [isSavingCustomerCard, setIsSavingCustomerCard] = useState(false);
+  const [customerCardForm, setCustomerCardForm] = useState({
+    firstName: '',
+    lastName: '',
+    phone: '',
+    email: '',
+    address: '',
+    region: '' as '' | 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM',
+    licensePlate: '',
+    color: '',
+    serialNumber: '',
+  });
+  const [updatingRegionCustomerId, setUpdatingRegionCustomerId] = useState<string | null>(null);
+
   // Drivers Management State (settings modal section)
   const [newDriverName, setNewDriverName] = useState('');
   const [newDriverPhone, setNewDriverPhone] = useState('');
@@ -173,6 +205,24 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [adminSelectedDriverId, setAdminSelectedDriverId] = useState('');
 
   const multiDriver = driversList.length > 1;
+
+  // Orders Management State
+  const DEVICE_TYPE_PRESETS = ['קורקינט', 'אופניים'];
+  const ORDER_STATUSES: { key: 'PENDING' | 'FULFILLED' | 'CANCELLED'; label: string; bg: string; text: string; border: string }[] = [
+    { key: 'PENDING', label: 'ממתין לשילוח', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100' },
+    { key: 'FULFILLED', label: 'סופק', bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-100' },
+    { key: 'CANCELLED', label: 'בוטל', bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' },
+  ];
+  const [isAddOrderModalOpen, setIsAddOrderModalOpen] = useState(false);
+  const [newOrderCustomerId, setNewOrderCustomerId] = useState('');
+  const [newOrderDeviceType, setNewOrderDeviceType] = useState<string>(DEVICE_TYPE_PRESETS[0]);
+  const [newOrderCustomDeviceType, setNewOrderCustomDeviceType] = useState('');
+  const [newOrderQuantity, setNewOrderQuantity] = useState('1');
+  const [newOrderUnitPrice, setNewOrderUnitPrice] = useState('');
+  const [newOrderDriverId, setNewOrderDriverId] = useState('');
+  const [newOrderRegion, setNewOrderRegion] = useState<'' | 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM'>('');
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [updatingDriverOrderId, setUpdatingDriverOrderId] = useState<string | null>(null);
 
   // QR Code Flyer State
   const [selectedCustomerForQr, setSelectedCustomerForQr] = useState<Customer | null>(null);
@@ -202,11 +252,40 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     }
   };
 
+  // Open the request detail modal. The list is loaded without images (to keep
+  // the payload small), so fetch this one request's images on demand and merge
+  // them in. Text/status show instantly; images fill in when they arrive.
+  const openRequestDetails = async (req: ServiceRequest) => {
+    setSelectedRequest(req);
+    setIsLoadingRequestImages(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/requests/${req.id}`);
+      const data = await res.json();
+      if (res.ok && data.request) {
+        setSelectedRequest(prev => (prev && prev.id === req.id ? { ...prev, ...data.request } : prev));
+      }
+    } catch (err) {
+      console.error('Error loading request images:', err);
+    } finally {
+      setIsLoadingRequestImages(false);
+    }
+  };
+
   useEffect(() => {
     setBaseUrl(window.location.origin);
     // Legacy client-side auth flag, no longer used (auth is a server session cookie)
     localStorage.removeItem('admin_auth');
   }, []);
+
+  // Close the mobile sidebar drawer on Escape
+  useEffect(() => {
+    if (!isMobileSidebarOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMobileSidebarOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileSidebarOpen]);
 
   useEffect(() => {
     // Set polling interval for 30 seconds
@@ -252,8 +331,50 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     const name = `${cust.firstName} ${cust.lastName}`.toLowerCase();
     const phone = (cust.phone || '').toLowerCase();
     const searchLower = customerSearch.toLowerCase();
-    return name.includes(searchLower) || phone.includes(searchLower);
+    const matchesSearch = name.includes(searchLower) || phone.includes(searchLower);
+    const matchesRegion = customerRegionFilter === 'ALL' || cust.region === customerRegionFilter;
+    return matchesSearch && matchesRegion;
   });
+
+  // Filter orders
+  const filteredOrders = ordersList.filter(order => {
+    const customerName = order.customer ? `${order.customer.firstName} ${order.customer.lastName}`.toLowerCase() : '';
+    const customerPhone = (order.customer?.phone || '').toLowerCase();
+    const searchLower = orderSearch.toLowerCase();
+    const matchesSearch = !searchLower || customerName.includes(searchLower) || customerPhone.includes(searchLower) || order.deviceType.toLowerCase().includes(searchLower);
+    const matchesRegion = orderRegionFilter === 'ALL' || order.customer?.region === orderRegionFilter;
+    return matchesSearch && matchesRegion;
+  });
+
+  // ---- Dispatch Board: group open requests/orders by region, then by driver ----
+  const dispatchRegionKeys: { key: string; label: string }[] = [...REGIONS, { key: 'UNASSIGNED', label: 'ללא אזור' }];
+  const openDispatchRequests = requests.filter(r => r.status !== 'COMPLETED');
+  const openDispatchOrders = ordersList.filter(o => o.status === 'PENDING');
+  const openDispatchParts = partRequestsList.filter(p => p.status === 'NEW');
+
+  function bucketByDriver<T extends { driverId?: string }>(items: T[]): Map<string, T[]> {
+    const buckets = new Map<string, T[]>();
+    items.forEach(item => {
+      const key = item.driverId || 'unassigned';
+      buckets.set(key, [...(buckets.get(key) || []), item]);
+    });
+    return buckets;
+  }
+
+  const dispatchGroups = dispatchRegionKeys
+    .map(region => {
+      const regionRequests = openDispatchRequests.filter(r => (r.customer?.region || 'UNASSIGNED') === region.key);
+      const regionOrders = openDispatchOrders.filter(o => (o.customer?.region || 'UNASSIGNED') === region.key);
+      const regionParts = openDispatchParts.filter(p => (p.customer?.region || 'UNASSIGNED') === region.key);
+      const driverKeys = Array.from(new Set([
+        ...regionRequests.map(r => r.driverId || 'unassigned'),
+        ...regionOrders.map(o => o.driverId || 'unassigned'),
+      ])).sort((a, b) => (a === 'unassigned' ? 1 : 0) - (b === 'unassigned' ? 1 : 0));
+      const requestsByDriver = bucketByDriver(regionRequests);
+      const ordersByDriver = bucketByDriver(regionOrders);
+      return { region, driverKeys, requestsByDriver, ordersByDriver, parts: regionParts };
+    })
+    .filter(g => g.driverKeys.length > 0 || g.parts.length > 0);
 
   // Handle status update
   const handleStatusChange = async (reqId: string, newStatus: string) => {
@@ -409,6 +530,91 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     }
   };
 
+  // Open the customer card modal pre-filled with an existing customer's data
+  const openCustomerCard = (cust: Customer) => {
+    setEditingCustomerId(cust.id);
+    setCustomerCardForm({
+      firstName: cust.firstName,
+      lastName: cust.lastName,
+      phone: cust.phone || '',
+      email: cust.email || '',
+      address: cust.address || '',
+      region: cust.region || '',
+      licensePlate: cust.licensePlate || '',
+      color: cust.color || '',
+      serialNumber: cust.serialNumber || '',
+    });
+    setIsCustomerCardOpen(true);
+  };
+
+  const applyCustomerUpdate = (customerId: string, update: Partial<Customer>) => {
+    setCustomersList(prev => prev.map(c => c.id === customerId ? { ...c, ...update } : c));
+    setRequests(prev => prev.map(r => r.customerId === customerId && r.customer ? { ...r, customer: { ...r.customer, ...update } } : r));
+    setOrdersList(prev => prev.map(o => o.customerId === customerId && o.customer ? { ...o, customer: { ...o.customer, ...update } } : o));
+    setPartRequestsList(prev => prev.map(p => p.customerId === customerId && p.customer ? { ...p, customer: { ...p.customer, ...update } } : p));
+  };
+
+  const handleSaveCustomerCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCustomerId) return;
+    if (!customerCardForm.firstName.trim() || !customerCardForm.lastName.trim()) {
+      alert('שם פרטי ושם משפחה הם שדות חובה');
+      return;
+    }
+
+    setIsSavingCustomerCard(true);
+    try {
+      const update = {
+        firstName: customerCardForm.firstName.trim(),
+        lastName: customerCardForm.lastName.trim(),
+        phone: customerCardForm.phone.trim() || undefined,
+        email: customerCardForm.email.trim() || undefined,
+        address: customerCardForm.address.trim() || undefined,
+        region: customerCardForm.region || undefined,
+        licensePlate: customerCardForm.licensePlate.trim() || undefined,
+        color: customerCardForm.color.trim() || undefined,
+        serialNumber: customerCardForm.serialNumber.trim() || undefined,
+      };
+
+      const res = await fetch(`/api/${tenantId}/customers/${editingCustomerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(update),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to update customer');
+      }
+
+      applyCustomerUpdate(editingCustomerId, update);
+      setIsCustomerCardOpen(false);
+      setEditingCustomerId(null);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בעדכון הלקוח');
+    } finally {
+      setIsSavingCustomerCard(false);
+    }
+  };
+
+  const handleUpdateCustomerRegion = async (customerId: string, region: string) => {
+    setUpdatingRegionCustomerId(customerId);
+    try {
+      const res = await fetch(`/api/${tenantId}/customers/${customerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ region: region || undefined }),
+      });
+      if (!res.ok) throw new Error('Failed to update region');
+
+      applyCustomerUpdate(customerId, { region: (region || undefined) as Customer['region'] });
+    } catch {
+      alert('שגיאה בעדכון האזור');
+    } finally {
+      setUpdatingRegionCustomerId(null);
+    }
+  };
+
   // Copy customer URL
 
   const copyCustomerUrl = (customerId: string) => {
@@ -466,8 +672,9 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       if (!res.ok) throw new Error('שגיאה במחיקת הנהג');
 
       setDriversList(prev => prev.filter(d => d.id !== driverId));
-      // Requests assigned to him become unassigned locally, matching the server
+      // Requests/orders assigned to him become unassigned locally, matching the server
       setRequests(prev => prev.map(r => r.driverId === driverId ? { ...r, driverId: undefined, driver: undefined } : r));
+      setOrdersList(prev => prev.map(o => o.driverId === driverId ? { ...o, driverId: undefined, driver: undefined } : o));
     } catch {
       alert('שגיאה במחיקת הנהג');
     }
@@ -525,13 +732,168 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     }
   };
 
+  // ---- Orders management ----
+
+  const handleAddOrder = async () => {
+    const deviceType = (newOrderDeviceType === 'other' ? newOrderCustomDeviceType : newOrderDeviceType).trim();
+    const quantity = Number(newOrderQuantity);
+    const unitPrice = Number(newOrderUnitPrice);
+
+    if (!newOrderCustomerId) {
+      alert('יש לבחור לקוח');
+      return;
+    }
+    if (!deviceType) {
+      alert('סוג המכשיר הוא שדה חובה');
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      alert('כמות לא תקינה');
+      return;
+    }
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      alert('מחיר ליחידה לא תקין');
+      return;
+    }
+    if (!newOrderRegion) {
+      alert('יש לבחור אזור');
+      return;
+    }
+
+    setIsSavingOrder(true);
+    try {
+      // Region lives on the customer, so persist it there if it changed/was set.
+      const selectedCustomer = customersList.find(c => c.id === newOrderCustomerId);
+      if (selectedCustomer && selectedCustomer.region !== newOrderRegion) {
+        const regionRes = await fetch(`/api/${tenantId}/customers/${newOrderCustomerId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ region: newOrderRegion }),
+        });
+        if (!regionRes.ok) {
+          const errorData = await regionRes.json();
+          throw new Error(errorData.error || 'שגיאה בעדכון האזור');
+        }
+        applyCustomerUpdate(newOrderCustomerId, { region: newOrderRegion });
+      }
+
+      const res = await fetch(`/api/${tenantId}/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: newOrderCustomerId,
+          deviceType,
+          quantity,
+          unitPrice,
+          driverId: newOrderDriverId || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to create order');
+      }
+
+      const data = await res.json();
+      // Attach the joined driver so the new row renders it without a refetch.
+      const driver = data.order.driverId ? driversList.find(d => d.id === data.order.driverId) : undefined;
+      setOrdersList(prev => [{ ...data.order, driver }, ...prev]);
+      setNewOrderCustomerId('');
+      setNewOrderDeviceType(DEVICE_TYPE_PRESETS[0]);
+      setNewOrderCustomDeviceType('');
+      setNewOrderQuantity('1');
+      setNewOrderUnitPrice('');
+      setNewOrderDriverId('');
+      setNewOrderRegion('');
+      setIsAddOrderModalOpen(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בהוספת ההזמנה');
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
+
+  const handleDeleteOrder = async (id: string) => {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק הזמנה זו?')) return;
+
+    try {
+      const res = await fetch(`/api/${tenantId}/orders/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete order');
+
+      setOrdersList(prev => prev.filter(o => o.id !== id));
+    } catch {
+      alert('שגיאה במחיקת ההזמנה');
+    }
+  };
+
+  const handleOrderStatusChange = async (id: string, status: 'PENDING' | 'FULFILLED' | 'CANCELLED') => {
+    try {
+      const res = await fetch(`/api/${tenantId}/orders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error('Failed to update order status');
+
+      setOrdersList(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+    } catch {
+      alert('שגיאה בעדכון סטטוס ההזמנה');
+    }
+  };
+
+  const handleOrderDriverChange = async (orderId: string, driverId: string | null) => {
+    setUpdatingDriverOrderId(orderId);
+    try {
+      const res = await fetch(`/api/${tenantId}/orders/${orderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ driverId }),
+      });
+
+      if (!res.ok) throw new Error('Failed to assign driver');
+
+      const driver = driverId ? driversList.find(d => d.id === driverId) : undefined;
+      setOrdersList(prev => prev.map(o => o.id === orderId ? { ...o, driverId: driverId || undefined, driver } : o));
+    } catch {
+      alert('שגיאה בשיוך הנהג להזמנה');
+    } finally {
+      setUpdatingDriverOrderId(null);
+    }
+  };
+
+  // ---- Shared nav items (used by both the desktop sidebar and mobile drawer) ----
+
+  const navItems: { key: 'requests' | 'customers' | 'drivers' | 'partRequests' | 'orders' | 'dispatch'; label: string; icon: React.ElementType }[] = [
+    { key: 'requests', label: 'קריאות שירות', icon: FileText },
+    { key: 'customers', label: 'רשימת לקוחות', icon: User },
+    { key: 'drivers', label: 'נהגים', icon: Truck },
+    { key: 'partRequests', label: 'בקשות חלקים', icon: Package },
+    { key: 'orders', label: 'הזמנת סחורה', icon: ShoppingCart },
+    { key: 'dispatch', label: 'לוח שילוח', icon: Route },
+  ];
+
+  const handleNavSelect = (key: typeof activeTab) => {
+    setActiveTab(key);
+    setIsMobileSidebarOpen(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f] font-sans antialiased pb-20" dir="rtl">
       <div className="flex flex-col md:flex-row print:hidden">
-        {/* Mobile header + section switcher (below md) */}
+        {/* Mobile header (below md) */}
         <div className="md:hidden sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-gray-200/50">
           <div className="px-4 py-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
+              <button
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="p-2 bg-white hover:bg-gray-100 rounded-lg text-gray-500 border border-gray-200 shadow-sm active:scale-95 transition-all cursor-pointer flex items-center justify-center flex-shrink-0"
+                title="פתח תפריט"
+                aria-label="פתח תפריט ניווט"
+                aria-haspopup="true"
+                aria-expanded={isMobileSidebarOpen}
+              >
+                <Menu className="w-4 h-4" />
+              </button>
               <div className="w-8 h-8 rounded-lg overflow-hidden border bg-gray-50 flex items-center justify-center flex-shrink-0">
                 {currentLogoUrl ? (
                   <img src={currentLogoUrl} alt="Logo" className="w-full h-full object-contain" />
@@ -549,47 +911,77 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
               <Settings className="w-4 h-4" />
             </button>
           </div>
-          <div className="px-4 pb-3 flex items-center gap-1.5 overflow-x-auto">
-            <button
-              onClick={() => setActiveTab('requests')}
-              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'requests' ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              קריאות שירות
-            </button>
-            <button
-              onClick={() => setActiveTab('customers')}
-              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'customers' ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              רשימת לקוחות
-            </button>
-            <button
-              onClick={() => setActiveTab('drivers')}
-              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'drivers' ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              <Truck className="w-3.5 h-3.5" />
-              נהגים
-            </button>
-            <button
-              onClick={() => setActiveTab('partRequests')}
-              className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                activeTab === 'partRequests' ? 'bg-[#14C425] text-white shadow-md' : 'bg-[#14C425]/10 text-[#0F9E1D]'
-              }`}
-            >
-              <Package className="w-3.5 h-3.5" />
-              בקשות חלקים
-            </button>
-          </div>
         </div>
 
-        {/* Sidebar */}
+        {/* Mobile drawer backdrop */}
+        {isMobileSidebarOpen && (
+          <div
+            className="md:hidden fixed inset-0 bg-black/40 z-40 backdrop-blur-sm"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Mobile drawer sidebar */}
+        <aside
+          role="dialog"
+          aria-modal="true"
+          aria-label="תפריט ניווט"
+          className={`md:hidden fixed inset-y-0 right-0 z-50 w-72 flex flex-col bg-white/95 backdrop-blur-xl border-l border-gray-200/50 px-4 py-6 overflow-y-auto shadow-2xl transition-transform duration-300 motion-reduce:transition-none ${
+            isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3 mb-8 px-1">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 flex-shrink-0">
+                {currentLogoUrl ? (
+                  <img src={currentLogoUrl} alt="Logo" className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl">{currentBusinessName.charAt(0)}</div>
+                )}
+              </div>
+              <span className="text-sm font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-l from-gray-900 via-gray-800 to-blue-700 min-w-0 truncate">{currentBusinessName} <span className="font-normal text-blue-600">ניהול</span></span>
+            </div>
+            <button
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-700 transition-colors cursor-pointer flex-shrink-0"
+              title="סגור תפריט"
+              aria-label="סגור תפריט ניווט"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <nav className="flex-1 space-y-1.5">
+            {navItems.map(item => {
+              const ItemIcon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => handleNavSelect(item.key)}
+                  className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                    activeTab === item.key ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <ItemIcon className="w-4 h-4" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="pt-4 mt-4 border-t border-gray-100">
+            <button
+              onClick={() => { openSettingsModal(); setIsMobileSidebarOpen(false); }}
+              className="w-full px-4 py-2.5 hover:bg-gray-100 rounded-xl text-gray-500 active:scale-95 transition-all border border-gray-200/50 bg-white/80 shadow-sm cursor-pointer flex items-center gap-2.5 text-xs font-bold"
+            >
+              <Settings className="w-4 h-4" />
+              הגדרות עסק
+            </button>
+          </div>
+        </aside>
+
+        {/* Desktop sidebar */}
         <aside className="hidden md:flex md:flex-col w-64 shrink-0 sticky top-0 h-screen bg-white/70 backdrop-blur-xl border-l border-gray-200/50 px-4 py-6 overflow-y-auto">
           <div className="flex items-center gap-3 mb-8 px-1">
             <div className="w-10 h-10 rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center shadow-lg shadow-blue-500/5 active:scale-95 transition-all cursor-pointer flex-shrink-0">
@@ -603,44 +995,21 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
           </div>
 
           <nav className="flex-1 space-y-1.5">
-            <button
-              onClick={() => setActiveTab('requests')}
-              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                activeTab === 'requests' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              קריאות שירות
-            </button>
-            <button
-              onClick={() => setActiveTab('customers')}
-              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                activeTab === 'customers' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <User className="w-4 h-4" />
-              רשימת לקוחות
-            </button>
-            <button
-              onClick={() => setActiveTab('drivers')}
-              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                activeTab === 'drivers' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <Truck className="w-4 h-4" />
-              נהגים
-            </button>
-            <button
-              onClick={() => setActiveTab('partRequests')}
-              className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                activeTab === 'partRequests'
-                  ? 'bg-[#14C425] text-white shadow-md shadow-[#14C425]/20'
-                  : 'bg-[#14C425]/10 text-[#0F9E1D] hover:bg-[#14C425]/15 border border-[#14C425]/20'
-              }`}
-            >
-              <Package className="w-4 h-4" />
-              בקשות חלקים
-            </button>
+            {navItems.map(item => {
+              const ItemIcon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => setActiveTab(item.key)}
+                  className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
+                    activeTab === item.key ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <ItemIcon className="w-4 h-4" />
+                  {item.label}
+                </button>
+              );
+            })}
           </nav>
 
           <div className="pt-4 mt-4 border-t border-gray-100">
@@ -945,7 +1314,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                                 <Trash2 className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => setSelectedRequest(req)}
+                                onClick={() => openRequestDetails(req)}
                                 className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer"
                               >
                                 פרטים
@@ -982,6 +1351,16 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   />
                   <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" />
                 </div>
+                <select
+                  value={customerRegionFilter}
+                  onChange={(e) => setCustomerRegionFilter(e.target.value)}
+                  className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <option value="ALL">כל האזורים</option>
+                  {REGIONS.map(r => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
+                </select>
                 <button
                   onClick={() => setIsAddCustomerModalOpen(true)}
                   className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
@@ -1002,6 +1381,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                       <th className="p-5">שם הלקוח</th>
                       <th className="p-5">טלפון</th>
                       <th className="p-5">כתובת</th>
+                      <th className="p-5">אזור</th>
                       <th className="p-5 text-center">קישור לטופס ופעולות</th>
                     </tr>
                   </thead>
@@ -1012,8 +1392,33 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                           <td className="p-5 font-bold text-gray-800">{cust.firstName} {cust.lastName}</td>
                           <td className="p-5 text-gray-600 font-mono text-sm">{cust.phone || '-'}</td>
                           <td className="p-5 text-gray-500 text-sm">{cust.address || 'לא צוינה כתובת'}</td>
+                          <td className="p-5">
+                            <select
+                              value={cust.region || ''}
+                              onChange={(e) => handleUpdateCustomerRegion(cust.id, e.target.value)}
+                              disabled={updatingRegionCustomerId === cust.id}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
+                                cust.region ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
+                              }`}
+                            >
+                              <option value="">ללא אזור</option>
+                              {REGIONS.map(r => (
+                                <option key={r.key} value={r.key}>{r.label}</option>
+                              ))}
+                            </select>
+                          </td>
                           <td className="p-5 text-center">
                             <div className="flex items-center justify-center gap-1.5">
+                              {/* Edit Customer Button */}
+                              <button
+                                onClick={() => openCustomerCard(cust)}
+                                className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-gray-200/70 cursor-pointer"
+                                title="עריכת פרטי לקוח"
+                                aria-label="עריכת פרטי לקוח"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+
                               {/* Copy Link Button */}
                               <button
                                 onClick={() => copyCustomerUrl(cust.id)}
@@ -1094,7 +1499,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={4} className="p-10 text-center text-gray-400 text-sm">
+                        <td colSpan={5} className="p-10 text-center text-gray-400 text-sm">
                           לא נמצאו לקוחות.
                         </td>
                       </tr>
@@ -1246,8 +1651,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   {partRequestsList.map(pr => (
                     <div key={pr.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center gap-3">
                       <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
+                        {/* Thumbnail loads on demand from the image endpoint (lazy),
+                            so part-request photos never bloat the page payload. */}
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={pr.photoImage} alt="תמונת חלק" className="w-full h-full object-cover" />
+                        <img src={`/api/${tenantId}/parts-requests/${pr.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <strong className="text-sm text-gray-800 font-bold block truncate">
@@ -1283,6 +1690,295 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'orders' && (
+          <div className="space-y-6">
+            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+                <div className="relative w-full sm:w-72">
+                  <input
+                    type="text"
+                    placeholder="חיפוש הזמנה לפי לקוח או סוג מכשיר..."
+                    value={orderSearch}
+                    onChange={(e) => setOrderSearch(e.target.value)}
+                    className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                  />
+                  <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
+                </div>
+                <select
+                  value={orderRegionFilter}
+                  onChange={(e) => setOrderRegionFilter(e.target.value)}
+                  className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <option value="ALL">כל האזורים</option>
+                  {REGIONS.map(r => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setIsAddOrderModalOpen(true)}
+                  className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  הזמנה חדשה
+                </button>
+              </div>
+              <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">נמצאו {filteredOrders.length} הזמנות</span>
+            </div>
+
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+              {filteredOrders.length === 0 ? (
+                <div className="p-10 text-center text-gray-400 text-sm">
+                  {ordersList.length === 0 ? 'עדיין לא נוצרו הזמנות.' : 'לא נמצאו הזמנות תואמות לחיפוש.'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredOrders.map(order => (
+                    <div key={order.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
+                        <ShoppingCart className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <strong className="text-sm text-gray-800 font-bold block truncate">
+                          {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'לקוח לא ידוע'}
+                        </strong>
+                        <span className="text-xs text-gray-600 block mt-1 truncate">
+                          {order.deviceType} × {order.quantity} — ₪{order.unitPrice.toLocaleString('he-IL')} ליחידה
+                        </span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">{new Date(order.createdAt).toLocaleDateString('he-IL')}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                        <span className="px-3 py-2 rounded-xl text-[10px] font-bold bg-green-50 border border-green-100/50 text-green-600 font-mono">
+                          ₪{order.totalPrice.toLocaleString('he-IL')}
+                        </span>
+
+                        {/* Customer Region */}
+                        {order.customer && (
+                          <select
+                            value={order.customer.region || ''}
+                            onChange={(e) => handleUpdateCustomerRegion(order.customerId, e.target.value)}
+                            disabled={updatingRegionCustomerId === order.customerId}
+                            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
+                              order.customer.region ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
+                            }`}
+                          >
+                            <option value="">ללא אזור</option>
+                            {REGIONS.map(r => (
+                              <option key={r.key} value={r.key}>{r.label}</option>
+                            ))}
+                          </select>
+                        )}
+
+                        {/* Driver Assignment */}
+                        {driversList.length > 0 && (
+                          <select
+                            value={order.driverId || ''}
+                            onChange={(e) => handleOrderDriverChange(order.id, e.target.value || null)}
+                            disabled={updatingDriverOrderId === order.id}
+                            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
+                              order.driverId ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
+                            }`}
+                          >
+                            <option value="">ללא נהג</option>
+                            {driversList.map(d => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                          </select>
+                        )}
+
+                        {/* Status */}
+                        {(() => {
+                          const statusObj = ORDER_STATUSES.find(s => s.key === order.status) || ORDER_STATUSES[0];
+                          return (
+                            <select
+                              value={order.status}
+                              onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'FULFILLED' | 'CANCELLED')}
+                              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                            >
+                              {ORDER_STATUSES.map(st => (
+                                <option key={st.key} value={st.key}>{st.label}</option>
+                              ))}
+                            </select>
+                          );
+                        })()}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteOrder(order.id)}
+                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                          title="מחק הזמנה"
+                          aria-label="מחק הזמנה"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'dispatch' && (
+          <div className="space-y-6">
+            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                <Route className="w-4 h-4 text-blue-600" />
+                לוח שילוח
+              </h3>
+              <p className="text-[10px] text-gray-400 leading-relaxed mt-1">
+                כל הקריאות וההזמנות הפתוחות, מקובצות לפי אזור ואז לפי נהג — כדי לראות בבוקר לאן לשלוח כל נהג.
+              </p>
+            </div>
+
+            {dispatchGroups.length === 0 ? (
+              <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-10 text-center text-gray-400 text-sm">
+                אין קריאות או הזמנות פתוחות כרגע.
+              </div>
+            ) : (
+              dispatchGroups.map(group => (
+                <div key={group.region.key} className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                  <h4 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-cyan-600" />
+                    {group.region.label}
+                  </h4>
+
+                  {group.driverKeys.map(driverKey => {
+                    const driver = driverKey === 'unassigned' ? null : driversList.find(d => d.id === driverKey);
+                    const driverRequests = group.requestsByDriver.get(driverKey) || [];
+                    const driverOrders = group.ordersByDriver.get(driverKey) || [];
+                    return (
+                      <div key={driverKey} className="p-3 bg-gray-50/60 border border-gray-100 rounded-2xl space-y-2">
+                        <span className={`text-xs font-black flex items-center gap-1.5 ${driver ? 'text-cyan-700' : 'text-red-500'}`}>
+                          <Truck className="w-3.5 h-3.5" />
+                          {driver ? driver.name : 'לא משויך לנהג'}
+                        </span>
+
+                        {driverRequests.map(req => {
+                          const statusObj = statuses.find(s => s.key === req.status) || statuses[0];
+                          return (
+                            <div key={`req-${req.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
+                              <span className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0" title="קריאת שירות">
+                                <FileText className="w-4 h-4 text-blue-600" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-blue-50 text-blue-600 border border-blue-100 flex-shrink-0">קריאת שירות</span>
+                                  <strong className="text-xs text-gray-800 font-bold truncate">
+                                    {req.customer ? `${req.customer.firstName} ${req.customer.lastName}` : 'לקוח לא ידוע'}
+                                  </strong>
+                                </div>
+                                <span className="text-[10px] text-gray-500 block truncate">{req.customer?.address || 'ללא כתובת'}{req.customer?.phone ? ` · ${req.customer.phone}` : ''}</span>
+                              </div>
+                              <select
+                                value={req.status}
+                                onChange={(e) => handleStatusChange(req.id, e.target.value)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0 ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                              >
+                                {statuses.map(st => (
+                                  <option key={st.key} value={st.key}>{st.label}</option>
+                                ))}
+                              </select>
+                              {driversList.length > 0 && (
+                                <select
+                                  value={req.driverId || ''}
+                                  onChange={(e) => handleDriverChange(req.id, e.target.value || null)}
+                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer bg-gray-50 text-gray-500 border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0"
+                                >
+                                  <option value="">ללא נהג</option>
+                                  {driversList.map(d => (
+                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {driverOrders.map(order => {
+                          const statusObj = ORDER_STATUSES.find(s => s.key === order.status) || ORDER_STATUSES[0];
+                          return (
+                            <div key={`order-${order.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
+                              <span className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0" title="הזמנת סחורה">
+                                <ShoppingCart className="w-4 h-4 text-indigo-600" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-indigo-50 text-indigo-600 border border-indigo-100 flex-shrink-0">הזמנת סחורה</span>
+                                  <strong className="text-xs text-gray-800 font-bold truncate">
+                                    {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'לקוח לא ידוע'}
+                                  </strong>
+                                </div>
+                                <span className="text-[10px] text-gray-500 block truncate">
+                                  {order.deviceType} × {order.quantity} · {order.customer?.address || 'ללא כתובת'}
+                                </span>
+                              </div>
+                              <select
+                                value={order.status}
+                                onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'FULFILLED' | 'CANCELLED')}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0 ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                              >
+                                {ORDER_STATUSES.map(st => (
+                                  <option key={st.key} value={st.key}>{st.label}</option>
+                                ))}
+                              </select>
+                              {driversList.length > 0 && (
+                                <select
+                                  value={order.driverId || ''}
+                                  onChange={(e) => handleOrderDriverChange(order.id, e.target.value || null)}
+                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer bg-gray-50 text-gray-500 border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0"
+                                >
+                                  <option value="">ללא נהג</option>
+                                  {driversList.map(d => (
+                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+
+                  {group.parts.length > 0 && (
+                    <div className="p-3 bg-green-50/40 border border-green-100/50 rounded-2xl space-y-2">
+                      <span className="text-xs font-black text-green-700 flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5" />
+                        בקשות חלקים ({group.parts.length}) — ללא שיוך נהג
+                      </span>
+                      {group.parts.map(pr => (
+                        <div key={`part-${pr.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
+                          <span className="w-8 h-8 rounded-lg bg-green-50 border border-green-100 flex items-center justify-center flex-shrink-0" title="חלקים">
+                            <Package className="w-4 h-4 text-green-600" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-green-50 text-green-600 border border-green-100 flex-shrink-0">חלקים</span>
+                              <strong className="text-xs text-gray-800 font-bold truncate">
+                                {pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}` : 'לקוח לא ידוע'}
+                              </strong>
+                            </div>
+                            <span className="text-[10px] text-gray-500 block truncate">{pr.description}{pr.customer?.address ? ` · ${pr.customer.address}` : ''}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePartRequestStatus(pr.id, pr.status)}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 border border-blue-100/50 text-blue-600 hover:bg-blue-100 transition-all flex-shrink-0 cursor-pointer"
+                          >
+                            חדש
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         )}
       </main>
@@ -1435,7 +2131,12 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 
                  {/* Tool Photos (Supports up to 3 images) */}
                  <div className="space-y-2">
-                   <h3 className="text-sm font-bold text-gray-800">צילומי הכלי:</h3>
+                   <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                     צילומי הכלי:
+                     {isLoadingRequestImages && !selectedRequest.toolImages && !selectedRequest.toolImage && (
+                       <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+                     )}
+                   </h3>
                    <div className="grid grid-cols-3 gap-2">
                      {(selectedRequest.toolImages || (selectedRequest.toolImage ? [selectedRequest.toolImage] : [])).map((imgUrl, idx) => (
                        <div key={idx} className="space-y-1">
@@ -2019,6 +2720,335 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 className="px-5 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
               >
                 סגור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Card (Edit Customer) Modal */}
+      {isCustomerCardOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">כרטיס לקוח</h2>
+                <p className="text-gray-400 text-xs mt-1">עריכת פרטי הלקוח, כולל כתובת ואזור</p>
+              </div>
+              <button
+                onClick={() => setIsCustomerCardOpen(false)}
+                className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
+                aria-label="סגור חלון"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body - Form */}
+            <form onSubmit={handleSaveCustomerCard} className="p-6 space-y-4 max-h-[65vh] overflow-y-auto" dir="rtl">
+              {/* Name Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">שם פרטי <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={customerCardForm.firstName}
+                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, firstName: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">שם משפחה <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={customerCardForm.lastName}
+                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, lastName: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Phone & Email Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">טלפון</label>
+                  <input
+                    type="tel"
+                    value={customerCardForm.phone}
+                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">אימייל</label>
+                  <input
+                    type="email"
+                    value={customerCardForm.email}
+                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              {/* Address & Region Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">כתובת</label>
+                  <input
+                    type="text"
+                    placeholder="דרך מנחם בגין 121, תל אביב"
+                    value={customerCardForm.address}
+                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, address: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">אזור</label>
+                  <select
+                    value={customerCardForm.region}
+                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, region: e.target.value as typeof prev.region }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  >
+                    <option value="">ללא אזור</option>
+                    {REGIONS.map(r => (
+                      <option key={r.key} value={r.key}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Vehicle Details Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">לוחית רישוי</label>
+                  <input
+                    type="text"
+                    value={customerCardForm.licensePlate}
+                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, licensePlate: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">צבע</label>
+                  <input
+                    type="text"
+                    value={customerCardForm.color}
+                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, color: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  />
+                </div>
+              </div>
+              {/* Serial Number */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">מספר סריאלי</label>
+                <input
+                  type="text"
+                  value={customerCardForm.serialNumber}
+                  onChange={(e) => setCustomerCardForm(prev => ({ ...prev, serialNumber: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  dir="ltr"
+                />
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={isSavingCustomerCard}
+                className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+              >
+                {isSavingCustomerCard ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Check className="w-5 h-5" />
+                )}
+                {isSavingCustomerCard ? 'שומר...' : 'שמור שינויים'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* New Order Modal */}
+      {isAddOrderModalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">הזמנת סחורה חדשה</h2>
+                <p className="text-gray-400 text-xs mt-1">בחר לקוח, סוג מכשיר, כמות ומחיר ליחידה</p>
+              </div>
+              <button
+                onClick={() => setIsAddOrderModalOpen(false)}
+                className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
+                aria-label="סגור חלון"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto" dir="rtl">
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">לקוח <span className="text-red-500">*</span></label>
+                <select
+                  value={newOrderCustomerId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setNewOrderCustomerId(id);
+                    // Prefill the region from the chosen customer (if he already has one).
+                    const c = customersList.find(cust => cust.id === id);
+                    setNewOrderRegion(c?.region || '');
+                  }}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                >
+                  <option value="">בחר לקוח...</option>
+                  {customersList.map(c => (
+                    <option key={c.id} value={c.id}>{c.firstName} {c.lastName}{c.phone ? ` (${c.phone})` : ''}</option>
+                  ))}
+                </select>
+                {(() => {
+                  const selectedCustomer = customersList.find(c => c.id === newOrderCustomerId);
+                  if (!selectedCustomer || selectedCustomer.address) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddOrderModalOpen(false);
+                        openCustomerCard(selectedCustomer);
+                      }}
+                      className="text-xs font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      ללקוח הזה אין כתובת — הוסף כתובת ואזור
+                    </button>
+                  );
+                })()}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">סוג מכשיר <span className="text-red-500">*</span></label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {DEVICE_TYPE_PRESETS.map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setNewOrderDeviceType(preset)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                        newOrderDeviceType === preset
+                          ? 'bg-gray-900 text-white border-gray-900 shadow-md'
+                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setNewOrderDeviceType('other')}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                      newOrderDeviceType === 'other'
+                        ? 'bg-gray-900 text-white border-gray-900 shadow-md'
+                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    אחר...
+                  </button>
+                </div>
+                {newOrderDeviceType === 'other' && (
+                  <input
+                    type="text"
+                    placeholder="הקלד סוג מכשיר"
+                    value={newOrderCustomDeviceType}
+                    onChange={(e) => setNewOrderCustomDeviceType(e.target.value)}
+                    className="mt-2 w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  />
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">כמות <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newOrderQuantity}
+                    onChange={(e) => setNewOrderQuantity(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">מחיר ליחידה (₪) <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={newOrderUnitPrice}
+                    onChange={(e) => setNewOrderUnitPrice(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              {/* Region (required) + driver assignment */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">אזור <span className="text-red-500">*</span></label>
+                  <select
+                    value={newOrderRegion}
+                    onChange={(e) => setNewOrderRegion(e.target.value as typeof newOrderRegion)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                  >
+                    <option value="">בחר אזור...</option>
+                    {REGIONS.map(r => (
+                      <option key={r.key} value={r.key}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">שיוך לנהג</label>
+                  <select
+                    value={newOrderDriverId}
+                    onChange={(e) => setNewOrderDriverId(e.target.value)}
+                    disabled={driversList.length === 0}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all disabled:opacity-50"
+                  >
+                    <option value="">{driversList.length === 0 ? 'אין נהגים' : 'ללא נהג'}</option>
+                    {driversList.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-1 px-1">
+                <span className="text-xs text-gray-500 font-bold">
+                  סה&quot;כ: <span className="text-gray-900 font-mono">₪{((Number(newOrderQuantity) || 0) * (Number(newOrderUnitPrice) || 0)).toLocaleString('he-IL')}</span>
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAddOrder}
+                disabled={isSavingOrder}
+                className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+              >
+                {isSavingOrder ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Plus className="w-5 h-5" />
+                )}
+                {isSavingOrder ? 'שומר...' : 'צור הזמנה'}
               </button>
             </div>
           </div>

@@ -54,6 +54,9 @@ export default function AdminLogin({ tenantId, businessName, title = 'כניסת
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest"
               autoFocus
+              // Password managers inject attributes (e.g. fdprocessedid) before
+              // hydration; suppress the resulting mismatch warning.
+              suppressHydrationWarning
             />
             {loginError && <p className="text-red-500 text-xs mt-2 font-bold">{loginError}</p>}
           </div>
