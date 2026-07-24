@@ -1,0 +1,696 @@
+{
+  "$schema": "internal://wisewheel-rebuild-spec/v1",
+  "meta": {
+    "specName": "WiseWheel — Service-Call Management System — Rebuild Specification",
+    "specVersion": "1.0.0",
+    "generatedFrom": "Existing Next.js 16 + MongoDB production app (src/app/[tenantId]/**)",
+    "purpose": "Complete, field-accurate blueprint to rebuild the app from scratch in React + Vite (vanilla JS/TS, NO Next.js) with a LOCAL JSON database that is later swappable for MongoDB Atlas with zero UI changes. Deployable to Vercel for testing. Must stay fast and smooth for 100-200+ concurrent users.",
+    "productDescription": "A multi-tenant SaaS for micro-mobility repair shops (scooters / e-bikes). Each business (tenant) gets an isolated environment with an admin dashboard, a customer self-service portal, a public repair-request form, and a mobile driver pickup panel. A super-admin console provisions tenants.",
+    "language": "Hebrew (he), fully RTL",
+    "brand": "WiseWheel / Wisewheel CRM",
+    "criticalConstraints": [
+      "UI must be reproduced 1:1 from the design system below — Tailwind utility classes only, no custom CSS beyond base bg/text colors.",
+      "Data layer MUST go through a single repository/adapter interface so the JSON backend can be replaced by MongoDB without touching components.",
+      "Base64 images are stored INSIDE records — they MUST be excluded from all list/collection reads and fetched on demand only, or the app becomes slow. This is the #1 performance rule.",
+      "Every entity is scoped to a tenantId; nothing crosses tenants."
+    ]
+  },
+
+  "targetTechStack": {
+    "framework": "React 19 + Vite (SPA, vanilla — no Next.js, no SSR)",
+    "language": "TypeScript",
+    "styling": "Tailwind CSS v4 (utility classes only)",
+    "icons": "lucide-react (NEVER emoji as functional icons; emoji allowed only as decorative inline text as in the original)",
+    "font": "Rubik (Google Fonts), weights 300/400/500/700/900, subsets hebrew+latin",
+    "routing": "react-router-dom v6 (client-side)",
+    "animations": "framer-motion (optional, for modals/list transitions)",
+    "state": "React hooks + a thin data-repository layer (React Query / SWR recommended for caching & 100+ user smoothness)",
+    "imageProcessing": "Client-side canvas resize+compress to WebP before upload/store (replaces server-side sharp). Target max 1280px longest edge, quality ~0.7.",
+    "buildOutput": "Static SPA + serverless API functions under /api (Vercel functions)",
+    "deployment": "Vercel"
+  },
+
+  "architecture": {
+    "multiTenancy": {
+      "model": "Path-based. Every app URL is prefixed by /:tenantId (a lowercase-alphanumeric slug, regex ^[a-z0-9]+$).",
+      "isolation": "Each tenant = its own logical database/namespace. In the JSON phase: one JSON file (or one top-level key) per tenantId. In the Mongo phase: one Mongo database per tenantId (as in the original). A master/global store holds the tenants registry.",
+      "guard": "Reject any tenantId not present in the tenants registry (prevents arbitrary namespace creation)."
+    },
+    "layers": [
+      "UI components (React) — never talk to storage directly",
+      "Data repository interface (see dataRepositoryInterface) — the ONLY seam the storage backend plugs into",
+      "Storage adapter: JSONAdapter (phase 1) | MongoAdapter (phase 2)",
+      "Serverless API routes (Vercel functions) mirroring the endpoints list — thin wrappers over the repository"
+    ],
+    "performanceTargets": {
+      "concurrentUsers": "100-200+ smooth",
+      "rules": [
+        "Never ship base64 image fields in list responses — use projection/exclusion. Load a single record's images only when a detail modal opens.",
+        "Paginate service-request lists (default limit 100, page param).",
+        "Create DB indexes on: id (unique), customerId, driverId, requestNumber(desc), createdAt(desc) per collection.",
+        "Run independent reads in parallel (Promise.all), not sequentially.",
+        "Cache tenant settings & customer/driver lists client-side; pass them into joins instead of re-fetching.",
+        "Lazy-load images in the browser (loading=\"lazy\"), thumbnails via a dedicated image endpoint."
+      ]
+    }
+  },
+
+  "designSystem": {
+    "sourceOfTruth": "design-system/DESIGN_GUIDE.md — reproduce exactly.",
+    "direction": "dir=\"rtl\" lang=\"he\" on <html>. Entire app is RTL.",
+    "font": { "family": "Rubik", "weights": ["300","400","500","700","900"], "subsets": ["hebrew","latin"], "cssVar": "--font-rubik" },
+    "baseColors": {
+      "pageBackground": "#f8fafc (globals) / #f5f5f7 (admin panels) — slate-50 family",
+      "baseText": "#0f172a / #1d1d1f (near-black slate)"
+    },
+    "colorRoles": {
+      "panelsCards": "bg-white/80 + backdrop-blur-md",
+      "modals": "bg-white (opaque)",
+      "textPrimary": "text-gray-800",
+      "textHeading": "text-gray-900",
+      "textSecondary": "text-gray-500 / text-gray-600",
+      "textMuted": "text-gray-400",
+      "subtleBorders": "border-gray-100 / border-gray-200 / border-white/60",
+      "primaryCTA": "gradient from-blue-600 to-indigo-600 (hover from-blue-700 to-indigo-700), colored shadow shadow-blue-500/10",
+      "success": "bg-green-50 text-green-600/700 border-green-100",
+      "warning": "bg-amber-50 text-amber-600/700 border-amber-100",
+      "info": "bg-blue-50 text-blue-600 border-blue-100",
+      "driverAssignInfo": "bg-cyan-50/70 text-cyan-700 border-cyan-100",
+      "danger": "bg-red-50 text-red-600 border-red-100/50",
+      "neutralCancelled": "bg-gray-100 text-gray-500 border-gray-200",
+      "special": "bg-purple-50 text-purple-600 border-purple-100"
+    },
+    "statusBadgeRule": "Always the trio bg-{c}-50 / text-{c}-600(or 700) / border-{c}-100. Never a solid 500/600 fill as a badge background — solid gradient fills are reserved for primary CTA buttons only.",
+    "typographyScale": {
+      "9-10px": "text-[9px]/text-[10px] — tiny badges, timestamps",
+      "12px": "text-xs — DEFAULT: labels, badges, secondary buttons",
+      "14px": "text-sm — body text, inputs",
+      "16px": "text-base — rare, medium emphasis",
+      "18-20px": "text-lg/text-xl — modal titles",
+      "24-30px": "text-2xl/text-3xl — stat numbers",
+      "weights": "font-bold (most common), font-black (headings/numbers), font-semibold/medium (secondary), font-mono (phones, prices, numbers needing column alignment)"
+    },
+    "borderRadius": {
+      "rounded-lg (8px)": "small icon buttons inside table rows",
+      "rounded-xl (12px)": "DEFAULT: inputs, selects, buttons, badges",
+      "rounded-2xl (16px)": "list items, sub-cards",
+      "rounded-3xl (24px)": "main panels, modals",
+      "rounded-full": "avatars, fully-round pills",
+      "rule": "Never mix radius levels across nesting depth: panel=3xl, sub-card=2xl, field/button=xl."
+    },
+    "shadows": {
+      "card": "shadow-[0_8px_30px_rgb(0,0,0,0.02)] (very soft — standard on every panel)",
+      "small": "shadow-sm (icon buttons, badges)",
+      "cta": "shadow-md / shadow-lg",
+      "modal": "shadow-2xl",
+      "coloredCta": "shadow-blue-500/10 or /20 (colored, not black, on gradient buttons)"
+    },
+    "spacing": {
+      "panelPadding": "p-6 (normal) / p-4 (compact header)",
+      "fieldPadding": "px-4 py-3 (form fields) / px-3 py-1.5 (row selects & pills)",
+      "rowGaps": "gap-2 / gap-3 (normal), gap-1.5 (compact action button clusters)",
+      "verticalFieldGroups": "space-y-4"
+    },
+    "universalEffects": {
+      "interactive": "transition-all (or transition-colors for color-only)",
+      "buttons": "active:scale-[0.98] + cursor-pointer",
+      "inputs": "focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white",
+      "glassPanels": "bg-white/80 backdrop-blur-md; mobile nav drawer bg-white/95 backdrop-blur-xl",
+      "modalOverlay": "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto"
+    },
+    "componentRecipes": {
+      "panel": "bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6",
+      "primaryButton": "px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer",
+      "secondaryIconButton": "p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-xl border border-gray-200 transition-all active:scale-[0.98] cursor-pointer",
+      "dangerButton": "p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl border border-red-100/50 transition-all active:scale-[0.98] cursor-pointer",
+      "input": "w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all",
+      "inputLabel": "block text-gray-700 text-xs font-bold mb-1.5 (label ALWAYS above the field, never placeholder-only)",
+      "statusSelect": "px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all + status color trio",
+      "modalWrapper": "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto",
+      "modalBox": "bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-100 flex flex-col overflow-hidden",
+      "modalHeader": "p-6 border-b border-gray-100 flex items-center justify-between",
+      "modalBody": "p-6 space-y-4 max-h-[65vh] overflow-y-auto",
+      "modalFooter": "p-5 bg-gray-50/70 border-t border-gray-100 flex justify-end",
+      "tableRow": "hover:bg-gray-50/50 transition-colors",
+      "tableHeadCell": "p-5 (thead: bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50)",
+      "tableCell": "p-5",
+      "statTile": "number text-2xl/3xl font-black (+ font-mono), label below text-xs text-gray-500 font-bold, inside rounded-2xl border p-4"
+    },
+    "icons": {
+      "library": "lucide-react ONLY",
+      "sizes": "w-4 h-4 (16px default), w-3.5 h-3.5 (14px in compact badges), w-5 h-5 (20px in modal titles)",
+      "usedInApp": ["Search","Filter","Plus","Calendar","CheckCircle2","AlertCircle","Clock","Trash2","Copy","Send","ExternalLink","Info","Check","User","Store","Phone","Eye","Navigation","Settings","HelpCircle","FileText","X","RotateCw","Loader2","Truck","Package","Menu","ShoppingCart","Pencil","Route","MapPin","UploadCloud"]
+    }
+  },
+
+  "enums": {
+    "region": {
+      "type": "enum",
+      "values": [
+        { "key": "CENTER", "label": "מרכז" },
+        { "key": "SOUTH", "label": "דרום" },
+        { "key": "NORTH", "label": "צפון" },
+        { "key": "JERUSALEM", "label": "ירושלים" }
+      ],
+      "dispatchExtra": { "key": "UNASSIGNED", "label": "ללא אזור" }
+    },
+    "serviceRequestStatus": {
+      "type": "enum",
+      "values": [
+        { "key": "NEW", "label": "חדש", "colors": "bg-blue-50/70 text-blue-600 border-blue-100" },
+        { "key": "WAITING_FOR_PICKUP", "label": "ממתין לאיסוף", "colors": "bg-amber-50/70 text-amber-600 border-amber-100" },
+        { "key": "PICKED_UP_BY_DRIVER", "label": "נהג אסף כלי", "colors": "bg-purple-50/70 text-purple-600 border-purple-100" },
+        { "key": "COMPLETED", "label": "טיפול הסתיים", "colors": "bg-green-50/70 text-green-600 border-green-100" }
+      ]
+    },
+    "orderStatus": {
+      "type": "enum",
+      "values": [
+        { "key": "PENDING", "label": "ממתין לשילוח", "colors": "bg-amber-50 text-amber-700 border-amber-100" },
+        { "key": "FULFILLED", "label": "סופק", "colors": "bg-green-50 text-green-700 border-green-100" },
+        { "key": "CANCELLED", "label": "בוטל", "colors": "bg-gray-100 text-gray-500 border-gray-200" }
+      ]
+    },
+    "partRequestStatus": {
+      "type": "enum",
+      "values": [
+        { "key": "NEW", "label": "חדש (admin) / ממתין לחלק (portal)" },
+        { "key": "FULFILLED", "label": "טופל (admin) / סופק (portal)" }
+      ]
+    },
+    "repairLevel": {
+      "type": "enum",
+      "labelHe": "לאיזו רמה תרצו שנגיע בתיקון?",
+      "values": [
+        { "key": "RIDE_ONLY", "label": "מצב נסיעה בלבד 🛴", "accent": "blue" },
+        { "key": "SAFE_RIDE", "label": "נסיעה בטוחה 🛑", "accent": "emerald" },
+        { "key": "LIKE_NEW", "label": "כמו חדש! ✨", "accent": "purple" }
+      ]
+    }
+  },
+
+  "dataModel": {
+    "note": "All string ids are UUID v4 unless noted. Timestamps are ISO 8601 strings. Image fields are base64 WebP data URIs stored inline (EXCLUDE from list reads).",
+    "entities": {
+      "Tenant": {
+        "scope": "master/global registry",
+        "fields": {
+          "id": { "type": "string", "desc": "URL slug, ^[a-z0-9]+$, e.g. 'bikeshop1'", "required": true, "unique": true },
+          "name": { "type": "string", "desc": "Display name", "required": true },
+          "businessName": { "type": "string", "desc": "Business display name (kept in sync with name)" },
+          "adminPassword": { "type": "string", "desc": "scrypt hash: scrypt$salt$hash. Never returned to browser." },
+          "adminPasswordPlain": { "type": "string", "desc": "Plaintext, super-admin-view-only. Projected out of normal reads." },
+          "whatsappTemplate": { "type": "string", "desc": "Template with {link} and {businessName} placeholders" },
+          "logoUrl": { "type": "string", "desc": "base64 data URI or URL" },
+          "primaryColor": { "type": "string", "desc": "brand color hex, used in customer portal" },
+          "partsRequestPhone": { "type": "string", "desc": "phone that receives parts-request WhatsApp msgs" },
+          "partsDeletePassword": { "type": "string", "desc": "password customers type to delete a part request from their portal" },
+          "createdAt": { "type": "string(iso)", "required": true }
+        }
+      },
+      "Customer": {
+        "scope": "per-tenant",
+        "fields": {
+          "id": { "type": "string(uuid)", "required": true, "unique": true },
+          "excelId": { "type": "number", "desc": "human-friendly sequential id starting at 10000, auto-incremented", "required": true },
+          "firstName": { "type": "string", "required": true, "labelHe": "שם פרטי", "placeholder": "ישראל" },
+          "lastName": { "type": "string", "required": true, "labelHe": "שם משפחה", "placeholder": "ישראלי" },
+          "phone": { "type": "string", "labelHe": "טלפון", "placeholder": "052-1234567" },
+          "email": { "type": "string", "labelHe": "אימייל", "placeholder": "email@example.com" },
+          "address": { "type": "string", "labelHe": "כתובת", "placeholder": "דרך מנחם בגין 121, תל אביב" },
+          "region": { "type": "enum(region)", "labelHe": "אזור" },
+          "licensePlate": { "type": "string", "labelHe": "מספר רישוי", "placeholder": "12-345-67" },
+          "color": { "type": "string", "labelHe": "צבע", "placeholder": "שחור מטאלי" },
+          "serialNumber": { "type": "string", "labelHe": "מספר סידורי", "placeholder": "GW-88392-XL" },
+          "logoUrl": { "type": "string", "desc": "optional per-customer logo" }
+        }
+      },
+      "Driver": {
+        "scope": "per-tenant",
+        "fields": {
+          "id": { "type": "string(uuid)", "required": true, "unique": true, "desc": "ALSO the secret token in the driver's panel URL /:tenantId/driver/:token" },
+          "name": { "type": "string", "required": true, "labelHe": "שם הנהג", "placeholder": "שם הנהג *" },
+          "phone": { "type": "string", "labelHe": "טלפון", "placeholder": "טלפון (אופציונלי)" },
+          "createdAt": { "type": "string(iso)", "required": true }
+        }
+      },
+      "ServiceRequest": {
+        "scope": "per-tenant",
+        "fields": {
+          "id": { "type": "string(uuid)", "required": true, "unique": true },
+          "requestNumber": { "type": "number", "desc": "sequential from 'requestNumber' counter; displayed as #{PREFIX}-{n} where PREFIX = first 2 letters of tenantId uppercased", "required": true },
+          "customerId": { "type": "string(uuid)", "required": true },
+          "customer": { "type": "Customer", "desc": "joined at read time, not stored" },
+          "driverId": { "type": "string(uuid)", "desc": "auto-assigned if tenant has exactly ONE driver" },
+          "driver": { "type": "Driver", "desc": "joined at read time" },
+          "storeName": { "type": "string", "required": true, "labelHe": "שם החנות", "placeholder": "שם החנות שבה נקנה הכלי", "default": "customer firstName + lastName" },
+          "toolOwnerName": { "type": "string", "required": true, "labelHe": "שם בעל הכלי", "placeholder": "השם המלא של בעל הכלי" },
+          "toolOwnerPhone": { "type": "string", "labelHe": "מספר טלפון בעל הכלי (אופציונלי)", "placeholder": "מספר טלפון ליצירת קשר" },
+          "issueDescription": { "type": "string", "required": true, "labelHe": "מה התקלה בכלי?", "placeholder": "תאר את הבעיה בכלי (לדוגמה: פנצ'ר בגלגל קדמי, המנוע לא נדלק, בעיה בבלמים...)" },
+          "repairLevel": { "type": "enum(repairLevel)", "required": true, "labelHe": "לאיזו רמה תרצו שנגיע בתיקון?" },
+          "preApprovedAmount": { "type": "number", "labelHe": "סכום אישור מקסימלי לתיקון (₪)", "desc": "shown when a repairLevel is chosen", "required": true },
+          "preApprovedNotes": { "type": "string", "labelHe": "הנחיות או דגשים לגבי התקציב (אופציונלי)", "placeholder": "לדוגמה: אל תחליפו סוללה בלי לדבר איתי קודם..." },
+          "hasWarranty": { "type": "boolean", "required": true, "labelHe": "האם יש אחריות לכלי?" },
+          "warrantyReceiptImage": { "type": "string(base64)", "desc": "required when hasWarranty=true; חשבונית / תעודת אחריות", "excludeFromLists": true },
+          "toolImage": { "type": "string(base64)", "desc": "legacy single image", "excludeFromLists": true },
+          "toolImages": { "type": "string[](base64)", "labelHe": "צילומים של הכלי", "desc": "required (>=1)", "excludeFromLists": true },
+          "agreedToInspectionFee": { "type": "boolean", "required": true, "labelHe": "אני מאשר/ת ומסכים/ה לשלם 150 ש\"ח דמי בדיקה במידה ויימצאו בכלי דברים שאינם קשורים לאחריות, ואבחר שלא לבצע את התיקון." },
+          "comments": { "type": "string", "labelHe": "הערות נוספות", "placeholder": "הערות או דגשים נוספים לצוות המעבדה..." },
+          "status": { "type": "enum(serviceRequestStatus)", "default": "NEW", "required": true },
+          "pickupSignatureImage": { "type": "string(base64)", "desc": "digital signature captured by driver", "excludeFromLists": true },
+          "pickupPhotoImage": { "type": "string(base64)", "desc": "optional pickup photo", "excludeFromLists": true },
+          "pickupSignerName": { "type": "string", "desc": "who signed at pickup" },
+          "pickupSignedAt": { "type": "string(iso)" },
+          "pickupConditionNotes": { "type": "string", "desc": "per-request condition notes at pickup" },
+          "createdAt": { "type": "string(iso)", "required": true },
+          "updatedAt": { "type": "string(iso)", "required": true }
+        }
+      },
+      "PartRequest": {
+        "scope": "per-tenant",
+        "fields": {
+          "id": { "type": "string(uuid)", "required": true, "unique": true },
+          "requestNumber": { "type": "number", "desc": "from 'partRequestNumber' counter", "required": true },
+          "customerId": { "type": "string(uuid)", "required": true },
+          "customer": { "type": "Customer", "desc": "joined at read time" },
+          "description": { "type": "string", "required": true, "placeholder": "תארו את החלק המבוקש (לדוגמה: צמיג קדמי, ידית בלם שמאלית...)" },
+          "photoImage": { "type": "string(base64 webp)", "required": true, "excludeFromLists": true },
+          "status": { "type": "enum(partRequestStatus)", "default": "NEW", "required": true },
+          "createdAt": { "type": "string(iso)", "required": true },
+          "updatedAt": { "type": "string(iso)", "required": true }
+        }
+      },
+      "Order": {
+        "scope": "per-tenant (merchandise orders)",
+        "fields": {
+          "id": { "type": "string(uuid)", "required": true, "unique": true },
+          "orderNumber": { "type": "number", "desc": "from 'orderNumber' counter", "required": true },
+          "customerId": { "type": "string(uuid)", "required": true },
+          "customer": { "type": "Customer", "desc": "joined at read time" },
+          "driverId": { "type": "string(uuid)" },
+          "driver": { "type": "Driver", "desc": "joined at read time" },
+          "deviceType": { "type": "string", "required": true, "labelHe": "סוג מכשיר", "desc": "preset (קורקינט/אופניים) or custom 'other' free-text", "placeholder": "הקלד סוג מכשיר" },
+          "quantity": { "type": "number", "required": true, "min": 1, "labelHe": "כמות" },
+          "unitPrice": { "type": "number", "required": true, "min": 0, "labelHe": "מחיר ליחידה (₪)" },
+          "totalPrice": { "type": "number", "desc": "computed = quantity * unitPrice at creation", "required": true },
+          "status": { "type": "enum(orderStatus)", "default": "PENDING", "required": true },
+          "createdAt": { "type": "string(iso)", "required": true },
+          "updatedAt": { "type": "string(iso)", "required": true }
+        }
+      },
+      "Counter": {
+        "scope": "per-tenant",
+        "desc": "Atomic sequence generator. One doc per sequence: {_id: 'requestNumber'|'partRequestNumber'|'orderNumber', seq: number}. In JSON phase, increment in a locked/serialized write."
+      }
+    }
+  },
+
+  "localDatabase": {
+    "phase1_json": {
+      "goal": "A drop-in JSON-backed implementation of dataRepositoryInterface that runs behind Vercel serverless functions (or, for pure client testing, in-memory + localStorage).",
+      "recommendedShape": {
+        "master": { "tenants": ["Tenant[]"] },
+        "perTenant": {
+          "<tenantId>": {
+            "customers": ["Customer[]"],
+            "drivers": ["Driver[]"],
+            "serviceRequests": ["ServiceRequest[]"],
+            "partRequests": ["PartRequest[]"],
+            "orders": ["Order[]"],
+            "counters": { "requestNumber": 0, "partRequestNumber": 0, "orderNumber": 0 }
+          }
+        }
+      },
+      "storageOptions": [
+        "Vercel: use @vercel/kv or @vercel/blob (persistent) — plain filesystem is read-only/ephemeral on Vercel, so do NOT rely on writing db.json at runtime in production.",
+        "Local dev: a lowdb-style JSON file works fine.",
+        "Client-only demo: localStorage/IndexedDB seeded from a bundled seed.json."
+      ],
+      "seed": "Reuse existing db.json (customers + serviceRequests) as a seed sample for one tenant. Note base64 images inflate the file — keep seed images small.",
+      "concurrencyNote": "Serialize writes per tenant (simple mutex/queue) so counter increments and array writes don't race under 100+ users."
+    },
+    "phase2_mongo": {
+      "goal": "Swap JSONAdapter → MongoAdapter with identical method signatures.",
+      "mapping": "master_db.tenants (registry); one Mongo db per tenantId with collections customers/drivers/serviceRequests/partRequests/orders/counters.",
+      "indexes": [
+        "customers: {id:1} unique",
+        "serviceRequests: {id:1} unique, {customerId:1}, {requestNumber:-1}, {driverId:1}",
+        "drivers: {id:1} unique",
+        "partRequests: {id:1} unique, {customerId:1}",
+        "orders: {id:1} unique, {customerId:1}, {driverId:1}"
+      ],
+      "counters": "findOneAndUpdate({_id}, {$inc:{seq:1}}, {upsert:true, returnDocument:'after'}) — atomic."
+    }
+  },
+
+  "dataRepositoryInterface": {
+    "desc": "The single seam. Components call these; only the adapter changes between JSON and Mongo. All methods are tenant-scoped (first arg tenantId) except tenant registry methods.",
+    "tenants": [
+      "getTenants(): Tenant[]  // strips adminPassword + adminPasswordPlain",
+      "getTenantsWithPasswords(): Tenant[]  // super-admin only, keeps adminPasswordPlain",
+      "getTenantById(id): Tenant?",
+      "tenantExists(id): boolean  // validates ^[a-z0-9]+$ AND presence",
+      "createTenant({id,name/businessName,adminPassword(hashed),adminPasswordPlain,whatsappTemplate}): Tenant",
+      "updateTenantSettings(id, {businessName,logoUrl,adminPassword,adminPasswordPlain,whatsappTemplate,partsRequestPhone,partsDeletePassword}): void",
+      "updateTenantAdminPassword(id, hash, plain?): void",
+      "deleteTenant(id): boolean"
+    ],
+    "customers": [
+      "getCustomers(tenantId): Customer[]",
+      "getCustomerById(tenantId, id): Customer?",
+      "createCustomer(tenantId, {firstName,lastName,phone?,email?,address?,region?,licensePlate?,color?,serialNumber?}): Customer  // auto excelId",
+      "updateCustomer(tenantId, id, partial): boolean",
+      "deleteCustomer(tenantId, id): boolean  // ALSO deletes that customer's serviceRequests"
+    ],
+    "drivers": [
+      "getDrivers(tenantId): Driver[]  // sorted createdAt asc",
+      "getDriverById(tenantId, id): Driver?",
+      "createDriver(tenantId, {name, phone?}): Driver",
+      "updateDriver(tenantId, id, partial): boolean",
+      "deleteDriver(tenantId, id): boolean  // unassigns (never deletes) requests+orders that referenced it"
+    ],
+    "serviceRequests": [
+      "getServiceRequests(tenantId): ServiceRequest[]  // joined customer+driver",
+      "getServiceRequests(tenantId, {page,limit,excludeImages,customers?,drivers?}): {requests, total}  // paginated; excludeImages projects out all base64 fields",
+      "getServiceRequestById(tenantId, id): ServiceRequest?  // WITH images (detail modal, on demand)",
+      "getServiceRequestsByCustomerId(tenantId, customerId): ServiceRequest[]",
+      "getServiceRequestsByDriverId(tenantId, driverId): ServiceRequest[]  // images excluded",
+      "createServiceRequest(tenantId, payload): ServiceRequest  // auto requestNumber; auto-assign driver if exactly 1 driver exists",
+      "updateServiceRequestStatus(tenantId, id, status): ServiceRequest?",
+      "assignDriverToRequest(tenantId, requestId, driverId|null): ServiceRequest?",
+      "markRequestsPickedUpWithSignature(tenantId, requestIds[], driverId, {signatureImage, photoImage?, signerName, conditionNotesMap?}): number  // sets status=PICKED_UP_BY_DRIVER + pickup fields",
+      "deleteServiceRequest(tenantId, id): boolean"
+    ],
+    "partRequests": [
+      "getPartRequests(tenantId, {excludeImages?, customers?}): PartRequest[]",
+      "getPartRequestById(tenantId, id): PartRequest?",
+      "getPartRequestsByCustomerId(tenantId, customerId): PartRequest[]",
+      "createPartRequest(tenantId, {customerId, description, photoImage}): PartRequest",
+      "updatePartRequestStatus(tenantId, id, status): PartRequest?",
+      "deletePartRequest(tenantId, id): boolean"
+    ],
+    "orders": [
+      "getOrders(tenantId, {customers?, drivers?}): Order[]",
+      "createOrder(tenantId, {customerId, deviceType, quantity, unitPrice}): Order  // computes totalPrice, status=PENDING",
+      "assignDriverToOrder(tenantId, orderId, driverId|null): Order?",
+      "updateOrderStatus(tenantId, id, status): Order?",
+      "deleteOrder(tenantId, id): boolean"
+    ]
+  },
+
+  "auth": {
+    "superAdmin": {
+      "method": "email + password against env vars SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD",
+      "route": "/supadmin",
+      "session": "HMAC-signed cookie (or JWT)"
+    },
+    "tenantAdmin": {
+      "method": "password only, checked against tenant.adminPassword (scrypt hash). Supports legacy plaintext with re-hash on success.",
+      "route": "/:tenantId/admin (gated by AdminLogin)",
+      "session": "cookie 'admin_session', HMAC-signed, tenantId + exp, 7-day max age",
+      "hashing": "scrypt (keylen 64), format scrypt$salt$hash. No external deps.",
+      "loginUI": { "placeholder": "סיסמה...", "type": "password" }
+    },
+    "driver": {
+      "method": "secret token in URL = driver.id (UUID). No password. Route /:tenantId/driver/:token.",
+      "driverIndex": "/:tenantId/driver — landing/search view"
+    },
+    "security": ["CSRF token on mutating requests (lib/csrf)", "Rate limiting on login/mutations (lib/rateLimit)"]
+  },
+
+  "screens": {
+    "superAdminConsole": {
+      "route": "/supadmin",
+      "title": "Wisewheel CRM Admin",
+      "loginView": { "title": "Wisewheel CRM", "fields": [{"placeholder":"אימייל"},{"placeholder":"סיסמה","type":"password"}] },
+      "dashboard": {
+        "header": "Wisewheel CRM Admin",
+        "tenantsTable": {
+          "title": "רשימת סביבות (Tenants)",
+          "search": "חיפוש לפי מזהה או שם עסק...",
+          "columns": ["מזהה URL (Tenant ID)","שם עסק במערכת","סיסמת אדמין","תאריך הקמה","פעולות"],
+          "rowActions": ["reveal/hide password (••••••••)","edit password inline","copy admin link","send admin link via WhatsApp","delete tenant"],
+          "whatsappAdminMsg": "היי! 👋\\nהנה הקישור לממשק הניהול של {businessName}:\\n{adminUrl}\\n\\nסיסמת הכניסה תימסר בנפרד.\\n\\nבהצלחה! 🚀"
+        },
+        "createTenantPanel": {
+          "title": "יצירת סביבה חדשה",
+          "fields": [
+            { "name": "tenantId", "placeholder": "לדוגמה: bikeshop1", "validate": "^[a-z0-9]+$" },
+            { "name": "businessName", "placeholder": "לדוגמה: מוסך אופניים כהן" },
+            { "name": "adminPassword", "placeholder": "סיסמה כניסה למערכת של בעל העסק" }
+          ],
+          "defaults": { "whatsappTemplate": "היי! פתחנו עבורך קריאת שירות עבור הכלי שלך 🛴\\nכדי שנוכל להתחיל בטיפול, לחץ על הקישור הבא ומלא את הפרטים:\\n{link}\\n\\nתודה מצוות {businessName}!" }
+        }
+      }
+    },
+
+    "adminDashboard": {
+      "route": "/:tenantId/admin",
+      "layout": "RTL. Sidebar nav (collapses to a mobile drawer: bg-white/95 backdrop-blur-xl, Menu toggle). Active nav item: bg-gray-900 text-white shadow-md; inactive: text-gray-600 hover:bg-gray-100. Settings gear opens the business-settings modal.",
+      "navItems": [
+        { "key": "requests", "label": "קריאות שירות", "icon": "FileText" },
+        { "key": "customers", "label": "רשימת לקוחות", "icon": "User" },
+        { "key": "drivers", "label": "נהגים", "icon": "Truck" },
+        { "key": "partRequests", "label": "בקשות חלקים", "icon": "Package" },
+        { "key": "orders", "label": "הזמנת סחורה", "icon": "ShoppingCart" },
+        { "key": "dispatch", "label": "לוח שילוח", "icon": "Route" }
+      ],
+      "tabs": {
+        "requests": {
+          "statTiles": ["total (text-3xl font-black font-mono)","per-status counts (NEW/WAITING_FOR_PICKUP/PICKED_UP_BY_DRIVER/COMPLETED)"],
+          "toolbar": { "search": "חיפוש לפי שם לקוח או חנות...", "statusFilter": "ALL + 4 statuses", "refresh": "רענן קריאות (RotateCw)", "createButton": "פתיחת קריאה ידנית (Plus)" },
+          "table": {
+            "columns": ["מספר קריאה","שם הלקוח","שם החנות","טלפון","אחריות","תאריך פתיחה","סטטוס","נהג","פעולות"],
+            "requestNumberFormat": "#{PREFIX}-{n}",
+            "statusCell": "colored status <select> (updates status)",
+            "driverCell": "driver <select> (assign/unassign)",
+            "rowActions": [
+              { "icon": "Send", "title": "שליחת קישור בווטסאפ" },
+              { "icon": "Navigation", "title": "ניווט ב-Waze" },
+              { "icon": "CheckCircle2", "title": "סמן כטיפול הסתיים" },
+              { "icon": "Eye", "title": "פתח פרטי קריאה (loads images on demand)" },
+              { "icon": "Trash2", "title": "מחק קריאה" }
+            ]
+          },
+          "detailModal": "Loads full record via getServiceRequestById (images included): tool images gallery, warranty receipt, issue, repairLevel, preApproved amount/notes, pickup signature/photo/signer/notes."
+        },
+        "customers": {
+          "toolbar": { "search": "חיפוש לקוח לפי שם או טלפון...", "regionFilter": "ALL + 4 regions", "addButton": "הוספת לקוח" },
+          "table": {
+            "columns": ["שם הלקוח","טלפון","כתובת","אזור","קישור לטופס ופעולות"],
+            "regionCell": "inline region <select> (updates customer.region)",
+            "rowActions": [
+              { "icon": "Pencil", "title": "עריכת פרטי לקוח" },
+              { "icon": "Send", "title": "שלח בוואטסאפ (repair-form link)" },
+              { "icon": "FileText", "title": "הדפסת פלייר QR לחנות" },
+              { "icon": "Navigation", "title": "ניווט ב-Waze" },
+              { "icon": "ExternalLink", "title": "כניסה לפורטל הלקוח" },
+              { "icon": "Trash2", "title": "מחק לקוח" },
+              { "icon": "Copy", "title": "העתק קישור לטופס" }
+            ]
+          },
+          "addCustomerModal": { "fields": ["firstName","lastName","phone","email","address","licensePlate","color","serialNumber"] },
+          "editCustomerModal": { "fields": ["firstName","lastName","phone","email","address","region","licensePlate","color","serialNumber"] }
+        },
+        "drivers": {
+          "list": "each driver row shows name + phone",
+          "rowActions": [
+            { "icon": "Copy", "title": "העתק קישור אישי לפאנל הנהג" },
+            { "icon": "Send", "title": "שלח קישור אישי בוואטסאפ" },
+            { "icon": "ExternalLink", "title": "פתח את פאנל הנהג" },
+            { "icon": "Trash2", "title": "מחק נהג" }
+          ],
+          "addForm": { "fields": [{"placeholder":"שם הנהג *"},{"placeholder":"טלפון (אופציונלי)"}] }
+        },
+        "partRequests": {
+          "list": "each row: request info + customer + photo (thumbnail on demand)",
+          "statusToggle": "toggle NEW('חדש') <-> FULFILLED('טופל')",
+          "rowActions": [{ "icon": "Trash2", "title": "מחק בקשה" }]
+        },
+        "orders": {
+          "toolbar": { "search": "חיפוש הזמנה לפי לקוח או סוג מכשיר...", "regionFilter": "ALL + regions", "createButton": "הזמנה חדשה" },
+          "listItem": "‪{deviceType} × {quantity} — ₪{unitPrice} ליחידה‬; status <select>; driver <select>",
+          "rowActions": [{ "icon": "Trash2", "title": "מחק הזמנה" }],
+          "createOrderModal": {
+            "subtitle": "בחר לקוח, סוג מכשיר, כמות ומחיר ליחידה",
+            "fields": [
+              { "name": "customer", "type": "search-select", "placeholder": "הקלד שם לקוח לחיפוש..." },
+              { "name": "deviceType", "type": "select+custom", "options": ["קורקינט","אופניים","other→free text (הקלד סוג מכשיר)"] },
+              { "name": "quantity", "type": "number", "label": "כמות *", "min": 1 },
+              { "name": "unitPrice", "type": "number", "label": "מחיר ליחידה (₪) *", "min": 0 }
+            ],
+            "validation": ["deviceType required","quantity finite >0 ('כמות לא תקינה')","unitPrice finite >=0 ('מחיר ליחידה לא תקין')"]
+          }
+        },
+        "dispatch": {
+          "title": "לוח שילוח (Route)",
+          "layout": "One panel per region (CENTER/SOUTH/NORTH/JERUSALEM + UNASSIGNED 'ללא אזור'). Inside each region, group by driver (or 'לא משויך לנהג' in red). Each item is a service request (blue icon), an order (indigo icon), or a part (green icon) with inline status <select> and driver <select>.",
+          "groupByRegion": true,
+          "groupByDriver": true
+        }
+      },
+      "createRequestModal": {
+        "flow": "Pick existing customer (search 'הקלד שם לקוח לחיפוש...') → toolOwnerName → toolOwnerPhone → deviceType/desc ('לדוגמה: קורקינט של דוד / שיאומי שחור') → phone ('הזן מספר טלפון ליצירת קשר')",
+        "purpose": "Admin manually opens a request on behalf of a customer."
+      },
+      "settingsModal": {
+        "title": "הגדרות עסק",
+        "submitAs": "multipart/form-data POST /:tenantId/admin/settings",
+        "fields": [
+          { "name": "businessName", "label": "שם העסק" },
+          { "name": "logo", "type": "file", "actions": ["upload preview","remove (removeLogo flag)"] },
+          { "name": "whatsappTemplate", "type": "textarea", "placeholders": "{link}, {businessName}" },
+          { "name": "partsRequestPhone", "type": "tel", "placeholder": "05XXXXXXXX" },
+          { "name": "partsDeletePassword", "placeholder": "השאר ריק כדי לא לשנות", "help": "לקוחות יתבקשו להזין סיסמה זו כדי למחוק בקשת חלק מהפורטל האישי שלהם." },
+          { "name": "password", "label": "סיסמת מנהל חדשה", "placeholder": "סיסמת מנהל חדשה", "note": "optional; blank = unchanged" }
+        ],
+        "driversSection": "manage drivers (add/remove) also reachable here"
+      }
+    },
+
+    "publicRepairForm": {
+      "route": "/:tenantId/request/:id  (id = customerId) and /:tenantId/form (generic)",
+      "purpose": "Customer fills a repair request for their device. Success screen: 'הקריאה התקבלה בהצלחה!'",
+      "fields": [
+        { "name": "storeName", "label": "שם החנות *", "icon": "Store", "default": "customer name", "required": true },
+        { "name": "toolOwnerName", "label": "שם בעל הכלי *", "icon": "User", "placeholder": "השם המלא של בעל הכלי", "required": true },
+        { "name": "toolOwnerPhone", "label": "מספר טלפון בעל הכלי (אופציונלי)", "icon": "Phone" },
+        { "name": "issueDescription", "label": "מה התקלה בכלי? *", "icon": "FileText", "type": "textarea", "required": true },
+        { "name": "repairLevel", "label": "לאיזו רמה תרצו שנגיע בתיקון? *", "type": "radio-cards", "options": "RIDE_ONLY/SAFE_RIDE/LIKE_NEW", "required": true },
+        { "name": "preApprovedAmount", "label": "סכום אישור מקסימלי לתיקון (₪) *", "type": "number", "shownWhen": "repairLevel selected", "required": true },
+        { "name": "preApprovedNotes", "label": "הנחיות או דגשים לגבי התקציב (אופציונלי)", "type": "textarea" },
+        { "name": "hasWarranty", "label": "האם יש אחריות לכלי? *", "type": "radio(yes/no)", "required": true },
+        { "name": "warrantyReceiptImage", "label": "חשבונית / תעודת אחריות", "type": "file", "requiredWhen": "hasWarranty=yes" },
+        { "name": "toolImages", "label": "צילומים של הכלי *", "type": "file[multiple]", "icon": "UploadCloud", "required": true, "min": 1 },
+        { "name": "comments", "label": "הערות נוספות", "type": "textarea", "placeholder": "הערות או דגשים נוספים לצוות המעבדה..." },
+        { "name": "agreedToInspectionFee", "label": "אני מאשר/ת ומסכים/ה לשלם 150 ש\"ח דמי בדיקה במידה ויימצאו בכלי דברים שאינם קשורים לאחריות, ואבחר שלא לבצע את התיקון.", "type": "checkbox", "required": true }
+      ],
+      "clientImagePipeline": "Resize+compress each image to WebP on the client before submit (canvas). Enforces small payloads.",
+      "onSubmit": "createServiceRequest(tenantId, payload) → status NEW"
+    },
+
+    "customerPortal": {
+      "route": "/:tenantId/portal/:id  (id = customerId)",
+      "header": "שירות לקוחות {businessName}",
+      "sections": {
+        "serviceRequests": {
+          "title": "קריאות שירות",
+          "search": "חיפוש לפי שם בעל כלי או חנות...",
+          "statusFilter": "ALL + 4 statuses",
+          "stats": ["new","waitingPickup","pickedUp","completed"],
+          "emptyState": "ברוכים הבאים לפורטל {businessName}!",
+          "detailModal": "tool images gallery ('צילומי הכלי:'), warranty receipt ('חשבונית / תעודת אחריות:'), contact owner via wa.me link",
+          "newRequestModal": { "title": "פתח קריאת שירות חדשה", "success": "הקריאה התקבלה בהצלחה!", "fields": "same as publicRepairForm" }
+        },
+        "partRequests": {
+          "title": "בקשות חלקים",
+          "history": "היסטוריית בקשות חלקים — status pill FULFILLED='סופק' / NEW='ממתין לחלק'",
+          "newModal": { "title": "בקשת חלק חדשה", "fields": [{ "name": "description", "placeholder": "תארו את החלק המבוקש (לדוגמה: צמיג קדמי, ידית בלם שמאלית...)" }, { "name": "photoImage", "type": "file", "required": true }] },
+          "whatsappForward": "If tenant.partsRequestPhone set, opens wa.me/{972-normalized phone}?text=... to notify the shop.",
+          "deleteGuard": "Customer must enter tenant.partsDeletePassword to delete a part request."
+        },
+        "qrPromo": { "heading": "סרקו לפתיחת קריאת שירות מהירה! 🛴", "shareViaWhatsApp": "wa.me/?text={whatsappTemplate filled}" }
+      }
+    },
+
+    "driverIndex": {
+      "route": "/:tenantId/driver",
+      "search": "חפש חנות, לקוח או כתובת..."
+    },
+
+    "driverPanel": {
+      "route": "/:tenantId/driver/:token  (token = driver.id)",
+      "header": "שלום, {driver.name}",
+      "search": "חפש חנות, לקוח או כתובת...",
+      "emptyState": "אין קריאות משויכות אליך כרגע",
+      "statusGroups": [
+        { "status": "WAITING_FOR_PICKUP", "label": "ממתין לאיסוף" },
+        { "status": "NEW", "label": "חדש" },
+        { "status": "PICKED_UP_BY_DRIVER", "label": "נאסף" }
+      ],
+      "pickupFlow": {
+        "selection": "checkbox-select one or more WAITING_FOR_PICKUP requests",
+        "digitalHandoverForm": {
+          "title": "טופס מסירה דיגיטלי",
+          "perRequestNote": { "placeholder": "הערות מצב (סריטות, מכות, שלמות החלקים)..." },
+          "signerName": { "required": true },
+          "signatureCanvas": "hand-drawn signature (SignatureCanvas component) → base64",
+          "optionalPhoto": "pickupPhotoImage",
+          "submit": "markRequestsPickedUpWithSignature(...) → status PICKED_UP_BY_DRIVER"
+        },
+        "quickMark": "single request can be marked PICKED_UP_BY_DRIVER directly (PATCH with driverToken=driver.id)"
+      }
+    },
+
+    "adminLogin": {
+      "route": "/:tenantId/admin (gate)",
+      "field": { "placeholder": "סיסמה...", "type": "password" },
+      "onSuccess": "server sets admin_session cookie"
+    }
+  },
+
+  "apiEndpoints": {
+    "note": "Mirror these as Vercel serverless functions; each is a thin wrapper over dataRepositoryInterface. In a pure client demo they can be replaced by direct repository calls.",
+    "superAdmin": [
+      "GET  /api/supadmin/tenants  -> list tenants (with plain passwords, auth required)",
+      "POST /api/supadmin/tenants  -> create tenant {tenantId, businessName, adminPassword, whatsappTemplate?}"
+    ],
+    "tenantAdmin": [
+      "POST /api/:tenantId/admin/login  -> {password} -> sets session",
+      "POST /api/:tenantId/admin/settings  -> multipart: businessName, logo, whatsappTemplate, partsRequestPhone, partsDeletePassword, password, removeLogo"
+    ],
+    "customers": [
+      "GET/POST      /api/:tenantId/customers",
+      "GET/PATCH/DELETE /api/:tenantId/customers/:id",
+      "POST          /api/:tenantId/customers/:id/settings"
+    ],
+    "drivers": [
+      "GET/POST      /api/:tenantId/drivers",
+      "PATCH/DELETE  /api/:tenantId/drivers/:id"
+    ],
+    "serviceRequests": [
+      "GET/POST      /api/:tenantId/requests  (list excludes images; paginated)",
+      "GET/PATCH/DELETE /api/:tenantId/requests/:id  (GET includes images)",
+      "GET           /api/:tenantId/requests/by-customer/:customerId",
+      "GET           /api/:tenantId/requests/by-driver/:driverId",
+      "POST          /api/:tenantId/requests/direct  (admin manual create)",
+      "POST          /api/:tenantId/requests/driver-pickup  (signature batch pickup)"
+    ],
+    "partRequests": [
+      "GET/POST      /api/:tenantId/parts-requests",
+      "GET/PATCH/DELETE /api/:tenantId/parts-requests/:id",
+      "GET           /api/:tenantId/parts-requests/:id/image  (on-demand image)",
+      "GET           /api/:tenantId/parts-requests/by-customer/:customerId"
+    ],
+    "orders": [
+      "GET/POST      /api/:tenantId/orders",
+      "PATCH/DELETE  /api/:tenantId/orders/:id"
+    ]
+  },
+
+  "sharedHelpers": {
+    "requestNumberPrefix": "tenantId.substring(0,2).toUpperCase()",
+    "formatRequestNumber": "#{PREFIX}-{requestNumber}",
+    "defaultWhatsappTemplate": "היי! פתחנו עבורך קריאת שירות עבור הכלי שלך 🛴\\nכדי שנוכל להתחיל בטיפול, לחץ על הקישור הבא ומלא את הפרטים:\\n{link}\\n\\nתודה מצוות {businessName}!",
+    "buildWhatsAppMessage": "replace {link} and {businessName}; fall back to default template if custom lacks {link}",
+    "phoneToWa": "0XXXXXXXXX -> 972XXXXXXXXX for wa.me links"
+  },
+
+  "deployment": {
+    "target": "Vercel",
+    "spa": "Vite build → static output; add vercel.json rewrites so all non-/api routes serve index.html (client routing).",
+    "functions": "/api/** as Vercel serverless functions.",
+    "envVars": ["SUPER_ADMIN_EMAIL","SUPER_ADMIN_PASSWORD","SESSION_SECRET","MONGODB_URI (phase 2)","KV/BLOB tokens (phase 1 persistence)"],
+    "persistenceWarning": "Vercel filesystem is read-only at runtime — for the JSON phase use @vercel/kv or @vercel/blob (or Mongo) for writes, not a runtime-written db.json.",
+    "node": ">=20.9.0"
+  },
+
+  "acceptanceCriteria": [
+    "Every screen, field, label, placeholder, and status listed here is present and in Hebrew/RTL.",
+    "Design matches design-system/DESIGN_GUIDE.md exactly (colors, radii, shadows, spacing, recipes).",
+    "List views never transfer base64 images; detail views load images on demand.",
+    "Storage backend is swappable JSON↔Mongo via dataRepositoryInterface with no component changes.",
+    "Deploys to Vercel and stays smooth for 100-200+ concurrent users.",
+    "Multi-tenant isolation enforced; tenantId validated against registry."
+  ]
+}

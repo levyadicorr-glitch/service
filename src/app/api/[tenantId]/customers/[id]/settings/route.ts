@@ -32,9 +32,6 @@ export async function POST(
     const lastName = formData.get('lastName') as string;
     const email = formData.get('email') as string;
     const address = formData.get('address') as string;
-    const licensePlate = formData.get('licensePlate') as string;
-    const color = formData.get('color') as string;
-    const serialNumber = formData.get('serialNumber') as string;
     const logoFile = formData.get('logo') as File | null;
     const removeLogo = formData.get('removeLogo') === 'true';
 
@@ -44,9 +41,6 @@ export async function POST(
     if (phone) update.phone = phone.trim();
     if (email !== null) update.email = email.trim();
     if (address !== null) update.address = address.trim();
-    if (licensePlate !== null) update.licensePlate = licensePlate.trim();
-    if (color !== null) update.color = color.trim();
-    if (serialNumber !== null) update.serialNumber = serialNumber.trim();
 
     if (removeLogo) {
       update.logoUrl = '';

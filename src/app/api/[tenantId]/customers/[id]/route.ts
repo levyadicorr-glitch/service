@@ -18,7 +18,7 @@ export async function PATCH(
     if (denied) return denied;
 
     const body = await req.json();
-    const { firstName, lastName, phone, email, address, region, licensePlate, color, serialNumber } = body;
+    const { firstName, lastName, phone, email, address, region, approved } = body;
 
     if (region !== undefined && region !== null && !VALID_REGIONS.includes(region)) {
       return NextResponse.json({ error: 'אזור לא תקין' }, { status: 400 });
@@ -37,9 +37,7 @@ export async function PATCH(
     if (email !== undefined) update.email = email || undefined;
     if (address !== undefined) update.address = address || undefined;
     if (region !== undefined) update.region = region || undefined;
-    if (licensePlate !== undefined) update.licensePlate = licensePlate || undefined;
-    if (color !== undefined) update.color = color || undefined;
-    if (serialNumber !== undefined) update.serialNumber = serialNumber || undefined;
+    if (approved !== undefined) update.approved = !!approved;
 
     const updated = await updateCustomer(tenantId, id, update);
     if (!updated) {

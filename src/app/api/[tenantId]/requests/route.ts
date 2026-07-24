@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceRequest, getCustomerById, getServiceRequests, tenantExists, ServiceRequest, ensureIndexes } from '@/lib/db';
+import { createServiceRequest, getCustomerById, getServiceRequests, getTenantById, tenantExists, ServiceRequest, ensureIndexes } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
+import { normalizeServiceFormConfig } from '@/lib/serviceFormConfig';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB per file, before compression
 const MAX_TOOL_IMAGES = 3;
@@ -65,6 +66,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     const repairLevel = formData.get('repairLevel') as string || 'SAFE_RIDE';
     const preApprovedAmount = formData.get('preApprovedAmount') ? Number(formData.get('preApprovedAmount')) : undefined;
     const preApprovedNotes = formData.get('preApprovedNotes') as string || '';
+    const agentId = formData.get('agentId') as string || undefined;
+    const agentName = formData.get('agentName') as string || undefined;
 
     const warrantyReceiptImage = formData.get('warrantyReceiptImage') as File | null;
 
@@ -87,8 +90,40 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     }
     toolImageFiles = toolImageFiles.slice(0, MAX_TOOL_IMAGES);
 
-    if (!customerId || !storeName || !toolOwnerName || toolImageFiles.length === 0) {
+    // Field visibility/requiredness is driven by the tenant's form config.
+    const tenant = await getTenantById(tenantId);
+    const cfg = normalizeServiceFormConfig(tenant?.serviceFormConfig);
+    const fieldEnabled = (key: string) => {
+      const f = cfg.fields.find((x) => x.key === key);
+      return f ? f.enabled : true;
+    };
+    const fieldRequired = (key: string) => {
+      const f = cfg.fields.find((x) => x.key === key);
+      return f ? f.enabled && f.required : false;
+    };
+
+    // toolOwnerName is a stored non-null field; fall back to the store/customer name when hidden or empty.
+    const effectiveToolOwnerName = (toolOwnerName && toolOwnerName.trim()) ? toolOwnerName.trim() : storeName;
+
+    if (!customerId || !storeName) {
       return NextResponse.json({ error: 'שדות חובה חסרים' }, { status: 400 });
+    }
+    if (fieldRequired('toolOwnerName') && !(toolOwnerName || '').trim()) {
+      return NextResponse.json({ error: 'שם בעל הכלי הוא שדה חובה' }, { status: 400 });
+    }
+    if (fieldRequired('toolImages') && toolImageFiles.length === 0) {
+      return NextResponse.json({ error: 'חובה לצרף לפחות תמונה אחת של הכלי' }, { status: 400 });
+    }
+
+    // Collect admin-defined custom fields (id → label mapped from the config).
+    const customFields: { key: string; label: string; value: string }[] = [];
+    for (const f of cfg.fields) {
+      if (!f.builtin && f.enabled) {
+        const v = formData.get(`custom_${f.id}`);
+        if (typeof v === 'string' && v.trim()) {
+          customFields.push({ key: f.id, label: f.label, value: v.trim() });
+        }
+      }
     }
 
     for (const file of toolImageFiles) {
@@ -109,8 +144,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       return NextResponse.json({ error: 'לקוח לא נמצא במערכת' }, { status: 404 });
     }
 
-    if (!agreedToInspectionFee) {
-      return NextResponse.json({ error: 'חובה לאשר את דמי הבדיקה בסך 150 ש"ח' }, { status: 400 });
+    if (fieldEnabled('inspectionFee') && !agreedToInspectionFee) {
+      return NextResponse.json({ error: `חובה לאשר את דמי הבדיקה בסך ${cfg.inspectionFeeAmount} ש"ח` }, { status: 400 });
     }
 
     if (hasWarranty && (!warrantyReceiptImage || warrantyReceiptImage.size === 0)) {
@@ -146,7 +181,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     const newRequest = await createServiceRequest(tenantId, {
       customerId,
       storeName,
-      toolOwnerName,
+      toolOwnerName: effectiveToolOwnerName,
       toolOwnerPhone: toolOwnerPhone || undefined,
       hasWarranty,
       warrantyReceiptImage: warrantyReceiptImageUrl,
@@ -158,6 +193,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       repairLevel: validRepairLevel,
       preApprovedAmount: preApprovedAmount || undefined,
       preApprovedNotes: preApprovedNotes || undefined,
+      customFields: customFields.length > 0 ? customFields : undefined,
+      agentId,
+      agentName,
     });
 
     return NextResponse.json({ success: true, request: newRequest });

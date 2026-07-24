@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     if (denied) return denied;
 
     const body = await req.json();
-    const { firstName, lastName, phone, email, address, licensePlate, color, serialNumber } = body;
+    const { firstName, lastName, phone, email, address } = body;
 
     if (!firstName || !lastName) {
       return NextResponse.json({ error: 'שם פרטי ושם משפחה הם שדות חובה' }, { status: 400 });
@@ -26,9 +26,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       phone: phone || undefined,
       email: email || undefined,
       address: address || undefined,
-      licensePlate: licensePlate || undefined,
-      color: color || undefined,
-      serialNumber: serialNumber || undefined,
     });
 
     return NextResponse.json({ success: true, customer: newCustomer });

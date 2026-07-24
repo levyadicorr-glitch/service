@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מדריך תיקיות הפרויקט - הנחיות ל-AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --accent-glow: rgba(59, 130, 246, 0.2);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --badge-ui: #8b5cf6;
+            --badge-api: #10b981;
+            --badge-lib: #f59e0b;
+            --badge-root: #ec4899;
+            --code-bg: #090d16;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Heebo', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            padding: 2rem 1rem;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .tips-banner {
+            background: rgba(59, 130, 246, 0.1);
+            border-right: 4px solid var(--accent);
+            padding: 1rem 1.25rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .tips-banner strong {
+            color: #60a5fa;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.4), 0 0 15px var(--accent-glow);
+            border-color: rgba(59, 130, 246, 0.4);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .folder-name {
+            font-family: monospace;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #38bdf8;
+            direction: ltr;
+        }
+
+        .badge {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            color: white;
+            text-transform: uppercase;
+        }
+
+        .badge-ui { background-color: var(--badge-ui); }
+        .badge-api { background-color: var(--badge-api); }
+        .badge-lib { background-color: var(--badge-lib); }
+        .badge-root { background-color: var(--badge-root); }
+
+        .card-body {
+            color: var(--text-main);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 1.25rem;
+        }
+
+        .examples-list {
+            margin-top: 0.5rem;
+            padding-right: 1.2rem;
+            color: var(--text-muted);
+            font-size: 0.88rem;
+        }
+
+        .examples-list li {
+            margin-bottom: 0.3rem;
+        }
+
+        .prompt-box {
+            background-color: var(--code-bg);
+            border: 1px dashed #334155;
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            position: relative;
+        }
+
+        .prompt-title {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.3rem;
+            font-weight: 600;
+        }
+
+        .prompt-text {
+            font-size: 0.85rem;
+            color: #4ade80;
+            word-break: break-word;
+            line-height: 1.4;
+        }
+
+        .copy-btn {
+            margin-top: 0.6rem;
+            width: 100%;
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 0.5rem;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            font-size: 0.85rem;
+        }
+
+        .copy-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .copy-btn.copied {
+            background: #10b981;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 3rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🗺️ מדריך תיקיות הפרויקט (Sherut)</h1>
+            <p>איך להנחות את ה-AI בדיוק באיזו תיקייה לעבוד</p>
+        </header>
+
+        <div class="tips-banner">
+            💡 <strong>טיפ זהב להנחיית AI:</strong> כשאתה מבקש מה-AI לבצע שינוי, תגיד לו במפורש את שם התיקייה בלחיצה על "העתק הנחיה ל-AI" למטה. ככה הוא לא יתבלבל ויגיע מיד לקובץ הנכון!
+        </div>
+
+        <div class="grid">
+            <!-- UI Admin -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <span class="folder-name">src/app/[tenantId]/admin/</span>
+                        <span class="badge badge-ui">UI מסכים</span>
+                    </div>
+                    <div class="card-body">
+                        <strong>אחראי על:</strong> דשבורד מנהל הארגון, טבלאות קריאות, שיוך נהגים, סינון וניהול קריאות.
+                        <ul class="examples-list">
+                            <li>למשל: שינוי עיצוב הטבלה, הוספת כפתור בממשק המנהל, הוספת מסנן.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="prompt-box">
+                    <div class="prompt-title">הנחיה מוכנה ל-AI:</div>
+                    <div class="prompt-text" id="p1">תעבוד בתיקייה src/app/[tenantId]/admin/ ותעדכן את ממשק המנהל...</div>
+                    <button class="copy-btn" onclick="copyText('p1', this)">📋 העתק הנחיה ל-AI</button>
+                </div>
+            </div>
+
+            <!-- UI Driver -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <span class="folder-name">src/app/[tenantId]/driver/</span>
+                        <span class="badge badge-ui">UI מסכים</span>
+                    </div>
+                    <div class="card-body">
+                        <strong>אחראי על:</strong> מסך הנהג/טכנאי בשטח, איסוף קריאות, עדכון סטטוס נסיעה ומפת ניווט.
+                        <ul class="examples-list">
+                            <li>למשל: כפתור "געתי ללקוח", תצוגת פרטי קריאה לנהג בטלפון.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="prompt-box">
+                    <div class="prompt-title">הנחיה מוכנה ל-AI:</div>
+                    <div class="prompt-text" id="p2">תעבוד בתיקייה src/app/[tenantId]/driver/ ותעדכן את מסך הנהג...</div>
+                    <button class="copy-btn" onclick="copyText('p2', this)">📋 העתק הנחיה ל-AI</button>
+                </div>
+            </div>
+
+            <!-- UI Customer Portal / Form -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <span class="folder-name">src/app/[tenantId]/form/</span>
+                        <span class="badge badge-ui">UI מסכים</span>
+                    </div>
+                    <div class="card-body">
+                        <strong>אחראי על:</strong> טופס פתיחת קריאה חדשה על ידי הלקוח/מוסך.
+                        <ul class="examples-list">
+                            <li>למשל: הוספת שדה לטופס, שינוי עיצוב טופס פתיחת קריאה.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="prompt-box">
+                    <div class="prompt-title">הנחיה מוכנה ל-AI:</div>
+                    <div class="prompt-text" id="p3">תעבוד בתיקייה src/app/[tenantId]/form/ ותעדכן את טופס פתיחת הקריאה...</div>
+                    <button class="copy-btn" onclick="copyText('p3', this)">📋 העתק הנחיה ל-AI</button>
+                </div>
+            </div>
+
+            <!-- UI Super Admin -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <span class="folder-name">src/app/supadmin/</span>
+                        <span class="badge badge-ui">UI מסכים</span>
+                    </div>
+                    <div class="card-body">
+                        <strong>אחראי על:</strong> מסך מנהל-על (Super Admin) שמנהל את כל הארגונים/הלקוחות במערכת.
+                        <ul class="examples-list">
+                            <li>למשל: הוספת ארגון חדש, ניהול מנויים ודיירים (Tenants).</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="prompt-box">
+                    <div class="prompt-title">הנחיה מוכנה ל-AI:</div>
+                    <div class="prompt-text" id="p4">תעבוד בתיקייה src/app/supadmin/ ותעדכן את מסך מנהל העל...</div>
+                    <button class="copy-btn" onclick="copyText('p4', this)">📋 העתק הנחיה ל-AI</button>
+                </div>
+            </div>
+
+            <!-- API Backend -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <span class="folder-name">src/app/api/</span>
+                        <span class="badge badge-api">API שרת</span>
+                    </div>
+                    <div class="card-body">
+                        <strong>אחראי על:</strong> לוגיקה של השרת, שליפת נתונים, שמירת קריאות, התחברות (Login), וייצוא לקבצים.
+                        <ul class="examples-list">
+                            <li>למשל: שינוי לוגיקת שמירת קריאה, הוספת נקודת קצה חדשה (Endpoint), ייצוא אקסל.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="prompt-box">
+                    <div class="prompt-title">הנחיה מוכנה ל-AI:</div>
+                    <div class="prompt-text" id="p5">תעבוד בתיקייה src/app/api/ ותעדכן את לוגיקת השרת/ה-API...</div>
+                    <button class="copy-btn" onclick="copyText('p5', this)">📋 העתק הנחיה ל-AI</button>
+                </div>
+            </div>
+
+            <!-- Helper Libraries -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <span class="folder-name">src/lib/</span>
+                        <span class="badge badge-lib">בסיס נתונים</span>
+                    </div>
+                    <div class="card-body">
+                        <strong>אחראי על:</strong> חיבור לבסיס הנתונים (MongoDB / db.ts), אבטחה (auth, csrf, rate limit).
+                        <ul class="examples-list">
+                            <li>למשל: עדכון שאילתת בסיס נתונים, שינוי אופן אימות הסיסמאות.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="prompt-box">
+                    <div class="prompt-title">הנחיה מוכנה ל-AI:</div>
+                    <div class="prompt-text" id="p6">תעבוד בתיקייה src/lib/ ותעדכן את פונקציות העזר או החיבור ל-DB...</div>
+                    <button class="copy-btn" onclick="copyText('p6', this)">📋 העתק הנחיה ל-AI</button>
+                </div>
+            </div>
+
+            <!-- Public Assets -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <span class="folder-name">public/</span>
+                        <span class="badge badge-root">קבצים סטטיים</span>
+                    </div>
+                    <div class="card-body">
+                        <strong>אחראי על:</strong> תמונות, הלוגו של המערכת, קבצי אייקונים (Favicon) וקבצי מדיה.
+                        <ul class="examples-list">
+                            <li>למשל: החלפת לוגו, הוספת תמונה חדשה למערכת.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="prompt-box">
+                    <div class="prompt-title">הנחיה מוכנה ל-AI:</div>
+                    <div class="prompt-text" id="p7">תחליף או תוסיף קובץ תמונה בתיקייה public/...</div>
+                    <button class="copy-btn" onclick="copyText('p7', this)">📋 העתק הנחיה ל-AI</button>
+                </div>
+            </div>
+
+            <!-- Root Config -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <span class="folder-name">שורש הפרויקט (Root)</span>
+                        <span class="badge badge-root">הגדרות פרויקט</span>
+                    </div>
+                    <div class="card-body">
+                        <strong>אחראי על:</strong> התקנת ספריות חדשות (package.json), משתני סביבה (.env.local), עיצוב גלובלי.
+                        <ul class="examples-list">
+                            <li>למשל: התקנת חבילת npm חדשה, הוספת מפתח API ל-env.local.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="prompt-box">
+                    <div class="prompt-title">הנחיה מוכנה ל-AI:</div>
+                    <div class="prompt-text" id="p8">תעדכן את הגדרות הפרויקט ב-package.json או ב-.env.local...</div>
+                    <button class="copy-btn" onclick="copyText('p8', this)">📋 העתק הנחיה ל-AI</button>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>פרויקט WiseWheel Sherut • נוצר עבור עבודה יעילה ומהירה מול AI</p>
+        </footer>
+    </div>
+
+    <script>
+        function copyText(elementId, btn) {
+            const text = document.getElementById(elementId).innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '✅ הועתק בהצלחה!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

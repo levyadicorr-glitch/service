@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { assignDriverToOrder, deleteOrder, getDriverById, updateOrderStatus } from '@/lib/db';
+import { assignDriverToOrder, deleteOrder, getCustomerById, getDriverById, getTenantById, updateOrderStatus } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
+import { sendWhatsAppMessage } from '@/lib/greenApi';
 
 export async function PATCH(
   req: NextRequest,
@@ -22,7 +23,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'אין מה לעדכן' }, { status: 400 });
     }
 
-    if (status !== undefined && !['PENDING', 'FULFILLED', 'CANCELLED'].includes(status)) {
+    if (status !== undefined && !['PENDING', 'FULFILLED', 'READY_FOR_DISPATCH', 'CANCELLED'].includes(status)) {
       return NextResponse.json({ error: 'סטטוס לא תקין' }, { status: 400 });
     }
 
@@ -44,7 +45,29 @@ export async function PATCH(
       return NextResponse.json({ error: 'הזמנה לא נמצאה' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, order: updated });
+    // Best-effort WhatsApp notification if status changed to READY_FOR_DISPATCH
+    let autoNotifySent = false;
+    if (status === 'READY_FOR_DISPATCH' || status === 'FULFILLED') {
+      try {
+        const tenant = await getTenantById(tenantId);
+        const customer = updated.customerId ? await getCustomerById(tenantId, updated.customerId) : undefined;
+        const customerPhone = (customer?.phone || '').trim();
+
+        if (tenant?.greenApiInstanceId && tenant?.greenApiToken && customerPhone) {
+          const businessName = tenant.businessName || tenant.name || 'העסק';
+          const customerName = `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() || 'לקוח';
+          const statusText = status === 'READY_FOR_DISPATCH' ? 'מוכנה וממתינה לשילוח 📦🚀' : 'סופקה בהצלחה ✅';
+          const message = `שלום ${customerName},\nהזמנתך (#${updated.orderNumber}) ב-${businessName} ${statusText}\n\n📋 פרטי ההזמנה:\n• פריט: ${updated.deviceType}\n• כמות: ${updated.quantity}\n• סה"כ לתשלום: ${updated.totalPrice} ₪`;
+
+          const res = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, customerPhone, message);
+          autoNotifySent = res.sent;
+        }
+      } catch (notifyErr) {
+        console.error('Error sending order status WhatsApp notification:', notifyErr);
+      }
+    }
+
+    return NextResponse.json({ success: true, order: updated, autoNotifySent });
   } catch (err: unknown) {
     console.error('Error updating order:', err);
     return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });

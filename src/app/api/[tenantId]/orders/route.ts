@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createOrder, getCustomerById, getDriverById, getOrders } from '@/lib/db';
+import { createOrder, getCustomerById, getDriverById, getOrders, getTenantById } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
+import { sendWhatsAppMessage } from '@/lib/greenApi';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ tenantId: string }> }) {
   try {
@@ -23,11 +24,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
 
   try {
     const { tenantId } = await params;
-    const denied = requireTenantAdmin(req, tenantId);
-    if (denied) return denied;
-
     const body = await req.json();
-    const { customerId, deviceType, quantity, unitPrice, driverId } = body;
+    const { customerId, deviceType, quantity, unitPrice, driverId, agentId, agentName } = body;
+
+    const denied = requireTenantAdmin(req, tenantId);
+    if (denied && (!agentId || typeof agentId !== 'string')) {
+      return denied;
+    }
 
     if (!customerId || typeof customerId !== 'string') {
       return NextResponse.json({ error: 'יש לבחור לקוח' }, { status: 400 });
@@ -62,9 +65,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
       quantity: qty,
       unitPrice: price,
       ...(driverId ? { driverId } : {}),
+      ...(agentId ? { agentId } : {}),
+      ...(agentName ? { agentName } : {}),
     });
 
-    return NextResponse.json({ success: true, order: newOrder });
+    // Automatic WhatsApp notification to the customer
+    let autoNotifySent = false;
+    try {
+      const tenant = await getTenantById(tenantId);
+      const customerPhone = (customer.phone || '').trim();
+      if (tenant?.greenApiInstanceId && tenant?.greenApiToken && customerPhone) {
+        const businessName = tenant.businessName || tenant.name || 'העסק';
+        const customerName = `${customer.firstName} ${customer.lastName}`.trim() || 'לקוח';
+        const agentTag = newOrder.agentName ? `\n• 👔 סוכן מטפל: ${newOrder.agentName}` : '';
+        const message = `📦 הזמנה חדשה (#${newOrder.orderNumber}) ב-${businessName}!\n\nשלום ${customerName},\nהזמנתך נקלטה במערכת וממתינה לשילוח 🚀\n\n📋 פרטי ההזמנה:\n• פריט: ${newOrder.deviceType}\n• כמות: ${newOrder.quantity}\n• מחיר ליחידה: ${newOrder.unitPrice} ₪\n• סה"כ לתשלום: ${newOrder.totalPrice} ₪${agentTag}\n\nנמשיך לעדכן אותך בכל שלב! ❤️`;
+
+        const res = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, customerPhone, message);
+        autoNotifySent = res.sent;
+      }
+    } catch (notifyErr) {
+      console.error('Error sending order creation WhatsApp:', notifyErr);
+    }
+
+    return NextResponse.json({ success: true, order: newOrder, autoNotifySent });
   } catch (err: unknown) {
     console.error('Error creating order:', err);
     return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });

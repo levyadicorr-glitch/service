@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Customer, PartRequest, ServiceRequest } from '@/lib/db';
+import { ServiceFormConfig, normalizeServiceFormConfig } from '@/lib/serviceFormConfig';
+import ServiceRequestForm from '@/components/ServiceRequestForm';
 import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
 import {
   FileText, Clock, AlertCircle, CheckCircle2, Search, Plus,
-  RotateCw, Trash2, Calendar, Phone, Copy, Printer, Eye,
-  User, Barcode, ShieldCheck, ShieldAlert, UploadCloud, Check, Loader2, X, Settings, Package
+  RotateCw, Trash2, Calendar, Copy, Printer, Eye,
+  User, UploadCloud, Check, Loader2, X, Settings, Package, Camera
 } from 'lucide-react';
 
 interface CustomerPortalProps {
@@ -20,9 +22,11 @@ interface CustomerPortalProps {
   partsRequestPhone?: string;
   logoUrl?: string;
   primaryColor?: string;
+  serviceFormConfig?: ServiceFormConfig;
 }
 
-export default function CustomerPortal({ customer, initialRequests, initialPartRequests, tenantId, businessName, whatsappTemplate, partsRequestPhone = '', logoUrl = '', primaryColor = '' }: CustomerPortalProps) {
+export default function CustomerPortal({ customer, initialRequests, initialPartRequests, tenantId, businessName, whatsappTemplate, partsRequestPhone = '', logoUrl = '', primaryColor = '', serviceFormConfig }: CustomerPortalProps) {
+  const formConfig = normalizeServiceFormConfig(serviceFormConfig);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [partRequestsHistory, setPartRequestsHistory] = useState<PartRequest[]>(initialPartRequests);
   const [currentCustomer, setCurrentCustomer] = useState<Customer>(customer);
@@ -40,9 +44,6 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
   const [settingsPhone, setSettingsPhone] = useState(customer.phone || '');
   const [settingsEmail, setSettingsEmail] = useState(customer.email || '');
   const [settingsAddress, setSettingsAddress] = useState(customer.address || '');
-  const [settingsLicensePlate, setSettingsLicensePlate] = useState(customer.licensePlate || '');
-  const [settingsColor, setSettingsColor] = useState(customer.color || '');
-  const [settingsSerialNumber, setSettingsSerialNumber] = useState(customer.serialNumber || '');
   const [customerLogoFile, setCustomerLogoFile] = useState<File | null>(null);
   const [customerLogoPreview, setCustomerLogoPreview] = useState<string | null>(customer.logoUrl || null);
   const [removeCustomerLogoFlag, setRemoveCustomerLogoFlag] = useState(false);
@@ -56,9 +57,6 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
     setSettingsPhone(currentCustomer.phone || '');
     setSettingsEmail(currentCustomer.email || '');
     setSettingsAddress(currentCustomer.address || '');
-    setSettingsLicensePlate(currentCustomer.licensePlate || '');
-    setSettingsColor(currentCustomer.color || '');
-    setSettingsSerialNumber(currentCustomer.serialNumber || '');
     setCustomerLogoFile(null);
     setCustomerLogoPreview(currentCustomer.logoUrl || null);
     setRemoveCustomerLogoFlag(false);
@@ -95,9 +93,6 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
       formData.append('phone', settingsPhone.trim());
       formData.append('email', settingsEmail.trim());
       formData.append('address', settingsAddress.trim());
-      formData.append('licensePlate', settingsLicensePlate.trim());
-      formData.append('color', settingsColor.trim());
-      formData.append('serialNumber', settingsSerialNumber.trim());
       if (removeCustomerLogoFlag) {
         formData.append('removeLogo', 'true');
       } else if (customerLogoFile) {
@@ -121,9 +116,6 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
         phone: settingsPhone.trim(),
         email: settingsEmail.trim(),
         address: settingsAddress.trim(),
-        licensePlate: settingsLicensePlate.trim(),
-        color: settingsColor.trim(),
-        serialNumber: settingsSerialNumber.trim(),
         logoUrl: removeCustomerLogoFlag ? '' : (data.logoUrl || currentCustomer.logoUrl)
       };
 
@@ -147,33 +139,11 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
   // Details Modal state
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
 
-  // Create Request Modal state
+  // Create Request Modal state — the form itself lives in <ServiceRequestForm>.
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [storeName, setStoreName] = useState(`${customer.firstName} ${customer.lastName}`);
-  const [toolOwnerName, setToolOwnerName] = useState('');
-  const [toolOwnerPhone, setToolOwnerPhone] = useState('');
-  const [issueDescription, setIssueDescription] = useState('');
-  const [hasWarranty, setHasWarranty] = useState<string>('no');
-  const [toolImages, setToolImages] = useState<File[]>([]);
-  const [toolImagePreviews, setToolImagePreviews] = useState<string[]>([]);
-  const [warrantyReceiptImage, setWarrantyReceiptImage] = useState<File | null>(null);
-  const [warrantyReceiptPreview, setWarrantyReceiptPreview] = useState<string | null>(null);
-  const [agreedToInspectionFee, setAgreedToInspectionFee] = useState(false);
-  
-  // New fields states
-  const [comments, setComments] = useState('');
-  const [repairLevel, setRepairLevel] = useState<'RIDE_ONLY' | 'SAFE_RIDE' | 'LIKE_NEW' | ''>('');
-  const [isPreApprovedBudgetEnabled, setIsPreApprovedBudgetEnabled] = useState(false);
-  const [preApprovedAmount, setPreApprovedAmount] = useState<string>('500');
-  const [preApprovedNotes, setPreApprovedNotes] = useState('');
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [createdRequestNumber, setCreatedRequestNumber] = useState<number | null>(null);
-
-  const toolImageInputRef = useRef<HTMLInputElement>(null);
-  const warrantyImageInputRef = useRef<HTMLInputElement>(null);
+  const [createdRequest, setCreatedRequest] = useState<ServiceRequest | null>(null);
 
   // Part Request module state — up to MAX_PART_ITEMS parts submitted together
   const MAX_PART_ITEMS = 10;
@@ -304,160 +274,19 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
   };
 
   const openCreateModal = () => {
-    setStoreName(`${currentCustomer.firstName} ${currentCustomer.lastName}`);
-    setToolOwnerName('');
-    setToolOwnerPhone('');
-    setIssueDescription('');
-    setHasWarranty('no');
-    setToolImages([]);
-    setToolImagePreviews([]);
-    setWarrantyReceiptImage(null);
-    setWarrantyReceiptPreview(null);
-    setAgreedToInspectionFee(false);
-    setComments('');
-    setRepairLevel('');
-    setIsPreApprovedBudgetEnabled(false);
-    setPreApprovedAmount('500');
-    setPreApprovedNotes('');
-    setSubmitError(null);
     setSubmitSuccess(false);
     setCreatedRequestNumber(null);
+    setCreatedRequest(null);
     setIsCreateModalOpen(true);
   };
 
-  const handleToolImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const files = Array.from(e.target.files);
-      // Create object URLs only for the newly added files, so existing previews
-      // stay valid and no blob URLs are leaked.
-      const addedFiles = files.slice(0, 3 - toolImages.length);
-      if (addedFiles.length === 0) return;
-      setToolImages([...toolImages, ...addedFiles]);
-      setToolImagePreviews([...toolImagePreviews, ...addedFiles.map(file => URL.createObjectURL(file))]);
+  const handleRequestCreated = (request: ServiceRequest) => {
+    if (request?.requestNumber) setCreatedRequestNumber(request.requestNumber);
+    if (request) {
+      setRequests(prev => [request, ...prev]);
+      setCreatedRequest(request);
     }
-  };
-
-  const handleWarrantyImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (warrantyReceiptPreview) URL.revokeObjectURL(warrantyReceiptPreview);
-      setWarrantyReceiptImage(file);
-      setWarrantyReceiptPreview(URL.createObjectURL(file));
-    }
-  };
-
-  const removeToolImage = (index: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newImages = toolImages.filter((_, i) => i !== index);
-    setToolImages(newImages);
-    
-    URL.revokeObjectURL(toolImagePreviews[index]);
-    const newPreviews = toolImagePreviews.filter((_, i) => i !== index);
-    setToolImagePreviews(newPreviews);
-    
-    if (toolImageInputRef.current) toolImageInputRef.current.value = '';
-  };
-
-  const removeWarrantyImage = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (warrantyReceiptPreview) URL.revokeObjectURL(warrantyReceiptPreview);
-    setWarrantyReceiptImage(null);
-    setWarrantyReceiptPreview(null);
-    if (warrantyImageInputRef.current) warrantyImageInputRef.current.value = '';
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitError(null);
-
-    if (toolImages.length === 0) {
-      setSubmitError('חובה לצרף לפחות תמונה אחת של הכלי.');
-      return;
-    }
-    if (hasWarranty === 'yes' && !warrantyReceiptImage) {
-      setSubmitError('סימנת שיש אחריות - חובה לצרף צילום חשבונית או תעודת אחריות.');
-      return;
-    }
-    if (!issueDescription.trim()) {
-      setSubmitError('חובה לתאר את התקלה בכלי.');
-      return;
-    }
-    if (!agreedToInspectionFee) {
-      setSubmitError('חובה לאשר את תנאי הבדיקה בסך 150 ש"ח.');
-      return;
-    }
-    if (!repairLevel) {
-      setSubmitError('חובה לבחור לאיזו רמה תרצו שנגיע בתיקון הכלי.');
-      return;
-    }
-
-    if (isPreApprovedBudgetEnabled) {
-      const amount = Number(preApprovedAmount);
-      if (isNaN(amount) || amount < 500) {
-        setSubmitError('סכום האישור מראש חייב להיות לפחות 500 ₪.');
-        return;
-      }
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const formData = new FormData();
-      formData.append('customerId', currentCustomer.id);
-      formData.append('storeName', storeName.trim());
-      formData.append('toolOwnerName', toolOwnerName.trim());
-      if (toolOwnerPhone.trim()) {
-        formData.append('toolOwnerPhone', toolOwnerPhone.trim());
-      }
-      formData.append('issueDescription', issueDescription.trim());
-      formData.append('hasWarranty', hasWarranty === 'yes' ? 'true' : 'false');
-      formData.append('agreedToInspectionFee', agreedToInspectionFee ? 'true' : 'false');
-      
-      // Append new fields
-      formData.append('comments', comments.trim());
-      formData.append('repairLevel', repairLevel);
-      if (isPreApprovedBudgetEnabled) {
-        formData.append('preApprovedAmount', preApprovedAmount);
-        formData.append('preApprovedNotes', preApprovedNotes.trim());
-      }
-
-      toolImages.forEach(file => {
-        formData.append('toolImages', file);
-      });
-      if (hasWarranty === 'yes' && warrantyReceiptImage) {
-        formData.append('warrantyReceiptImage', warrantyReceiptImage);
-      }
-
-      const res = await fetch(`/api/${tenantId}/requests`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      let data: { error?: string; request?: ServiceRequest };
-      try {
-        data = await res.json();
-      } catch {
-        throw new Error('שגיאת שרת זמנית, אנא נסה שנית בעוד רגע.');
-      }
-      if (!res.ok) {
-        throw new Error(data.error || 'ארעה שגיאה בשליחת הטופס.');
-      }
-
-      if (data.request?.requestNumber) {
-        setCreatedRequestNumber(data.request.requestNumber);
-      }
-      
-      // Update local state live!
-      if (data.request) {
-        setRequests(prev => [data.request as ServiceRequest, ...prev]);
-      }
-      setSubmitSuccess(true);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'שגיאה בחיבור לשרת, אנא נסה שנית.';
-      setSubmitError(errorMessage);
-    } finally {
-      setIsSubmitting(false);
-    }
+    setSubmitSuccess(true);
   };
 
   // Status mapping
@@ -638,6 +467,16 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
             </div>
           </div>
 
+          <div className="mb-6">
+            <button
+              onClick={openCreateModal}
+              className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] cursor-pointer"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>פתח קריאה חדשה</span>
+            </button>
+          </div>
+
           <nav className="flex-1 space-y-1.5">
             <button
               onClick={() => setActiveView('requests')}
@@ -711,8 +550,18 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
               )}
               <div>
                 <h1 className="text-xl md:text-2xl font-black text-gray-900">שירות לקוחות {businessName}</h1>
-                <p className="text-gray-500 text-sm mt-1 font-medium">שלום {currentCustomer.firstName} {currentCustomer.lastName}, עקוב אחר קריאות השירות או פתח פנייה חדשה בכפתור למעלה.</p>
+                <p className="text-gray-500 text-sm mt-1 font-medium">שלום {currentCustomer.firstName} {currentCustomer.lastName}, עקוב אחר קריאות השירות או פתח פנייה חדשה בלחיצה.</p>
               </div>
+            </div>
+
+            <div className="relative z-10 flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+              <button
+                onClick={openCreateModal}
+                className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl text-sm font-black flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20 transition-all active:scale-[0.98] cursor-pointer"
+              >
+                <Plus className="w-5 h-5 stroke-[3]" />
+                <span>פתח קריאת שירות חדשה</span>
+              </button>
             </div>
           </div>
 
@@ -1006,7 +855,7 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
           {/* Customer Info Footer */}
           <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-5">
             <span className="text-xs text-gray-400 font-bold block mb-3">פרטי הלקוח</span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-gray-400 text-xs block">טלפון</span>
                 <strong className="text-gray-800 font-mono">{currentCustomer.phone || 'לא מעודכן'}</strong>
@@ -1014,14 +863,6 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
               <div>
                 <span className="text-gray-400 text-xs block">כתובת</span>
                 <strong className="text-gray-800">{currentCustomer.address || 'לא צוינה'}</strong>
-              </div>
-              <div>
-                <span className="text-gray-400 text-xs block">מספר סריאלי</span>
-                <strong className="text-gray-800 font-mono">{currentCustomer.serialNumber || 'לא זמין'}</strong>
-              </div>
-              <div>
-                <span className="text-gray-400 text-xs block">לוחית רישוי</span>
-                <strong className="text-gray-800 font-mono">{currentCustomer.licensePlate || 'לא זמין'}</strong>
               </div>
             </div>
           </div>
@@ -1360,10 +1201,10 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
                     </div>
 
                     <div className="flex flex-col gap-2.5 max-w-sm mx-auto pt-4">
-                      {toolOwnerPhone ? (
+                      {createdRequest?.toolOwnerPhone ? (
                         <a
-                          href={`https://wa.me/${toolOwnerPhone.startsWith('0') ? '972' + toolOwnerPhone.slice(1) : toolOwnerPhone}?text=${encodeURIComponent(
-                            `היי ${toolOwnerName}, קריאת השירות שלך מספר ${tenantId.substring(0, 2).toUpperCase()}-${createdRequestNumber} נפתחה בהצלחה ב-${businessName}! 🛴\nנמשיך לעדכן אותך כאן ברגע שהכלי יהיה מוכן או אם יהיו עדכונים נוספים. המשך יום מעולה!`
+                          href={`https://wa.me/${createdRequest.toolOwnerPhone.startsWith('0') ? '972' + createdRequest.toolOwnerPhone.slice(1) : createdRequest.toolOwnerPhone}?text=${encodeURIComponent(
+                            `היי ${createdRequest.toolOwnerName}, קריאת השירות שלך מספר ${tenantId.substring(0, 2).toUpperCase()}-${createdRequestNumber} נפתחה בהצלחה ב-${businessName}! 🛴\nנמשיך לעדכן אותך כאן ברגע שהכלי יהיה מוכן או אם יהיו עדכונים נוספים. המשך יום מעולה!`
                           )}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -1389,405 +1230,16 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
                     </div>
                   </div>
                 ) : (
-                  /* Form fields */
-                  <div className="space-y-6">
-                    {submitError && (
-                      <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-650 text-xs font-bold flex items-center gap-2">
-                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                        <span>{submitError}</span>
-                      </div>
-                    )}
-
-                    {/* Card 1: Owner details */}
-                    <div className="p-4 bg-slate-50/60 border border-slate-100 rounded-2xl space-y-3">
-                      <div className="flex items-center gap-1.5 text-slate-500">
-                        <User className="w-3.5 h-3.5" />
-                        <span className="text-[11px] font-black uppercase tracking-wide">פרטי בעל הכלי</span>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-gray-400" />
-                          שם בעל הכלי <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={toolOwnerName}
-                          onChange={(e) => setToolOwnerName(e.target.value)}
-                          placeholder="הזן את שמך המלא"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-gray-400" />
-                          מספר טלפון בעל הכלי <span className="text-gray-450 font-normal text-[10px]">(אופציונלי)</span>
-                        </label>
-                        <input
-                          type="tel"
-                          value={toolOwnerPhone}
-                          onChange={(e) => setToolOwnerPhone(e.target.value)}
-                          placeholder="מספר טלפון ליצירת קשר"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right"
-                          dir="rtl"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Card 2: Warranty (moved right after phone number) */}
-                    <div className="p-4 bg-blue-50/30 border border-blue-100/60 rounded-2xl space-y-3">
-                      <div className="flex items-center gap-1.5 text-blue-600">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span className="text-[11px] font-black uppercase tracking-wide">אחריות</span>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="block text-gray-700 text-xs font-bold">
-                          האם יש אחריות לכלי? <span className="text-red-500">*</span>
-                        </label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setHasWarranty('yes')}
-                            className={`py-3 px-4 rounded-xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer ${
-                              hasWarranty === 'yes'
-                                ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-2 ring-blue-500/10'
-                                : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                            }`}
-                          >
-                            <div>
-                              <span className="block text-sm font-extrabold">כן</span>
-                              <span className="block text-[10px] text-gray-400 mt-0.5">צרף תעודה/חשבונית</span>
-                            </div>
-                            <ShieldCheck className={`w-5 h-5 ${hasWarranty === 'yes' ? 'text-blue-500' : 'text-gray-300'}`} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setHasWarranty('no');
-                              setWarrantyReceiptImage(null);
-                              setWarrantyReceiptPreview(null);
-                            }}
-                            className={`py-3 px-4 rounded-xl border text-right transition-all flex items-center justify-between group active:scale-[0.98] cursor-pointer ${
-                              hasWarranty === 'no'
-                                ? 'border-blue-500 bg-blue-50/40 text-blue-700 ring-2 ring-blue-500/10'
-                                : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                            }`}
-                          >
-                            <div>
-                              <span className="block text-sm font-extrabold">לא</span>
-                              <span className="block text-[10px] text-gray-400 mt-0.5">כלי ללא אחריות</span>
-                            </div>
-                            <ShieldAlert className={`w-5 h-5 ${hasWarranty === 'no' ? 'text-blue-500' : 'text-gray-300'}`} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {hasWarranty === 'yes' && (
-                        <div className="space-y-1.5">
-                          <label className="block text-gray-700 text-xs font-bold">צילום חשבונית/תעודת אחריות:</label>
-                          <div
-                            onClick={() => warrantyImageInputRef.current?.click()}
-                            className="border border-dashed border-gray-300 rounded-xl p-4 text-center cursor-pointer hover:bg-blue-50/10 hover:border-blue-400 transition-all flex flex-col items-center justify-center min-h-[100px] bg-white"
-                          >
-                            <input
-                              type="file"
-                              accept="image/*"
-                              ref={warrantyImageInputRef}
-                              onChange={handleWarrantyImageChange}
-                              className="hidden"
-                            />
-                            {warrantyReceiptPreview ? (
-                              <div className="relative w-28 aspect-[4/3] rounded-lg overflow-hidden border bg-white">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={warrantyReceiptPreview} alt="Receipt preview" className="w-full h-full object-contain" />
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    removeWarrantyImage(e);
-                                  }}
-                                  className="absolute top-1 right-1 p-1 bg-red-650 text-white rounded-md hover:scale-105 transition-all shadow"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                <UploadCloud className="w-5 h-5 text-blue-600 mb-1" />
-                                <span className="text-blue-600 font-bold text-xs">לחץ כאן להעלאת קובץ</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Card 3: Issue description + repair level */}
-                    <div className="p-4 bg-teal-50/30 border border-teal-100/60 rounded-2xl space-y-4">
-                      <div className="flex items-center gap-1.5 text-teal-600">
-                        <FileText className="w-3.5 h-3.5" />
-                        <span className="text-[11px] font-black uppercase tracking-wide">תיאור התקלה ורמת התיקון</span>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5 text-gray-400" />
-                          מה התקלה בכלי? <span className="text-red-500">*</span>
-                        </label>
-                        <textarea
-                          value={issueDescription}
-                          onChange={(e) => setIssueDescription(e.target.value)}
-                          placeholder="תאר את הבעיה בכלי (לדוגמה: פנצ'ר בגלגל קדמי, המנוע לא נדלק, בעיה בבלמים...)"
-                          rows={3}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right resize-none"
-                          required
-                        />
-                      </div>
-
-                      {/* Desired Repair Level Selection */}
-                      <div className="space-y-1.5">
-                        <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
-                          <span className="text-gray-450 text-[10px]">⚡</span>
-                          לאיזו רמה תרצו שנגיע בתיקון? <span className="text-red-500">*</span>
-                        </label>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          {/* Option 1: Basic Ride */}
-                          <button
-                            type="button"
-                            onClick={() => setRepairLevel('RIDE_ONLY')}
-                            className={`py-3 px-3 rounded-2xl border text-right transition-all flex flex-col justify-between group active:scale-[0.98] cursor-pointer ${
-                              repairLevel === 'RIDE_ONLY'
-                                ? 'border-blue-500 bg-gradient-to-br from-blue-50/90 to-sky-50/50 text-blue-955 shadow-md shadow-blue-500/5 ring-4 ring-blue-500/10'
-                                : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-                            }`}
-                          >
-                            <div className="flex justify-between items-center w-full mb-1">
-                              <span className={`text-[11px] font-black transition-colors ${repairLevel === 'RIDE_ONLY' ? 'text-blue-600' : 'text-gray-700'}`}>מצב נסיעה בלבד 🛴</span>
-                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all ${repairLevel === 'RIDE_ONLY' ? 'border-blue-500 bg-blue-500 scale-110' : 'border-gray-300 bg-white'}`}>
-                                {repairLevel === 'RIDE_ONLY' && <span className="w-1 h-1 rounded-full bg-white"></span>}
-                              </span>
-                            </div>
-                            <span className="block text-[9px] text-gray-400 font-medium leading-tight group-hover:text-gray-500 transition-colors">תיקון בסיסי שיחזיר את הכלי למצב נסיעה (ללא תוספות)</span>
-                          </button>
-
-                          {/* Option 2: Safe Ride */}
-                          <button
-                            type="button"
-                            onClick={() => setRepairLevel('SAFE_RIDE')}
-                            className={`py-3 px-3 rounded-2xl border text-right transition-all flex flex-col justify-between group active:scale-[0.98] cursor-pointer ${
-                              repairLevel === 'SAFE_RIDE'
-                                ? 'border-emerald-500 bg-gradient-to-br from-emerald-50/90 to-teal-50/50 text-emerald-955 shadow-md shadow-emerald-500/5 ring-4 ring-emerald-500/10'
-                                : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-                            }`}
-                          >
-                            <div className="flex justify-between items-center w-full mb-1">
-                              <span className={`text-[11px] font-black transition-colors ${repairLevel === 'SAFE_RIDE' ? 'text-emerald-600' : 'text-gray-700'}`}>נסיעה בטוחה 🛑</span>
-                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all ${repairLevel === 'SAFE_RIDE' ? 'border-emerald-500 bg-emerald-500 scale-110' : 'border-gray-300 bg-white'}`}>
-                                {repairLevel === 'SAFE_RIDE' && <span className="w-1 h-1 rounded-full bg-white"></span>}
-                              </span>
-                            </div>
-                            <span className="block text-[9px] text-gray-400 font-medium leading-tight group-hover:text-gray-500 transition-colors">נסיעה תקינה כולל בדיקה קפדנית של בלמים וצמיגים (מומלץ)</span>
-                          </button>
-
-                          {/* Option 3: Like New */}
-                          <button
-                            type="button"
-                            onClick={() => setRepairLevel('LIKE_NEW')}
-                            className={`py-3 px-3 rounded-2xl border text-right transition-all flex flex-col justify-between group active:scale-[0.98] cursor-pointer ${
-                              repairLevel === 'LIKE_NEW'
-                                ? 'border-purple-500 bg-gradient-to-br from-purple-50/90 to-indigo-50/50 text-purple-955 shadow-md shadow-purple-500/5 ring-4 ring-purple-500/10'
-                                : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 hover:border-gray-300 shadow-sm'
-                            }`}
-                          >
-                            <div className="flex justify-between items-center w-full mb-1">
-                              <span className={`text-[11px] font-black transition-colors ${repairLevel === 'LIKE_NEW' ? 'text-purple-600' : 'text-gray-700'}`}>כמו חדש! ✨</span>
-                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition-all ${repairLevel === 'LIKE_NEW' ? 'border-purple-500 bg-purple-500 scale-110' : 'border-gray-300 bg-white'}`}>
-                                {repairLevel === 'LIKE_NEW' && <span className="w-1 h-1 rounded-full bg-white"></span>}
-                              </span>
-                            </div>
-                            <span className="block text-[9px] text-gray-400 font-medium leading-tight group-hover:text-gray-500 transition-colors">יישור קו מלא כולל הכל: תאורה, פלסטיקה, קוסמטיקה ושיפוץ כללי</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Card 4: Pre-approved budget */}
-                    <div className="space-y-2.5 p-4 bg-blue-50/20 border border-blue-100/30 rounded-2xl shadow-sm text-right">
-                        <label className="flex items-start cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={isPreApprovedBudgetEnabled}
-                            onChange={(e) => setIsPreApprovedBudgetEnabled(e.target.checked)}
-                            className="w-4.5 h-4.5 mt-0.5 text-blue-600 border-gray-300 rounded cursor-pointer"
-                          />
-                          <div className="mr-2.5">
-                            <span className="block text-xs font-bold text-gray-800">אישור תקציב לתיקון מראש (מהיר יותר!) ⚡</span>
-                            <span className="block text-[10px] text-gray-500 font-medium">מאפשר לנו להתחיל לעבוד מיד ללא צורך בשיחת אישור טלפונית</span>
-                          </div>
-                        </label>
-
-                        <AnimatePresence>
-                          {isPreApprovedBudgetEnabled && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              transition={{ duration: 0.25 }}
-                              className="space-y-2 pt-2 border-t border-blue-100/20 overflow-hidden"
-                            >
-                              <div className="space-y-1">
-                                <label className="block text-gray-700 text-[11px] font-bold">
-                                  סכום אישור מקסימלי לתיקון (₪) <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                  type="number"
-                                  value={preApprovedAmount}
-                                  onChange={(e) => setPreApprovedAmount(e.target.value)}
-                                  min="500"
-                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-bold text-right"
-                                  required
-                                />
-                                <p className="text-[9px] text-gray-400">מינימום 500 ₪. לא נחרוג מסכום זה ללא אישורכם מראש.</p>
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="block text-gray-700 text-[11px] font-bold">
-                                  הנחיות או דגשים לגבי התקציב <span className="text-gray-400 font-normal text-[9px]">(אופציונלי)</span>
-                                </label>
-                                <input
-                                  type="text"
-                                  value={preApprovedNotes}
-                                  onChange={(e) => setPreApprovedNotes(e.target.value)}
-                                  placeholder="לדוגמה: אל תחליפו סוללה בלי לדבר איתי קודם..."
-                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right"
-                                />
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-
-                      {/* General Comments Section */}
-                      <div className="space-y-1.5 p-4 bg-gray-50/40 border border-gray-100 rounded-2xl">
-                        <label className="block text-gray-755 text-xs font-bold flex items-center gap-1.5">
-                          <span>📝</span>
-                          הערות נוספות לצוות המעבדה <span className="text-gray-400 font-normal text-[10px]">(אופציונלי)</span>
-                        </label>
-                        <textarea
-                          value={comments}
-                          onChange={(e) => setComments(e.target.value)}
-                          placeholder="הערות או דגשים נוספים לצוות המעבדה..."
-                          rows={2}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 text-xs font-medium text-right resize-none"
-                        />
-                      </div>
-
-                    {/* Card 6: Tool Images */}
-                    <div className="space-y-2 p-4 bg-cyan-50/20 border border-cyan-100/40 rounded-2xl">
-                      <div className="flex items-center gap-1.5 text-cyan-600">
-                        <UploadCloud className="w-3.5 h-3.5" />
-                        <span className="text-[11px] font-black uppercase tracking-wide">צילומי הכלי</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <label className="block text-gray-700 text-xs font-bold">צילומי הכלי *</label>
-                        <span className="text-[10px] text-gray-400 font-bold">({toolImages.length}/3)</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {toolImagePreviews.map((preview, idx) => (
-                          <div key={idx} className="relative aspect-[4/3] rounded-lg overflow-hidden border bg-white flex items-center justify-center group/preview">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={preview} alt="preview" className="w-full h-full object-contain" />
-                            <button
-                              type="button"
-                              onClick={(e) => removeToolImage(idx, e)}
-                              className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-md shadow cursor-pointer opacity-80 hover:opacity-100"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                        {toolImages.length < 3 && (
-                          <div 
-                            onClick={() => toolImageInputRef.current?.click()}
-                            className="border border-dashed border-gray-300 rounded-lg aspect-[4/3] flex flex-col items-center justify-center hover:bg-blue-50/10 hover:border-blue-400 transition-all cursor-pointer"
-                          >
-                            <input
-                              type="file"
-                              accept="image/*"
-                              ref={toolImageInputRef}
-                              onChange={handleToolImageChange}
-                              className="hidden"
-                              multiple
-                            />
-                            <UploadCloud className="w-4 h-4 text-blue-600 mb-0.5" />
-                            <span className="text-blue-650 font-bold text-[10px]">הוסף תמונה</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Personal Items Disclaimer */}
-                    <div className="p-4 bg-indigo-50/40 border border-indigo-100/50 rounded-2xl flex items-start gap-3 text-indigo-900 text-xs shadow-sm text-right" dir="rtl">
-                      <span className="text-xl flex-shrink-0 select-none">🎒</span>
-                      <div className="leading-relaxed">
-                        <strong className="block text-indigo-950 font-bold mb-0.5">קחו איתכם ציוד אישי!</strong>
-                        מטענים, תיקים, קסדות או כל חפץ אישי אחר שנשארים על הכלי הם באחריותכם בלבד. מומלץ לקחת אותם כדי לשמור עליהם מכל משמר! ❤️
-                      </div>
-                    </div>
-
-                    {/* Inspection fee agreement */}
-                    <div className="p-4 bg-amber-50/40 border border-amber-100/80 rounded-2xl">
-                      <label className="flex items-start cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={agreedToInspectionFee}
-                          onChange={(e) => setAgreedToInspectionFee(e.target.checked)}
-                          className="w-4 h-4 mt-0.5 text-blue-600 border-gray-300 rounded cursor-pointer"
-                          required
-                        />
-                        <span className="mr-2.5 text-xs text-gray-655 leading-relaxed font-semibold">
-                          אני מסכים/ה לשלם <strong className="text-amber-850">150 ש&quot;ח דמי בדיקה</strong> אם התיקון אינו באחריות ואבחר שלא לתקן.
-                        </span>
-                      </label>
-                    </div>
-                  </div>
+                  <ServiceRequestForm
+                    config={formConfig}
+                    customer={currentCustomer}
+                    tenantId={tenantId}
+                    context="portal"
+                    submitLabel="פתח קריאה"
+                    onSuccess={handleRequestCreated}
+                  />
                 )}
               </div>
-
-              {/* Modal Footer */}
-              {!submitSuccess && (
-                <div className="p-5 bg-gray-50/70 border-t border-gray-200/50 flex justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsCreateModalOpen(false)}
-                    className="px-5 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl text-xs font-bold active:scale-95 transition-all cursor-pointer"
-                  >
-                    ביטול
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={isSubmitting}
-                    className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/10 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>שולח...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>פתח קריאה</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
             </motion.div>
           </div>
         )}
@@ -1933,6 +1385,14 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
                               onChange={(e) => handlePartItemPhotoChange(item.id, e)}
                               className="hidden"
                             />
+                            <input
+                              id={`part-photo-camera-${item.id}`}
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              onChange={(e) => handlePartItemPhotoChange(item.id, e)}
+                              className="hidden"
+                            />
                             {item.photoPreview ? (
                               <div className="relative w-24 aspect-[4/3] rounded-lg overflow-hidden border bg-white">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1946,10 +1406,25 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
                                 </button>
                               </div>
                             ) : (
-                              <>
-                                <UploadCloud className="w-4 h-4 text-[#0F9E1D] mb-1" />
-                                <span className="text-[#0F9E1D] font-bold text-[11px]">לחץ כאן להעלאת תמונה</span>
-                              </>
+                              <div className="flex flex-col items-center gap-1.5">
+                                <span className="text-[#0F9E1D] font-bold text-[11px]">צילום / העלאת תמונת חלק</span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); document.getElementById(`part-photo-camera-${item.id}`)?.click(); }}
+                                    className="px-2.5 py-1 bg-[#14C425] hover:bg-[#0F9E1D] text-white text-[10px] font-bold rounded-lg shadow-sm flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Camera className="w-3 h-3" /> צלם
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); document.getElementById(`part-photo-input-${item.id}`)?.click(); }}
+                                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-bold rounded-lg border border-gray-200 cursor-pointer"
+                                  >
+                                    גלריה
+                                  </button>
+                                </div>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -2185,43 +1660,6 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
                 />
               </div>
 
-              {/* Vehicle specific fields */}
-              <div className="border-t border-gray-100 pt-4 space-y-4">
-                <span className="block text-gray-400 text-[10px] font-bold uppercase tracking-wider">פרטי כלי ברירת מחדל</span>
-                
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-[11px] font-bold">מספר סריאלי</label>
-                    <input
-                      type="text"
-                      value={settingsSerialNumber}
-                      onChange={(e) => setSettingsSerialNumber(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all font-mono"
-                      dir="ltr"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-[11px] font-bold">צבע כלי</label>
-                    <input
-                      type="text"
-                      value={settingsColor}
-                      onChange={(e) => setSettingsColor(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-[11px] font-bold">לוחית רישוי</label>
-                    <input
-                      type="text"
-                      value={settingsLicensePlate}
-                      onChange={(e) => setSettingsLicensePlate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all font-mono"
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-              </div>
-
               {/* Submit */}
               <button
                 type="submit"
@@ -2238,27 +1676,16 @@ export default function CustomerPortal({ customer, initialRequests, initialPartR
         </div>
       )}
 
-      {/* Print Styles - QR Flyer */}
-      <style jsx global>{`
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 0 !important;
-          }
-          html, body {
-            height: auto !important;
-            min-height: 100vh !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          .print\\:hidden {
-            display: none !important;
-          }
-        }
-      `}</style>
+      {/* Mobile Floating Action Button (FAB) */}
+      <div className="md:hidden fixed bottom-6 left-6 z-40">
+        <button
+          onClick={openCreateModal}
+          className="px-5 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full font-black text-sm flex items-center gap-2 shadow-2xl shadow-blue-600/40 border border-white/20 active:scale-95 transition-all cursor-pointer"
+        >
+          <Plus className="w-5 h-5 stroke-[3]" />
+          <span>פתח קריאה</span>
+        </button>
+      </div>
     </div>
   );
 }

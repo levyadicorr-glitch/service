@@ -1,6 +1,7 @@
 import React from 'react';
 import { cookies } from 'next/headers';
-import { getServiceRequests, getCustomers, getDrivers, getPartRequests, getOrders, getTenantById, ensureIndexes } from '@/lib/db';
+import { getServiceRequests, getCustomers, getDrivers, getPartRequests, getOrders, getAgents, getTenantById, ensureIndexes } from '@/lib/db';
+import { normalizeServiceFormConfig } from '@/lib/serviceFormConfig';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
 import AdminLogin from '../AdminLogin';
 import AdminDashboard from './AdminDashboard';
@@ -15,7 +16,14 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const businessName = tenantObj?.businessName || 'העסק';
   const whatsappTemplate = tenantObj?.whatsappTemplate || '';
   const partsRequestPhone = tenantObj?.partsRequestPhone || '';
+  const adminWhatsappPhone = tenantObj?.adminWhatsappPhone || '';
+  const adminWhatsappPhone2 = tenantObj?.adminWhatsappPhone2 || '';
+  const adminWhatsappPhone3 = tenantObj?.adminWhatsappPhone3 || '';
+  const quoteNotificationPhones = tenantObj?.quoteNotificationPhones || '';
+  const greenApiInstanceId = tenantObj?.greenApiInstanceId || '';
   const logoUrl = tenantObj?.logoUrl || '';
+  const serviceFormConfig = normalizeServiceFormConfig(tenantObj?.serviceFormConfig);
+  const initialDeviceModels = tenantObj?.deviceModels || ['קורקינט', 'אופניים'];
 
   // No data leaves the server before a valid admin session exists for this tenant.
   const cookieStore = await cookies();
@@ -37,12 +45,13 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
     getDrivers(tenantId),
   ]);
 
-  const [requestsResult, partRequests, orders] = await Promise.all([
+  const [requestsResult, partRequests, orders, agents] = await Promise.all([
     getServiceRequests(tenantId, { page: 1, limit: 200, excludeImages: true, customers, drivers }),
     getPartRequests(tenantId, { excludeImages: true, customers }),
     getOrders(tenantId, { customers, drivers }),
+    getAgents(tenantId),
   ]);
   const requests = requestsResult.requests;
 
-  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} logoUrl={logoUrl} />;
+  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialDeviceModels={initialDeviceModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} greenApiInstanceId={greenApiInstanceId} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} />;
 }

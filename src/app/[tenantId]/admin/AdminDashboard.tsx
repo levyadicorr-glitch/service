@@ -1,13 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Customer, Driver, Order, PartRequest, ServiceRequest } from '@/lib/db';
-import { buildWhatsAppMessage, formatRequestNumber } from '@/lib/format';
+import Link from 'next/link';
+import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest } from '@/lib/db';
+import { ServiceFormConfig, normalizeServiceFormConfig, BUILTIN_FIELD_META, FormField, CustomFieldType } from '@/lib/serviceFormConfig';
+import ServiceRequestForm from '@/components/ServiceRequestForm';
+import CustomerSelectCombobox from '@/components/CustomerSelectCombobox';
+import { buildWhatsAppMessage, formatRequestNumber, formatDate } from '@/lib/format';
 import {
   Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock,
   Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone,
   Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2, Truck, Package,
-  Menu, ShoppingCart, Pencil, Route, MapPin
+  Menu, ShoppingCart, Pencil, Route, MapPin, SlidersHorizontal, GripVertical, Smartphone, Briefcase
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -16,20 +20,29 @@ interface AdminDashboardProps {
   drivers: Driver[];
   initialPartRequests: PartRequest[];
   initialOrders: Order[];
+  initialAgents?: Agent[];
+  initialDeviceModels?: string[];
   tenantId: string;
   businessName: string;
   whatsappTemplate: string;
   partsRequestPhone?: string;
+  adminWhatsappPhone?: string;
+  adminWhatsappPhone2?: string;
+  adminWhatsappPhone3?: string;
+  quoteNotificationPhones?: string;
+  greenApiInstanceId?: string;
   logoUrl?: string;
+  serviceFormConfig?: ServiceFormConfig;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, tenantId, businessName, whatsappTemplate, partsRequestPhone = '', logoUrl = '' }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialDeviceModels = ['קורקינט', 'אופניים'], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', greenApiInstanceId = '', logoUrl = '', serviceFormConfig }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
+  const [agentsList, setAgentsList] = useState<Agent[]>(initialAgents);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [partRequestsList, setPartRequestsList] = useState<PartRequest[]>(initialPartRequests);
   const [ordersList, setOrdersList] = useState<Order[]>(initialOrders);
-  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'partRequests' | 'orders' | 'dispatch'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'agents' | 'partRequests' | 'orders' | 'dispatch' | 'formBuilder'>('requests');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const REGIONS: { key: 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM'; label: string }[] = [
@@ -45,18 +58,36 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerRegionFilter, setCustomerRegionFilter] = useState<string>('ALL');
   const [orderSearch, setOrderSearch] = useState('');
+  const [partRequestSearch, setPartRequestSearch] = useState('');
   const [orderRegionFilter, setOrderRegionFilter] = useState<string>('ALL');
 
   // Settings States
   const [currentBusinessName, setCurrentBusinessName] = useState(businessName);
   const [currentWhatsappTemplate, setCurrentWhatsappTemplate] = useState(whatsappTemplate);
   const [currentPartsRequestPhone, setCurrentPartsRequestPhone] = useState(partsRequestPhone);
+  const [currentAdminWhatsappPhone, setCurrentAdminWhatsappPhone] = useState(adminWhatsappPhone);
+  const [currentAdminWhatsappPhone2, setCurrentAdminWhatsappPhone2] = useState(adminWhatsappPhone2);
+  const [currentAdminWhatsappPhone3, setCurrentAdminWhatsappPhone3] = useState(adminWhatsappPhone3);
+  const [currentQuoteNotificationPhones, setCurrentQuoteNotificationPhones] = useState(quoteNotificationPhones);
+  const [currentGreenApiInstanceId, setCurrentGreenApiInstanceId] = useState(greenApiInstanceId);
   const [currentLogoUrl, setCurrentLogoUrl] = useState(logoUrl);
+  const [currentServiceFormConfig, setCurrentServiceFormConfig] = useState<ServiceFormConfig>(() => normalizeServiceFormConfig(serviceFormConfig));
+  const [settingsServiceFormConfig, setSettingsServiceFormConfig] = useState<ServiceFormConfig>(() => normalizeServiceFormConfig(serviceFormConfig));
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [activeQuoteId, setActiveQuoteId] = useState<string | null>(null);
+  const [activeQuotePrice, setActiveQuotePrice] = useState<string>('');
 
   const [settingsBusinessName, setSettingsBusinessName] = useState(businessName);
   const [settingsWhatsappTemplate, setSettingsWhatsappTemplate] = useState(whatsappTemplate);
   const [settingsPartsRequestPhone, setSettingsPartsRequestPhone] = useState(partsRequestPhone);
+  const [settingsAdminWhatsappPhone, setSettingsAdminWhatsappPhone] = useState(adminWhatsappPhone);
+  const [settingsAdminWhatsappPhone2, setSettingsAdminWhatsappPhone2] = useState(adminWhatsappPhone2);
+  const [settingsAdminWhatsappPhone3, setSettingsAdminWhatsappPhone3] = useState(adminWhatsappPhone3);
+  const [settingsQuoteNotificationPhones, setSettingsQuoteNotificationPhones] = useState(quoteNotificationPhones);
+  const [settingsGreenApiInstanceId, setSettingsGreenApiInstanceId] = useState(greenApiInstanceId);
+  const [settingsGreenApiToken, setSettingsGreenApiToken] = useState('');
+  const [connectionTestResult, setConnectionTestResult] = useState<'idle' | 'checking' | 'connected' | 'disconnected' | 'error'>('idle');
+  const [connectionTestMessage, setConnectionTestMessage] = useState('');
   const [settingsPartsDeletePassword, setSettingsPartsDeletePassword] = useState('');
   const [settingsPassword, setSettingsPassword] = useState('');
   const [settingsLogoFile, setSettingsLogoFile] = useState<File | null>(null);
@@ -65,11 +96,23 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
+  // Form-builder tab (standalone module) state
+  const [isSavingFormConfig, setIsSavingFormConfig] = useState(false);
+  const [formConfigSaved, setFormConfigSaved] = useState(false);
+  const [formConfigError, setFormConfigError] = useState<string | null>(null);
 
   const openSettingsModal = () => {
     setSettingsBusinessName(currentBusinessName);
     setSettingsWhatsappTemplate(currentWhatsappTemplate);
     setSettingsPartsRequestPhone(currentPartsRequestPhone);
+    setSettingsAdminWhatsappPhone(currentAdminWhatsappPhone);
+    setSettingsAdminWhatsappPhone2(currentAdminWhatsappPhone2);
+    setSettingsAdminWhatsappPhone3(currentAdminWhatsappPhone3);
+    setSettingsQuoteNotificationPhones(currentQuoteNotificationPhones);
+    setSettingsGreenApiInstanceId(currentGreenApiInstanceId);
+    setSettingsGreenApiToken('');
+    setConnectionTestResult('idle');
+    setConnectionTestMessage('');
     setSettingsPartsDeletePassword('');
     setSettingsPassword('');
     setSettingsLogoFile(null);
@@ -95,6 +138,63 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     setRemoveLogoFlag(true);
   };
 
+  // ---- Service-request form builder helpers ----
+  const updateFormField = (id: string, patch: Partial<FormField>) =>
+    setSettingsServiceFormConfig(prev => ({ ...prev, fields: prev.fields.map(f => f.id === id ? { ...f, ...patch } : f) }));
+
+  const moveFormField = (index: number, dir: -1 | 1) =>
+    setSettingsServiceFormConfig(prev => {
+      const fields = [...prev.fields];
+      const target = index + dir;
+      if (target < 0 || target >= fields.length) return prev;
+      [fields[index], fields[target]] = [fields[target], fields[index]];
+      return { ...prev, fields };
+    });
+
+  const addCustomField = (type: CustomFieldType) =>
+    setSettingsServiceFormConfig(prev => {
+      const id = `custom_${Math.random().toString(36).slice(2, 10)}`;
+      const newField: FormField = { id, builtin: false, key: id, type, label: 'שדה חדש', enabled: true, required: false, placeholder: '' };
+      return { ...prev, fields: [...prev.fields, newField] };
+    });
+
+  const removeCustomField = (id: string) =>
+    setSettingsServiceFormConfig(prev => ({ ...prev, fields: prev.fields.filter(f => f.id !== id) }));
+
+  const fieldHasRequiredToggle = (f: FormField) =>
+    f.builtin ? (BUILTIN_FIELD_META[f.key as keyof typeof BUILTIN_FIELD_META]?.hasRequiredToggle ?? false) : true;
+
+  const customTypeLabel = (t: CustomFieldType) => (t === 'textarea' ? 'טקסט ארוך' : t === 'tel' ? 'טלפון' : 'טקסט');
+
+  const resetFormConfig = () => {
+    setSettingsServiceFormConfig(normalizeServiceFormConfig(currentServiceFormConfig));
+    setFormConfigError(null);
+    setFormConfigSaved(false);
+  };
+
+  const handleSaveFormConfig = async () => {
+    setIsSavingFormConfig(true);
+    setFormConfigError(null);
+    setFormConfigSaved(false);
+    try {
+      const formData = new FormData();
+      formData.append('serviceFormConfig', JSON.stringify(settingsServiceFormConfig));
+      const res = await fetch(`/api/${tenantId}/admin/settings`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירת הטופס');
+      setCurrentServiceFormConfig(normalizeServiceFormConfig(settingsServiceFormConfig));
+      setFormConfigSaved(true);
+      setTimeout(() => setFormConfigSaved(false), 2500);
+    } catch (err: unknown) {
+      setFormConfigError(err instanceof Error ? err.message : 'שגיאה בחיבור לשרת');
+    } finally {
+      setIsSavingFormConfig(false);
+    }
+  };
+
+  // Whether the builder has unsaved edits vs. the applied config.
+  const formConfigDirty = JSON.stringify(settingsServiceFormConfig) !== JSON.stringify(normalizeServiceFormConfig(currentServiceFormConfig));
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingSettings(true);
@@ -106,6 +206,14 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       formData.append('businessName', settingsBusinessName.trim());
       formData.append('whatsappTemplate', settingsWhatsappTemplate.trim());
       formData.append('partsRequestPhone', settingsPartsRequestPhone.trim());
+      formData.append('adminWhatsappPhone', settingsAdminWhatsappPhone.trim());
+      formData.append('adminWhatsappPhone2', settingsAdminWhatsappPhone2.trim());
+      formData.append('adminWhatsappPhone3', settingsAdminWhatsappPhone3.trim());
+      formData.append('quoteNotificationPhones', settingsQuoteNotificationPhones.trim());
+      formData.append('greenApiInstanceId', settingsGreenApiInstanceId.trim());
+      if (settingsGreenApiToken.trim()) {
+        formData.append('greenApiToken', settingsGreenApiToken.trim());
+      }
       if (settingsPartsDeletePassword.trim()) {
         formData.append('partsDeletePassword', settingsPartsDeletePassword.trim());
       }
@@ -131,12 +239,17 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       setCurrentBusinessName(settingsBusinessName);
       setCurrentWhatsappTemplate(settingsWhatsappTemplate);
       setCurrentPartsRequestPhone(settingsPartsRequestPhone);
+      setCurrentAdminWhatsappPhone(settingsAdminWhatsappPhone);
+      setCurrentAdminWhatsappPhone2(settingsAdminWhatsappPhone2);
+      setCurrentAdminWhatsappPhone3(settingsAdminWhatsappPhone3);
+      setCurrentQuoteNotificationPhones(settingsQuoteNotificationPhones);
+      setCurrentGreenApiInstanceId(settingsGreenApiInstanceId);
       if (removeLogoFlag) {
         setCurrentLogoUrl('');
       } else if (data.logoUrl) {
         setCurrentLogoUrl(data.logoUrl);
       }
-      
+
       setSettingsSuccess(true);
       setTimeout(() => setIsSettingsModalOpen(false), 1000);
     } catch (err: unknown) {
@@ -145,7 +258,31 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       setIsSavingSettings(false);
     }
   };
-  
+
+  const handleTestGreenApiConnection = async () => {
+    setConnectionTestResult('checking');
+    setConnectionTestMessage('');
+    try {
+      const res = await fetch(`/api/${tenantId}/admin/whatsapp/test`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setConnectionTestResult('error');
+        setConnectionTestMessage(data.error || 'שגיאה בבדיקת החיבור');
+        return;
+      }
+      if (data.connected) {
+        setConnectionTestResult('connected');
+        setConnectionTestMessage('הוואטסאפ מחובר ומאושר');
+      } else {
+        setConnectionTestResult('disconnected');
+        setConnectionTestMessage(`המספר אינו מחובר (סטטוס: ${data.stateInstance || 'לא ידוע'}). סרוק את ה-QR ב-Green API.`);
+      }
+    } catch {
+      setConnectionTestResult('error');
+      setConnectionTestMessage('שגיאה בחיבור לשרת');
+    }
+  };
+
   // Dropdown open states
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
@@ -161,9 +298,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createSearch, setCreateSearch] = useState('');
   const [selectedCustomerForCreate, setSelectedCustomerForCreate] = useState<Customer | null>(null);
-  const [adminToolOwnerName, setAdminToolOwnerName] = useState('');
-  const [adminToolOwnerPhone, setAdminToolOwnerPhone] = useState('');
-  const [isAdminSavingRequest, setIsAdminSavingRequest] = useState(false);
 
   // Add Customer Modal State
   const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
@@ -174,9 +308,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     phone: '',
     email: '',
     address: '',
-    licensePlate: '',
-    color: '',
-    serialNumber: '',
   });
 
   // Customer Card (edit) Modal State
@@ -190,32 +321,156 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     email: '',
     address: '',
     region: '' as '' | 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM',
-    licensePlate: '',
-    color: '',
-    serialNumber: '',
   });
   const [updatingRegionCustomerId, setUpdatingRegionCustomerId] = useState<string | null>(null);
+  const [approvingCustomerId, setApprovingCustomerId] = useState<string | null>(null);
 
   // Drivers Management State (settings modal section)
   const [newDriverName, setNewDriverName] = useState('');
   const [newDriverPhone, setNewDriverPhone] = useState('');
   const [isSavingDriver, setIsSavingDriver] = useState(false);
   const [copiedDriverId, setCopiedDriverId] = useState<string | null>(null);
+  const [copiedCustomerLoginUrl, setCopiedCustomerLoginUrl] = useState(false);
+  const [copiedPortalCustId, setCopiedPortalCustId] = useState<string | null>(null);
   const [updatingDriverRequestId, setUpdatingDriverRequestId] = useState<string | null>(null);
   const [adminSelectedDriverId, setAdminSelectedDriverId] = useState('');
+
+  const copyCustomerLoginUrl = () => {
+    const url = `${baseUrl}/${tenantId}/login`;
+    navigator.clipboard.writeText(url);
+    setCopiedCustomerLoginUrl(true);
+    setTimeout(() => setCopiedCustomerLoginUrl(false), 2000);
+  };
+
+  const [copiedAgentPartUrl, setCopiedAgentPartUrl] = useState(false);
+  const copyAgentPartRequestUrl = () => {
+    const url = `${baseUrl}/${tenantId}/request-part`;
+    navigator.clipboard.writeText(url);
+    setCopiedAgentPartUrl(true);
+    setTimeout(() => setCopiedAgentPartUrl(false), 2000);
+  };
+
+  const copyCustomerPortalUrl = (cust: Customer) => {
+    const url = `${baseUrl}/${tenantId}/portal/${cust.id}`;
+    navigator.clipboard.writeText(url);
+    setCopiedPortalCustId(cust.id);
+    setTimeout(() => setCopiedPortalCustId(null), 2000);
+  };
+
+  // Sales Agents State & Handlers
+  const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentPhone, setNewAgentPhone] = useState('');
+  const [newAgentPassword, setNewAgentPassword] = useState('');
+  const [isSavingAgent, setIsSavingAgent] = useState(false);
+  const [deletingAgentId, setDeletingAgentId] = useState<string | null>(null);
+  const [copiedAgentToken, setCopiedAgentToken] = useState<string | null>(null);
+
+  const copyAgentPortalUrl = (agentToken: string) => {
+    const url = `${baseUrl}/${tenantId}/agent/${agentToken}`;
+    navigator.clipboard.writeText(url);
+    setCopiedAgentToken(agentToken);
+    setTimeout(() => setCopiedAgentToken(null), 2000);
+  };
+
+  const handleCreateAgent = async () => {
+    if (!newAgentName.trim() || !newAgentPhone.trim() || !newAgentPassword.trim()) {
+      alert('יש למלא שם, טלפון וסיסמת כניסה לסוכן');
+      return;
+    }
+    setIsSavingAgent(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/agents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newAgentName.trim(),
+          phone: newAgentPhone.trim(),
+          password: newAgentPassword.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה ביצירת סוכן מכירות');
+
+      setAgentsList(prev => [data.agent, ...prev]);
+      setNewAgentName('');
+      setNewAgentPhone('');
+      setNewAgentPassword('');
+      setIsAddAgentModalOpen(false);
+      alert('סוכן מכירות חדש נוצר בהצלחה! 🎉');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה ביצירת סוכן');
+    } finally {
+      setIsSavingAgent(false);
+    }
+  };
+
+  const handleDeleteAgent = async (agentId: string) => {
+    if (!confirm('האם אתה בטוח שברצונך למחוק סוכן מכירות זה? היכולת שלו להתחבר לפורטל תחסם.')) return;
+    setDeletingAgentId(agentId);
+    try {
+      const res = await fetch(`/api/${tenantId}/agents/${agentId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'שגיאה במחיקת סוכן');
+      }
+      setAgentsList(prev => prev.filter(a => a.id !== agentId));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה במחיקת סוכן');
+    } finally {
+      setDeletingAgentId(null);
+    }
+  };
 
   const multiDriver = driversList.length > 1;
 
   // Orders Management State
-  const DEVICE_TYPE_PRESETS = ['קורקינט', 'אופניים'];
-  const ORDER_STATUSES: { key: 'PENDING' | 'FULFILLED' | 'CANCELLED'; label: string; bg: string; text: string; border: string }[] = [
-    { key: 'PENDING', label: 'ממתין לשילוח', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100' },
+  const [deviceModels, setDeviceModels] = useState<string[]>(
+    initialDeviceModels && initialDeviceModels.length > 0 ? initialDeviceModels : ['קורקינט', 'אופניים']
+  );
+  const [isAddingNewModel, setIsAddingNewModel] = useState(false);
+  const [newModelInput, setNewModelInput] = useState('');
+  const [isSavingNewModel, setIsSavingNewModel] = useState(false);
+
+  const handleAddDeviceModel = async () => {
+    const trimmed = newModelInput.trim();
+    if (!trimmed) return;
+    setIsSavingNewModel(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/device-models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelName: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בהוספת הדגם');
+
+      if (data.deviceModels && Array.isArray(data.deviceModels)) {
+        setDeviceModels(data.deviceModels);
+      } else if (!deviceModels.includes(trimmed)) {
+        setDeviceModels(prev => [...prev, trimmed]);
+      }
+      setNewOrderDeviceType(trimmed);
+      setNewModelInput('');
+      setIsAddingNewModel(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בהוספת הדגם');
+    } finally {
+      setIsSavingNewModel(false);
+    }
+  };
+
+  const ORDER_STATUSES: { key: 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED'; label: string; bg: string; text: string; border: string }[] = [
+    { key: 'PENDING', label: 'בהכנה', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100' },
+    { key: 'READY_FOR_DISPATCH', label: 'מוכן לשילוח', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100' },
     { key: 'FULFILLED', label: 'סופק', bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-100' },
     { key: 'CANCELLED', label: 'בוטל', bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' },
   ];
   const [isAddOrderModalOpen, setIsAddOrderModalOpen] = useState(false);
   const [newOrderCustomerId, setNewOrderCustomerId] = useState('');
-  const [newOrderDeviceType, setNewOrderDeviceType] = useState<string>(DEVICE_TYPE_PRESETS[0]);
+  const [newOrderDeviceType, setNewOrderDeviceType] = useState<string>('קורקינט');
   const [newOrderCustomDeviceType, setNewOrderCustomDeviceType] = useState('');
   const [newOrderQuantity, setNewOrderQuantity] = useState('1');
   const [newOrderUnitPrice, setNewOrderUnitPrice] = useState('');
@@ -233,17 +488,25 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const refreshRequests = async (showLoader = false) => {
     if (showLoader) setIsAdminRefreshing(true);
     try {
-      const res = await fetch(`/api/${tenantId}/requests?excludeImages=true&limit=200`);
-      const data = await res.json();
-      if (res.ok && data.requests) {
-        // Preserving the selected request reference to keep modal details updated if open
-        setRequests(data.requests);
+      const [resRequests, resPartRequests] = await Promise.all([
+        fetch(`/api/${tenantId}/requests?excludeImages=true&limit=200`),
+        fetch(`/api/${tenantId}/parts-requests`),
+      ]);
+      const dataRequests = await resRequests.json();
+      const dataPartRequests = await resPartRequests.json();
+
+      if (resRequests.ok && dataRequests.requests) {
+        setRequests(dataRequests.requests);
         if (selectedRequest) {
-          const updatedReq = data.requests.find((r: ServiceRequest) => r.id === selectedRequest.id);
+          const updatedReq = dataRequests.requests.find((r: ServiceRequest) => r.id === selectedRequest.id);
           if (updatedReq) {
             setSelectedRequest(prev => prev ? { ...prev, ...updatedReq } : updatedReq);
           }
         }
+      }
+
+      if (resPartRequests.ok && dataPartRequests.requests) {
+        setPartRequestsList(dataPartRequests.requests);
       }
     } catch (err) {
       console.error('Error refreshing requests:', err);
@@ -346,6 +609,14 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     return matchesSearch && matchesRegion;
   });
 
+  // Filter part requests
+  const filteredPartRequests = partRequestsList.filter(pr => {
+    const customerName = pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}`.toLowerCase() : '';
+    const customerPhone = (pr.customer?.phone || '').toLowerCase();
+    const searchLower = partRequestSearch.toLowerCase();
+    return !searchLower || customerName.includes(searchLower) || customerPhone.includes(searchLower) || pr.description.toLowerCase().includes(searchLower);
+  });
+
   // ---- Dispatch Board: group open requests/orders by region, then by driver ----
   const dispatchRegionKeys: { key: string; label: string }[] = [...REGIONS, { key: 'UNASSIGNED', label: 'ללא אזור' }];
   const openDispatchRequests = requests.filter(r => r.status !== 'COMPLETED');
@@ -426,51 +697,14 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     }
   };
 
-  // Handle direct request creation by admin
-  const handleAdminSaveRequest = async () => {
-    if (!selectedCustomerForCreate) return;
-    if (multiDriver && !adminSelectedDriverId) {
-      alert('נא לבחור נהג לקריאה');
-      return;
-    }
-    setIsAdminSavingRequest(true);
-    try {
-      const res = await fetch(`/api/${tenantId}/requests/direct`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: selectedCustomerForCreate.id,
-          toolOwnerName: adminToolOwnerName.trim() || undefined,
-          toolOwnerPhone: adminToolOwnerPhone.trim() || undefined,
-          driverId: adminSelectedDriverId || undefined
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to create request');
-      }
-
-      const data = await res.json();
-
-      const assignedDriver = data.request.driverId ? driversList.find(d => d.id === data.request.driverId) : undefined;
-
-      // Update local state by prepending the new request
-      setRequests(prev => [{ ...data.request, driver: assignedDriver }, ...prev]);
-
-      // Close & reset
-      setIsCreateModalOpen(false);
-      setSelectedCustomerForCreate(null);
-      setCreateSearch('');
-      setAdminToolOwnerName('');
-      setAdminToolOwnerPhone('');
-      setAdminSelectedDriverId('');
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'שגיאה בשמירת הקריאה';
-      alert(errorMessage);
-    } finally {
-      setIsAdminSavingRequest(false);
-    }
+  // Called by <ServiceRequestForm> after the admin saves a request from inside.
+  const handleAdminRequestCreated = (request: ServiceRequest) => {
+    const assignedDriver = request.driverId ? driversList.find(d => d.id === request.driverId) : undefined;
+    setRequests(prev => [{ ...request, driver: assignedDriver }, ...prev]);
+    setIsCreateModalOpen(false);
+    setSelectedCustomerForCreate(null);
+    setCreateSearch('');
+    setAdminSelectedDriverId('');
   };
 
   // Handle add customer
@@ -502,9 +736,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
         phone: '',
         email: '',
         address: '',
-        licensePlate: '',
-        color: '',
-        serialNumber: '',
       });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'שגיאה בהוספת הלקוח';
@@ -540,9 +771,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       email: cust.email || '',
       address: cust.address || '',
       region: cust.region || '',
-      licensePlate: cust.licensePlate || '',
-      color: cust.color || '',
-      serialNumber: cust.serialNumber || '',
     });
     setIsCustomerCardOpen(true);
   };
@@ -571,9 +799,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
         email: customerCardForm.email.trim() || undefined,
         address: customerCardForm.address.trim() || undefined,
         region: customerCardForm.region || undefined,
-        licensePlate: customerCardForm.licensePlate.trim() || undefined,
-        color: customerCardForm.color.trim() || undefined,
-        serialNumber: customerCardForm.serialNumber.trim() || undefined,
       };
 
       const res = await fetch(`/api/${tenantId}/customers/${editingCustomerId}`, {
@@ -612,6 +837,24 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       alert('שגיאה בעדכון האזור');
     } finally {
       setUpdatingRegionCustomerId(null);
+    }
+  };
+
+  const handleApproveCustomer = async (customerId: string) => {
+    setApprovingCustomerId(customerId);
+    try {
+      const res = await fetch(`/api/${tenantId}/customers/${customerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved: true }),
+      });
+      if (!res.ok) throw new Error('Failed to approve customer');
+
+      applyCustomerUpdate(customerId, { approved: true });
+    } catch {
+      alert('שגיאה באישור הלקוח');
+    } finally {
+      setApprovingCustomerId(null);
     }
   };
 
@@ -703,7 +946,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
   // ---- Part requests management ----
 
-  const handleTogglePartRequestStatus = async (id: string, currentStatus: 'NEW' | 'FULFILLED') => {
+  const handleTogglePartRequestStatus = async (id: string, currentStatus: 'NEW' | 'FULFILLED' | 'READY_FOR_DISPATCH') => {
     const nextStatus = currentStatus === 'NEW' ? 'FULFILLED' : 'NEW';
     try {
       const res = await fetch(`/api/${tenantId}/parts-requests/${id}`, {
@@ -716,6 +959,55 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       setPartRequestsList(prev => prev.map(r => r.id === id ? { ...r, status: nextStatus } : r));
     } catch {
       alert('שגיאה בעדכון סטטוס הבקשה');
+    }
+  };
+
+  const handleSendQuote = async (pr: PartRequest, price: number) => {
+    try {
+      const res = await fetch(`/api/${tenantId}/parts-requests/${pr.id}/quote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send quote');
+
+      setPartRequestsList(prev => prev.map(r => r.id === pr.id ? { ...r, quotePrice: price, quoteStatus: 'PENDING_APPROVAL', quoteSentAt: new Date().toISOString() } : r));
+      
+      if (data.whatsappSent) {
+        alert('הצעת המחיר נשלחה ללקוח ב-WhatsApp! 🚀');
+      } else {
+        alert('הצעת המחיר נשמרה אך שליחת ה-WhatsApp נכשלה או לא הוגדרה.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'שגיאה בשליחת הצעת מחיר');
+    }
+  };
+
+  const handleMarkPartReadyForDispatch = async (pr: PartRequest) => {
+    try {
+      const res = await fetch(`/api/${tenantId}/parts-requests/${pr.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'READY_FOR_DISPATCH' }),
+      });
+      if (!res.ok) throw new Error('Failed to update part request status');
+
+      const data = await res.json();
+      setPartRequestsList(prev => prev.map(r => r.id === pr.id ? { ...r, status: 'READY_FOR_DISPATCH' } : r));
+
+      const customerPhone = pr.customer?.phone;
+      if (data.autoNotifySent) {
+        alert('הסטטוס עודכן ל"מוכן לשילוח" ונשלחה הודעת WhatsApp אוטומטית ללקוח! 🚀');
+      } else if (customerPhone) {
+        const cleanPhone = customerPhone.startsWith('0') ? '972' + customerPhone.slice(1) : customerPhone;
+        const msg = encodeURIComponent(`שלום ${pr.customer?.firstName || 'לקוח'}, החלק שביקשת ("${pr.description}") ב-${businessName} מוכן וממתין לשילוח! 📦🚀`);
+        window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
+      } else {
+        alert('הסטטוס עודכן ל"מוכן לשילוח".');
+      }
+    } catch {
+      alert('שגיאה בעדכון סטטוס הבקשה ל"מוכן לשילוח"');
     }
   };
 
@@ -799,13 +1091,18 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       const driver = data.order.driverId ? driversList.find(d => d.id === data.order.driverId) : undefined;
       setOrdersList(prev => [{ ...data.order, driver }, ...prev]);
       setNewOrderCustomerId('');
-      setNewOrderDeviceType(DEVICE_TYPE_PRESETS[0]);
+      setNewOrderDeviceType(deviceModels[0] || 'קורקינט');
       setNewOrderCustomDeviceType('');
       setNewOrderQuantity('1');
       setNewOrderUnitPrice('');
       setNewOrderDriverId('');
       setNewOrderRegion('');
       setIsAddOrderModalOpen(false);
+      if (data.autoNotifySent) {
+        alert('ההזמנה נוצרה בהצלחה ונשלחה הודעת WhatsApp אוטומטית ללקוח! 🚀');
+      } else {
+        alert('ההזמנה נוצרה בהצלחה!');
+      }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'שגיאה בהוספת ההזמנה');
     } finally {
@@ -826,7 +1123,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     }
   };
 
-  const handleOrderStatusChange = async (id: string, status: 'PENDING' | 'FULFILLED' | 'CANCELLED') => {
+  const handleOrderStatusChange = async (id: string, status: 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED') => {
     try {
       const res = await fetch(`/api/${tenantId}/orders/${id}`, {
         method: 'PATCH',
@@ -835,7 +1132,12 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       });
       if (!res.ok) throw new Error('Failed to update order status');
 
+      const data = await res.json();
       setOrdersList(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+
+      if (data.autoNotifySent) {
+        alert('הסטטוס עודכן ונשלחה התראת WhatsApp אוטומטית ללקוח! 🚀');
+      }
     } catch {
       alert('שגיאה בעדכון סטטוס ההזמנה');
     }
@@ -863,13 +1165,15 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
   // ---- Shared nav items (used by both the desktop sidebar and mobile drawer) ----
 
-  const navItems: { key: 'requests' | 'customers' | 'drivers' | 'partRequests' | 'orders' | 'dispatch'; label: string; icon: React.ElementType }[] = [
+  const navItems: { key: typeof activeTab; label: string; icon: React.ElementType }[] = [
     { key: 'requests', label: 'קריאות שירות', icon: FileText },
     { key: 'customers', label: 'רשימת לקוחות', icon: User },
     { key: 'drivers', label: 'נהגים', icon: Truck },
+    { key: 'agents', label: 'סוכני מכירות', icon: Briefcase },
     { key: 'partRequests', label: 'בקשות חלקים', icon: Package },
     { key: 'orders', label: 'הזמנת סחורה', icon: ShoppingCart },
     { key: 'dispatch', label: 'לוח שילוח', icon: Route },
+    { key: 'formBuilder', label: 'עיצוב הטופס', icon: SlidersHorizontal },
   ];
 
   const handleNavSelect = (key: typeof activeTab) => {
@@ -1168,8 +1472,13 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                               {formatRequestNumber(tenantId, req.requestNumber)}
                             </td>
                             <td className="p-5 font-bold text-gray-800 text-right">
-                              <div className="flex items-center gap-1.5 justify-start">
+                              <div className="flex items-center gap-1.5 justify-start flex-wrap">
                                 <span>{req.customer?.firstName} {req.customer?.lastName}</span>
+                                {req.agentName && (
+                                  <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                                    👔 סוכן: {req.agentName}
+                                  </span>
+                                )}
                                 {req.repairLevel === 'RIDE_ONLY' && (
                                   <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded text-[9px] font-bold">נסיעה 🛴</span>
                                 )}
@@ -1195,14 +1504,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                                 <span className="px-2.5 py-0.5 bg-gray-50 text-gray-500 rounded-md text-xs font-bold border border-gray-100">לא</span>
                               )}
                             </td>
-                            <td className="p-5 text-gray-400 text-sm">
-                              {new Date(req.createdAt).toLocaleDateString('he-IL', {
-                                day: 'numeric',
-                                month: 'numeric',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
+                            <td className="p-5 text-gray-400 text-sm font-mono">
+                              {formatDate(req.createdAt)}
                             </td>
                             {/* Premium Native Select Status Switcher */}
                             <td className="p-5">
@@ -1368,6 +1671,30 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   <Plus className="w-4 h-4" />
                   הוסף לקוח חדש
                 </button>
+                <button
+                  onClick={copyCustomerLoginUrl}
+                  className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] cursor-pointer border shadow-sm ${
+                    copiedCustomerLoginUrl
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                  title="העתק קישור לדף הכניסה של הלקוחות"
+                >
+                  <Copy className="w-4 h-4" />
+                  {copiedCustomerLoginUrl ? 'קישור הכניסה הועתק!' : 'העתק קישור כניסה ללקוחות'}
+                </button>
+                <button
+                  onClick={copyAgentPartRequestUrl}
+                  className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] cursor-pointer border shadow-sm ${
+                    copiedAgentPartUrl
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                  }`}
+                  title="העתק קישור סוכן לבקשת חלק"
+                >
+                  <Package className="w-4 h-4" />
+                  {copiedAgentPartUrl ? 'קישור סוכן לבקשת חלק הועתק!' : 'העתק קישור סוכן לבקשת חלק'}
+                </button>
               </div>
               <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20">נמצאו {filteredCustomers.length} לקוחות</span>
             </div>
@@ -1389,7 +1716,16 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                     {filteredCustomers.length > 0 ? (
                       filteredCustomers.slice(0, 100).map((cust) => (
                         <tr key={cust.id} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="p-5 font-bold text-gray-800">{cust.firstName} {cust.lastName}</td>
+                          <td className="p-5 font-bold text-gray-800">
+                            <div className="flex items-center gap-2">
+                              <span>{cust.firstName} {cust.lastName}</span>
+                              {cust.approved === false && (
+                                <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md border border-amber-200">
+                                  ממתין לאישור
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="p-5 text-gray-600 font-mono text-sm">{cust.phone || '-'}</td>
                           <td className="p-5 text-gray-500 text-sm">{cust.address || 'לא צוינה כתובת'}</td>
                           <td className="p-5">
@@ -1409,6 +1745,23 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                           </td>
                           <td className="p-5 text-center">
                             <div className="flex items-center justify-center gap-1.5">
+                              {/* Approve Customer Button */}
+                              {cust.approved === false && (
+                                <button
+                                  onClick={() => handleApproveCustomer(cust.id)}
+                                  disabled={approvingCustomerId === cust.id}
+                                  className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98] border border-emerald-100/50 cursor-pointer disabled:opacity-50"
+                                  title="אשר גישת לקוח לפורטל"
+                                >
+                                  {approvingCustomerId === cust.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  )}
+                                  אשר לקוח
+                                </button>
+                              )}
+
                               {/* Edit Customer Button */}
                               <button
                                 onClick={() => openCustomerCard(cust)}
@@ -1484,6 +1837,36 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                                 <Eye className="w-3.5 h-3.5" />
                                 פורטל
                               </a>
+
+                              {/* WhatsApp Portal Link Share */}
+                              {cust.phone && (
+                                <a
+                                  href={`https://wa.me/${cust.phone.replace(/\D/g, '').startsWith('0') ? '972' + cust.phone.replace(/\D/g, '').slice(1) : cust.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                                    `שלום ${cust.firstName},\nזהו הקישור האישי שלך לפורטל קריאות השירות ב-${currentBusinessName}:\n${baseUrl}/${tenantId}/portal/${cust.id}`
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-emerald-100/50 cursor-pointer"
+                                  title="שלח קישור אישי ב-WhatsApp"
+                                >
+                                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                                    <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
+                                  </svg>
+                                </a>
+                              )}
+
+                              {/* Copy Customer Portal Link */}
+                              <button
+                                onClick={() => copyCustomerPortalUrl(cust)}
+                                className={`p-2 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border cursor-pointer ${
+                                  copiedPortalCustId === cust.id
+                                    ? 'bg-emerald-600 text-white border-emerald-600'
+                                    : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100/50'
+                                }`}
+                                title="העתק קישור לפורטל הלקוח"
+                              >
+                                <Copy className="w-4 h-4" />
+                              </button>
                               
                               {/* Delete Customer Button */}
                               <button
@@ -1631,8 +2014,139 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
           </div>
         )}
 
+        {activeTab === 'agents' && (
+          <div className="space-y-6">
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                    <Briefcase className="w-4 h-4 text-blue-600" />
+                    סוכני מכירות במערכת ({agentsList.length})
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    סוכני מכירות יכולים לפתוח קריאות שירות, הזמנות סחורה ובקשות חלקים מפורטל ייעודי מאובטח.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddAgentModalOpen(true)}
+                  className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  הוסף סוכן מכירות
+                </button>
+              </div>
+
+              {agentsList.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                  <Briefcase className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 text-sm font-bold">אין סוכני מכירות מוגדרים במערכת</p>
+                  <p className="text-gray-400 text-xs mt-1">לחץ על "הוסף סוכן מכירות" כדי ליצור סוכן חדש ולקבל עבורו קישור לפורטל.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {agentsList.map((agent) => (
+                    <div
+                      key={agent.id}
+                      className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm space-y-4 hover:shadow-md transition-all"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
+                            💼
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-gray-900 text-sm">{agent.name}</h4>
+                            <p className="text-xs text-gray-500" dir="ltr">{agent.phone}</p>
+                            {(agent.passwordPlain || agent.password) && (
+                              <p className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 inline-block mt-1">
+                                🔑 סיסמה: {agent.passwordPlain || agent.password}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAgent(agent.id)}
+                          disabled={deletingAgentId === agent.id}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                          title="מחק סוכן"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="pt-3 border-t border-gray-100 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => copyAgentPortalUrl(agent.token)}
+                          className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          {copiedAgentToken === agent.token ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-green-600" />
+                              <span className="text-green-600">הועתק!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-gray-500" />
+                              <span>העתק קישור לפורטל</span>
+                            </>
+                          )}
+                        </button>
+
+                        {agent.phone && (
+                          <a
+                            href={`https://wa.me/${agent.phone.startsWith('0') ? '972' + agent.phone.slice(1) : agent.phone}?text=${encodeURIComponent(
+                              `שלום ${agent.name},\nזהו הקישור האישי שלך לפורטל סוכן המכירות של ${currentBusinessName}:\n${baseUrl}/${tenantId}/agent/${agent.token}`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200/50 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                            title="שלח קישור לפורטל ב-WhatsApp"
+                          >
+                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
+                            </svg>
+                          </a>
+                        )}
+
+                        <a
+                          href={`/${tenantId}/agent/${agent.token}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                          title="פתח פורטל"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'partRequests' && (
           <div className="space-y-6">
+            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+              <div className="relative w-full md:w-96">
+                <input
+                  type="text"
+                  placeholder="חיפוש לפי לקוח, טלפון או תיאור החלק..."
+                  value={partRequestSearch}
+                  onChange={(e) => setPartRequestSearch(e.target.value)}
+                  className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                />
+                <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
+              </div>
+              <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">
+                נמצאו {filteredPartRequests.length} בקשות
+              </span>
+            </div>
+
             <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
               <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
                 <Package className="w-4 h-4 text-[#0F9E1D]" />
@@ -1642,13 +2156,13 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 בקשות חלק שנשלחו על ידי לקוחות דרך הפורטל האישי שלהם, כולל תמונת החלק המבוקש.
               </p>
 
-              {partRequestsList.length === 0 ? (
+              {filteredPartRequests.length === 0 ? (
                 <div className="p-10 text-center text-gray-400 text-sm">
-                  עדיין לא נשלחו בקשות חלקים.
+                  {partRequestsList.length === 0 ? 'עדיין לא נשלחו בקשות חלקים.' : 'לא נמצאו בקשות חלקים תואמות לחיפוש.'}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {partRequestsList.map(pr => (
+                  {filteredPartRequests.map(pr => (
                     <div key={pr.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center gap-3">
                       <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
                         {/* Thumbnail loads on demand from the image endpoint (lazy),
@@ -1657,14 +2171,118 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                         <img src={`/api/${tenantId}/parts-requests/${pr.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <strong className="text-sm text-gray-800 font-bold block truncate">
-                          {pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}` : 'לקוח לא ידוע'}
+                        <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                          <span>{pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}` : 'לקוח לא ידוע'}</span>
+                          {pr.agentName && (
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                              👔 סוכן: {pr.agentName}
+                            </span>
+                          )}
                         </strong>
                         {pr.customer?.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{pr.customer.phone}</span>}
                         <span className="text-xs text-gray-600 block mt-1 truncate">{pr.description}</span>
-                        <span className="text-[10px] text-gray-400 block mt-0.5">{new Date(pr.createdAt).toLocaleDateString('he-IL')}</span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(pr.createdAt)}</span>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <Link
+                          href={`/${tenantId}/part/${pr.id}`}
+                          target="_blank"
+                          className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-gray-200 cursor-pointer"
+                          title="צפה בפרטי הבקשה והתמונה"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </Link>
+                        {pr.customer?.phone && (
+                          <a
+                            href={`https://wa.me/${pr.customer.phone.startsWith('0') ? '972' + pr.customer.phone.slice(1) : pr.customer.phone}?text=${encodeURIComponent(`שלום ${pr.customer.firstName}, קיבלנו את בקשת החלק שלך: "${pr.description}". אשמח לסייע בהמשך ההזמנה!`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                            title="פתח שיחת WhatsApp עם הלקוח"
+                          >
+                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.37 5.378 0 12.003 0a11.94 11.94 0 0 1 8.484 3.513 11.94 11.94 0 0 1 3.51 8.49c-.003 6.63-5.378 12-12.003 12-1.996-.001-3.957-.502-5.709-1.455L0 24zm6.59-14.859c-.12-.2-.24-.2-.35-.2-.11 0-.24-.03-.36-.03-.13 0-.34.05-.52.25-.18.2-.68.66-.68 1.6s.69 1.86.78 2.06c.1.13 1.36 2.07 3.29 2.91.46.2.82.32 1.1.41.47.15.89.13 1.22.08.38-.06 1.15-.47 1.31-.93.16-.46.16-.86.11-.93-.05-.08-.18-.13-.38-.23-.19-.1-.1.38-.1.74-.11.16-.36.23-.74.13-.38-.11-1.42-.52-2.71-1.68-.96-.86-1.61-1.92-1.8-2.25-.19-.33-.02-.51.15-.68.15-.15.33-.36.5-.54.17-.18.23-.3.33-.5.1-.2.05-.38-.03-.48z" />
+                            </svg>
+                          </a>
+                        )}
+                        {/* Quote System */}
+                        <div className="flex items-center gap-2">
+                          {pr.quoteStatus === 'APPROVED' && (
+                            <span className="px-3 py-2 rounded-xl text-[10px] font-black bg-green-100 text-green-700 border border-green-200 shadow-sm flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              הצעה אושרה ({pr.quotePrice}₪)
+                            </span>
+                          )}
+                          {pr.quoteStatus === 'PENDING_APPROVAL' && (
+                            <span className="px-3 py-2 rounded-xl text-[10px] font-black bg-yellow-100 text-yellow-700 border border-yellow-200 shadow-sm flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5" />
+                              ממתין לאישור הלקוח
+                            </span>
+                          )}
+                          {(pr.quoteStatus === 'NONE' || !pr.quoteStatus) && (
+                            <>
+                              {activeQuoteId === pr.id ? (
+                                <div className="flex items-center gap-1 bg-white border border-blue-200 p-1 rounded-xl shadow-sm">
+                                  <input 
+                                    type="number" 
+                                    value={activeQuotePrice} 
+                                    onChange={(e) => setActiveQuotePrice(e.target.value)}
+                                    placeholder="מחיר..."
+                                    className="w-20 px-2 py-1 text-xs border-none focus:ring-0"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      if (activeQuotePrice && !isNaN(Number(activeQuotePrice))) {
+                                        handleSendQuote(pr, Number(activeQuotePrice));
+                                        setActiveQuoteId(null);
+                                        setActiveQuotePrice('');
+                                      }
+                                    }}
+                                    className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg"
+                                  >
+                                    <Send className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setActiveQuoteId(null);
+                                      setActiveQuotePrice('');
+                                    }}
+                                    className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveQuoteId(pr.id);
+                                    setActiveQuotePrice('');
+                                  }}
+                                  className="px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer flex items-center gap-1 bg-blue-50 hover:bg-blue-100 border-blue-200/60 text-blue-600"
+                                  title="צור הצעת מחיר לחלק"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>הצעת מחיר</span>
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleMarkPartReadyForDispatch(pr)}
+                          className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer flex items-center gap-1 ${
+                            pr.status === 'READY_FOR_DISPATCH'
+                              ? 'bg-purple-100 border-purple-200 text-purple-700 font-black'
+                              : 'bg-purple-50 hover:bg-purple-100 border-purple-200/60 text-purple-600'
+                          }`}
+                          title="עדכן שהחלק מוכן לשילוח ושלח התראה ללקוח בוואטסאפ"
+                        >
+                          <Truck className="w-3.5 h-3.5" />
+                          <span>{pr.status === 'READY_FOR_DISPATCH' ? 'נשלחה התרעה (מוכן)' : 'מוכן לשילוח'}</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleTogglePartRequestStatus(pr.id, pr.status)}
@@ -1674,7 +2292,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                               : 'bg-blue-50 border-blue-100/50 text-blue-600 hover:bg-blue-100'
                           }`}
                         >
-                          {pr.status === 'FULFILLED' ? 'טופל' : 'חדש'}
+                          {pr.status === 'FULFILLED' ? 'טופל' : pr.status === 'READY_FOR_DISPATCH' ? 'מוכן לשילוח' : 'חדש'}
                         </button>
                         <button
                           type="button"
@@ -1742,13 +2360,18 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                         <ShoppingCart className="w-5 h-5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <strong className="text-sm text-gray-800 font-bold block truncate">
-                          {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'לקוח לא ידוע'}
+                        <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                          <span>{order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'לקוח לא ידוע'}</span>
+                          {order.agentName && (
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                              👔 סוכן: {order.agentName}
+                            </span>
+                          )}
                         </strong>
                         <span className="text-xs text-gray-600 block mt-1 truncate">
                           {order.deviceType} × {order.quantity} — ₪{order.unitPrice.toLocaleString('he-IL')} ליחידה
                         </span>
-                        <span className="text-[10px] text-gray-400 block mt-0.5">{new Date(order.createdAt).toLocaleDateString('he-IL')}</span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(order.createdAt)}</span>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
                         <span className="px-3 py-2 rounded-xl text-[10px] font-bold bg-green-50 border border-green-100/50 text-green-600 font-mono">
@@ -1795,7 +2418,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                           return (
                             <select
                               value={order.status}
-                              onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'FULFILLED' | 'CANCELLED')}
+                              onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED')}
                               className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
                             >
                               {ORDER_STATUSES.map(st => (
@@ -1804,6 +2427,19 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                             </select>
                           );
                         })()}
+                        {order.customer?.phone && (
+                          <a
+                            href={`https://wa.me/${order.customer.phone.startsWith('0') ? '972' + order.customer.phone.slice(1) : order.customer.phone}?text=${encodeURIComponent(`שלום ${order.customer.firstName}, לגבי הזמנה #${order.orderNumber} ב-${businessName}`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                            title="פתח שיחת WhatsApp עם הלקוח"
+                          >
+                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.37 5.378 0 12.003 0a11.94 11.94 0 0 1 8.484 3.513 11.94 11.94 0 0 1 3.51 8.49c-.003 6.63-5.378 12-12.003 12-1.996-.001-3.957-.502-5.709-1.455L0 24zm6.59-14.859c-.12-.2-.24-.2-.35-.2-.11 0-.24-.03-.36-.03-.13 0-.34.05-.52.25-.18.2-.68.66-.68 1.6s.69 1.86.78 2.06c.1.13 1.36 2.07 3.29 2.91.46.2.82.32 1.1.41.47.15.89.13 1.22.08.38-.06 1.15-.47 1.31-.93.16-.46.16-.86.11-.93-.05-.08-.18-.13-.38-.23-.19-.1-.1.38-.1.74-.11.16-.36.23-.74.13-.38-.11-1.42-.52-2.71-1.68-.96-.86-1.61-1.92-1.8-2.25-.19-.33-.02-.51.15-.68.15-.15.33-.36.5-.54.17-.18.23-.3.33-.5.1-.2.05-.38-.03-.48z" />
+                            </svg>
+                          </a>
+                        )}
 
                         <button
                           type="button"
@@ -1919,7 +2555,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                               </div>
                               <select
                                 value={order.status}
-                                onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'FULFILLED' | 'CANCELLED')}
+                                onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED')}
                                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0 ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
                               >
                                 {ORDER_STATUSES.map(st => (
@@ -1979,6 +2615,156 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 </div>
               ))
             )}
+          </div>
+        )}
+
+        {activeTab === 'formBuilder' && (
+          <div className="space-y-6 pb-10">
+            {/* Header + save bar */}
+            <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                  <SlidersHorizontal className="w-5 h-5 text-blue-600" />
+                  עיצוב טופס קריאת שירות
+                </h3>
+                <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-xl">
+                  בחר/י אילו שדות יופיעו בטופס שהלקוח ממלא, מה חובה, ערוך/י כותרות, סדר/י מחדש והוסף/י שדות משלך. השינויים חלים על הפורטל, הטופס הציבורי ופתיחת קריאה מהאדמין.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {formConfigSaved && (
+                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1"><Check className="w-4 h-4" /> נשמר!</span>
+                )}
+                {formConfigError && (
+                  <span className="text-xs font-bold text-red-600 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> {formConfigError}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={resetFormConfig}
+                  disabled={!formConfigDirty || isSavingFormConfig}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  איפוס
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveFormConfig}
+                  disabled={!formConfigDirty || isSavingFormConfig}
+                  className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
+                >
+                  {isSavingFormConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {isSavingFormConfig ? 'שומר...' : 'שמור שינויים'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              {/* ===== Editor column ===== */}
+              <div className="space-y-4">
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-black text-gray-900">שדות הטופס</h4>
+                    <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-2 py-1 rounded-lg">
+                      {settingsServiceFormConfig.fields.filter(f => f.enabled).length}/{settingsServiceFormConfig.fields.length} מוצגים
+                    </span>
+                  </div>
+
+                  {settingsServiceFormConfig.fields.map((f, index) => (
+                    <div key={f.id} className={`p-3 rounded-2xl border transition-all ${f.enabled ? 'bg-slate-50/70 border-slate-150' : 'bg-gray-50/50 border-gray-100 opacity-60'}`}>
+                      <div className="flex items-center gap-2">
+                        <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                        <div className="flex flex-col gap-0.5">
+                          <button type="button" onClick={() => moveFormField(index, -1)} disabled={index === 0}
+                            className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer" title="הזז למעלה">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
+                          </button>
+                          <button type="button" onClick={() => moveFormField(index, 1)} disabled={index === settingsServiceFormConfig.fields.length - 1}
+                            className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer" title="הזז למטה">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                          </button>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={f.label}
+                          onChange={(e) => updateFormField(f.id, { label: e.target.value })}
+                          className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-800 text-xs font-bold"
+                        />
+
+                        {!f.builtin && (
+                          <span className="text-[9px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap flex-shrink-0">{customTypeLabel(f.type as CustomFieldType)}</span>
+                        )}
+                        {!f.builtin && (
+                          <button type="button" onClick={() => removeCustomField(f.id)} className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer flex-shrink-0" title="מחק שדה">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-2.5 pr-10">
+                        <button type="button" onClick={() => updateFormField(f.id, { enabled: !f.enabled })}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${f.enabled ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-400 border-transparent'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${f.enabled ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                          {f.enabled ? 'מוצג' : 'מוסתר'}
+                        </button>
+                        {fieldHasRequiredToggle(f) && (
+                          <button type="button" disabled={!f.enabled} onClick={() => updateFormField(f.id, { required: !f.required })}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${!f.enabled ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-transparent' : f.required ? 'bg-amber-50 text-amber-700 border-amber-200 cursor-pointer' : 'bg-gray-100 text-gray-500 border-transparent cursor-pointer'}`}>
+                            {f.required ? 'חובה' : 'רשות'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add custom + inspection fee */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+                  <div className="space-y-2">
+                    <span className="text-xs font-black text-gray-900 block">הוספת שדה חדש</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(['text', 'textarea', 'tel'] as CustomFieldType[]).map((t) => (
+                        <button key={t} type="button" onClick={() => addCustomField(t)}
+                          className="px-3 py-2 bg-white border border-dashed border-blue-300 text-blue-600 rounded-xl text-[11px] font-bold hover:bg-blue-50 transition-all flex items-center gap-1 cursor-pointer">
+                          <Plus className="w-3 h-3" /> {customTypeLabel(t)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 pt-3 border-t border-gray-100">
+                    <label className="block text-gray-700 text-xs font-black">סכום דמי בדיקה (₪)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={settingsServiceFormConfig.inspectionFeeAmount}
+                      onChange={(e) => setSettingsServiceFormConfig(prev => ({ ...prev, inspectionFeeAmount: Math.max(0, Math.round(Number(e.target.value) || 0)) }))}
+                      className="w-40 px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                      dir="ltr"
+                    />
+                    <p className="text-[10px] text-gray-400">הסכום שמופיע בהסכמת דמי הבדיקה בטופס.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ===== Live preview column ===== */}
+              <div className="lg:sticky lg:top-6">
+                <div className="bg-gradient-to-b from-slate-200/60 to-slate-100/40 rounded-[2rem] border border-slate-200/70 p-4 shadow-inner">
+                  <div className="flex items-center gap-2 mb-3 px-1 text-slate-500 text-xs font-bold">
+                    <Smartphone className="w-4 h-4" />
+                    תצוגה מקדימה — כפי שהלקוח רואה
+                  </div>
+                  <div className="bg-white rounded-3xl shadow-xl border border-slate-200 max-h-[72vh] overflow-y-auto p-5" dir="rtl">
+                    <ServiceRequestForm
+                      config={settingsServiceFormConfig}
+                      customer={{ id: 'preview', excelId: 0, firstName: 'לקוח', lastName: 'לדוגמה' }}
+                      tenantId={tenantId}
+                      context="preview"
+                      readOnly
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </main>
@@ -2103,10 +2889,21 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 </div>
               )}
 
+              {selectedRequest.customFields && selectedRequest.customFields.length > 0 && (
+                <div className="p-4 bg-indigo-50/40 border border-indigo-100/50 rounded-2xl text-sm shadow-sm text-right space-y-2">
+                  {selectedRequest.customFields.map((cf) => (
+                    <div key={cf.key}>
+                      <span className="block text-gray-400 text-xs font-bold">{cf.label}:</span>
+                      <p className="text-gray-700 font-medium whitespace-pre-wrap">{cf.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Action Buttons (Delete & Info) */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1 p-4 bg-orange-50/50 border border-orange-100/50 rounded-2xl flex items-center justify-between text-orange-850 text-sm shadow-sm">
-                  <span className="font-bold">אישור דמי בדיקה (150 ש&quot;ח):</span>
+                  <span className="font-bold">אישור דמי בדיקה ({currentServiceFormConfig.inspectionFeeAmount} ש&quot;ח):</span>
                   <span className="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs font-black shadow-sm">מאושר</span>
                 </div>
                 
@@ -2304,62 +3101,12 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
             {/* Modal Body */}
             <div className="p-6 space-y-6" dir="rtl">
               {/* Customer Search input */}
-              <div className="space-y-2">
-                <label className="block text-gray-700 text-xs font-bold">חפש לקוח לפי שם או טלפון:</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="הקלד שם לקוח לחיפוש..."
-                    value={createSearch}
-                    onChange={(e) => {
-                      setCreateSearch(e.target.value);
-                      setSelectedCustomerForCreate(null);
-                    }}
-                    className="w-full pl-4 pr-10 py-3 rounded-xl border border-gray-200 bg-gray-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-gray-800 text-sm transition-all"
-                  />
-                  <svg className="w-4 h-4 text-gray-400 absolute right-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-              </div>
-
-              {/* Dynamic Search Results */}
-              {createSearch.trim().length > 0 && !selectedCustomerForCreate && (
-                <div className="border border-gray-100 rounded-2xl overflow-hidden divide-y divide-gray-50 bg-white max-h-48 overflow-y-auto shadow-inner">
-                  {customersList
-                    .filter(cust => {
-                      const name = `${cust.firstName} ${cust.lastName}`.toLowerCase();
-                      const phone = (cust.phone || '').toLowerCase();
-                      const search = createSearch.toLowerCase();
-                      return name.includes(search) || phone.includes(search);
-                    })
-                    .slice(0, 5)
-                    .map(cust => (
-                      <div
-                        key={cust.id}
-                        onClick={() => {
-                          setSelectedCustomerForCreate(cust);
-                          setCreateSearch(`${cust.firstName} ${cust.lastName}`);
-                        }}
-                        className="p-3.5 hover:bg-blue-50/40 cursor-pointer flex items-center justify-between text-sm transition-colors"
-                      >
-                        <div className="text-right">
-                          <strong className="text-gray-800 font-bold block">{cust.firstName} {cust.lastName}</strong>
-                          <span className="text-gray-400 text-xs font-mono">{cust.phone || 'ללא טלפון'}</span>
-                        </div>
-                        <span className="text-xs text-blue-600 font-bold hover:underline">בחר ↙</span>
-                      </div>
-                    ))}
-                  {customersList.filter(cust => {
-                    const name = `${cust.firstName} ${cust.lastName}`.toLowerCase();
-                    const phone = (cust.phone || '').toLowerCase();
-                    const search = createSearch.toLowerCase();
-                    return name.includes(search) || phone.includes(search);
-                  }).length === 0 && (
-                    <div className="p-4 text-center text-xs text-gray-400">לא נמצאו לקוחות מתאימים.</div>
-                  )}
-                </div>
-              )}
+              <CustomerSelectCombobox
+                customers={customersList}
+                selectedCustomerId={selectedCustomerForCreate?.id || ''}
+                onSelectCustomer={(c) => setSelectedCustomerForCreate(c)}
+                label="חפש לקוח לפי שם או טלפון:"
+              />
 
               {/* Selected Customer Card & WhatsApp Action */}
               {selectedCustomerForCreate && (
@@ -2373,37 +3120,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                       <span className="text-gray-400">טלפון:</span>
                       <strong className="text-gray-800 font-mono">{selectedCustomerForCreate.phone || '-'}</strong>
                     </div>
-                    {selectedCustomerForCreate.serialNumber && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">מספר סריאלי:</span>
-                        <strong className="text-gray-800 font-mono">{selectedCustomerForCreate.serialNumber}</strong>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tool Description Input */}
-                  <div className="space-y-1.5 text-right">
-                    <label className="block text-gray-700 text-xs font-bold">שם בעל הכלי / פירוט (אופציונלי):</label>
-                    <input
-                      type="text"
-                      placeholder="לדוגמה: קורקינט של דוד / שיאומי שחור"
-                      value={adminToolOwnerName}
-                      onChange={(e) => setAdminToolOwnerName(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
-                    />
-                  </div>
-
-                  {/* Tool Phone Input */}
-                  <div className="space-y-1.5 text-right">
-                    <label className="block text-gray-700 text-xs font-bold">מספר טלפון בעל הכלי (אופציונלי):</label>
-                    <input
-                      type="tel"
-                      placeholder="הזן מספר טלפון ליצירת קשר"
-                      value={adminToolOwnerPhone}
-                      onChange={(e) => setAdminToolOwnerPhone(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all text-right"
-                      dir="rtl"
-                    />
                   </div>
 
                   {/* Driver Select — required when there is more than one driver */}
@@ -2445,25 +3161,28 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                     </div>
                   )}
 
-                  {/* Save Directly in System Button */}
-                  <button
-                    type="button"
-                    onClick={handleAdminSaveRequest}
-                    disabled={isAdminSavingRequest}
-                    className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
-                  >
-                    {isAdminSavingRequest ? (
-                      <svg className="w-5 h-5 animate-spin text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                      </svg>
+                  {/* Full configurable form — save directly into the system */}
+                  <div className="pt-4 border-t border-gray-100">
+                    {(!multiDriver || adminSelectedDriverId) ? (
+                      <>
+                        <p className="text-xs font-bold text-gray-500 mb-3">או מלא/י את הטופס המלא ושמור/י ישירות במערכת (ממתין לאיסוף):</p>
+                        <ServiceRequestForm
+                          config={currentServiceFormConfig}
+                          customer={selectedCustomerForCreate}
+                          tenantId={tenantId}
+                          context="admin"
+                          endpoint={`/api/${tenantId}/requests/direct`}
+                          extraPayload={adminSelectedDriverId ? { driverId: adminSelectedDriverId } : undefined}
+                          submitLabel="שמור קריאה במערכת (ממתין לאיסוף)"
+                          onSuccess={handleAdminRequestCreated}
+                        />
+                      </>
                     ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                      </svg>
+                      <div className="p-3 bg-amber-50 text-amber-700 rounded-xl text-xs font-semibold text-center">
+                        בחר/י נהג כדי למלא ולשמור קריאה במערכת.
+                      </div>
                     )}
-                    שמור קריאה במערכת (ממתין לאיסוף)
-                  </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -2656,43 +3375,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 />
               </div>
 
-              {/* Vehicle Details Row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="block text-gray-700 text-xs font-bold">לוחית רישוי</label>
-                  <input
-                    type="text"
-                    placeholder="12-345-67"
-                    value={newCustomer.licensePlate}
-                    onChange={(e) => setNewCustomer(prev => ({ ...prev, licensePlate: e.target.value }))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
-                    dir="ltr"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-gray-700 text-xs font-bold">צבע</label>
-                  <input
-                    type="text"
-                    placeholder="שחור מטאלי"
-                    value={newCustomer.color}
-                    onChange={(e) => setNewCustomer(prev => ({ ...prev, color: e.target.value }))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
-                  />
-                </div>
-              </div>
-              {/* Serial Number */}
-              <div className="space-y-1.5">
-                <label className="block text-gray-700 text-xs font-bold">מספר סריאלי</label>
-                <input
-                  type="text"
-                  placeholder="GW-88392-XL"
-                  value={newCustomer.serialNumber}
-                  onChange={(e) => setNewCustomer(prev => ({ ...prev, serialNumber: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
-                  dir="ltr"
-                />
-              </div>
-
               {/* Submit */}
               <button
                 type="submit"
@@ -2822,40 +3504,6 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 </div>
               </div>
 
-              {/* Vehicle Details Row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="block text-gray-700 text-xs font-bold">לוחית רישוי</label>
-                  <input
-                    type="text"
-                    value={customerCardForm.licensePlate}
-                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, licensePlate: e.target.value }))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
-                    dir="ltr"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-gray-700 text-xs font-bold">צבע</label>
-                  <input
-                    type="text"
-                    value={customerCardForm.color}
-                    onChange={(e) => setCustomerCardForm(prev => ({ ...prev, color: e.target.value }))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
-                  />
-                </div>
-              </div>
-              {/* Serial Number */}
-              <div className="space-y-1.5">
-                <label className="block text-gray-700 text-xs font-bold">מספר סריאלי</label>
-                <input
-                  type="text"
-                  value={customerCardForm.serialNumber}
-                  onChange={(e) => setCustomerCardForm(prev => ({ ...prev, serialNumber: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
-                  dir="ltr"
-                />
-              </div>
-
               {/* Submit */}
               <button
                 type="submit"
@@ -2895,24 +3543,16 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
             {/* Modal Body */}
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto" dir="rtl">
-              <div className="space-y-1.5">
-                <label className="block text-gray-700 text-xs font-bold">לקוח <span className="text-red-500">*</span></label>
-                <select
-                  value={newOrderCustomerId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setNewOrderCustomerId(id);
-                    // Prefill the region from the chosen customer (if he already has one).
-                    const c = customersList.find(cust => cust.id === id);
-                    setNewOrderRegion(c?.region || '');
-                  }}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
-                >
-                  <option value="">בחר לקוח...</option>
-                  {customersList.map(c => (
-                    <option key={c.id} value={c.id}>{c.firstName} {c.lastName}{c.phone ? ` (${c.phone})` : ''}</option>
-                  ))}
-                </select>
+              <CustomerSelectCombobox
+                customers={customersList}
+                selectedCustomerId={newOrderCustomerId}
+                onSelectCustomer={(c) => {
+                  setNewOrderCustomerId(c ? c.id : '');
+                  setNewOrderRegion(c?.region || '');
+                }}
+                label="לקוח"
+                required
+              />
                 {(() => {
                   const selectedCustomer = customersList.find(c => c.id === newOrderCustomerId);
                   if (!selectedCustomer || selectedCustomer.address) return null;
@@ -2930,41 +3570,69 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                     </button>
                   );
                 })()}
-              </div>
 
               <div className="space-y-1.5">
-                <label className="block text-gray-700 text-xs font-bold">סוג מכשיר <span className="text-red-500">*</span></label>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {DEVICE_TYPE_PRESETS.map(preset => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setNewOrderDeviceType(preset)}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                        newOrderDeviceType === preset
-                          ? 'bg-gray-900 text-white border-gray-900 shadow-md'
-                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                      }`}
-                    >
-                      {preset}
-                    </button>
-                  ))}
+                <label className="block text-gray-700 text-xs font-bold flex items-center justify-between">
+                  <span>סוג / דגם מכשיר <span className="text-red-500">*</span></span>
                   <button
                     type="button"
-                    onClick={() => setNewOrderDeviceType('other')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                      newOrderDeviceType === 'other'
-                        ? 'bg-gray-900 text-white border-gray-900 shadow-md'
-                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                    }`}
+                    onClick={() => setIsAddingNewModel(!isAddingNewModel)}
+                    className="text-blue-600 hover:text-blue-700 text-xs font-bold flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 transition-all active:scale-95 cursor-pointer"
+                    title="הוסף דגם חדש לרשימה"
                   >
-                    אחר...
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>הוסף דגם</span>
                   </button>
-                </div>
-                {newOrderDeviceType === 'other' && (
+                </label>
+
+                {isAddingNewModel ? (
+                  <div className="flex items-center gap-1.5 p-2 bg-blue-50/50 border border-blue-200 rounded-xl">
+                    <input
+                      type="text"
+                      placeholder="שם דגם חדש (למשל: קורקינט Xiaomi Pro)"
+                      value={newModelInput}
+                      onChange={(e) => setNewModelInput(e.target.value)}
+                      className="flex-1 px-3 py-2 text-xs rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddDeviceModel}
+                      disabled={isSavingNewModel || !newModelInput.trim()}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                    >
+                      {isSavingNewModel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      <span>שמור</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingNewModel(false)}
+                      className="px-2.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-xs rounded-lg cursor-pointer"
+                    >
+                      ביטול
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={newOrderDeviceType}
+                      onChange={(e) => setNewOrderDeviceType(e.target.value)}
+                      className="flex-1 px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all cursor-pointer font-medium"
+                    >
+                      {deviceModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                      <option value="other">אחר...</option>
+                    </select>
+                  </div>
+                )}
+
+                {newOrderDeviceType === 'other' && !isAddingNewModel && (
                   <input
                     type="text"
-                    placeholder="הקלד סוג מכשיר"
+                    placeholder="הקלד סוג/דגם מכשיר מותאם אישית"
                     value={newOrderCustomDeviceType}
                     onChange={(e) => setNewOrderCustomDeviceType(e.target.value)}
                     className="mt-2 w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
@@ -3182,6 +3850,124 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 <p className="text-[10px] text-gray-400">המספר שאליו יישלחו הודעות וואטסאפ כשלקוח מבקש חלק דרך הפורטל האישי שלו.</p>
               </div>
 
+              {/* Admin WhatsApp Numbers for New Customer Approval */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold">מספרי וואטסאפ לקבלת אישורי לקוחות חדשים</label>
+                <input
+                  type="tel"
+                  placeholder="מספר 1 — 05XXXXXXXX"
+                  value={settingsAdminWhatsappPhone}
+                  onChange={(e) => setSettingsAdminWhatsappPhone(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                  dir="ltr"
+                />
+                <input
+                  type="tel"
+                  placeholder="מספר 2 (אופציונלי) — 05XXXXXXXX"
+                  value={settingsAdminWhatsappPhone2}
+                  onChange={(e) => setSettingsAdminWhatsappPhone2(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                  dir="ltr"
+                />
+                <input
+                  type="tel"
+                  placeholder="מספר 3 (אופציונלי) — 05XXXXXXXX"
+                  value={settingsAdminWhatsappPhone3}
+                  onChange={(e) => setSettingsAdminWhatsappPhone3(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                  dir="ltr"
+                />
+                <p className="text-[10px] text-gray-400">
+                  לכל המספרים האלה תישלח הודעה כשלקוח חדש נרשם ומבקש אישור גישה. אם חיבור ה-Green API למטה מוגדר ותקין, ההודעה תישלח אוטומטית לכולם; אחרת יוצג ללקוח כפתור שליחה ידני למספר הראשון בלבד.
+                </p>
+              </div>
+
+              {/* Quote Notification Phones */}
+              <div className="pt-4 border-t border-gray-150 space-y-2">
+                <label className="text-xs font-black text-gray-900 block">
+                  מספרי טלפון לאישור הצעות מחיר (מופרדים בפסיק)
+                </label>
+                <input
+                  type="text"
+                  placeholder="0501234567, 0529876543"
+                  value={settingsQuoteNotificationPhones}
+                  onChange={(e) => setSettingsQuoteNotificationPhones(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                  dir="ltr"
+                />
+                <p className="text-[10px] text-gray-400">
+                  כאשר לקוח יאשר הצעת מחיר לחלק, הודעת האישור תישלח למספרים האלו. אם ריק, יישלח למספר הראשי של המנהל (מספר 1 למעלה).
+                </p>
+              </div>
+
+              {/* Green API — WhatsApp Automation Connection */}
+              <div className="pt-4 border-t border-gray-150 space-y-3">
+                <h3 className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                  <Send className="w-4 h-4 text-green-600" />
+                  חיבור וואטסאפ אוטומטי (Green API)
+                </h3>
+                <p className="text-[10px] text-gray-400 leading-relaxed">
+                  צור חשבון ואינסטנס ב-<span className="font-mono">green-api.com</span>, סרוק את ה-QR עם מספר הוואטסאפ שברצונך לחבר, והזן כאן את ה-Instance ID וה-API Token מהאינסטנס שלך. כך ההודעות האוטומטיות יישלחו מהמספר שלך.
+                </p>
+
+                {/* Green API Instance ID */}
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">Green API — Instance ID</label>
+                  <input
+                    type="text"
+                    placeholder="1101XXXXXX"
+                    value={settingsGreenApiInstanceId}
+                    onChange={(e) => setSettingsGreenApiInstanceId(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                    dir="ltr"
+                  />
+                </div>
+
+                {/* Green API Token */}
+                <div className="space-y-1.5">
+                  <label className="block text-gray-700 text-xs font-bold">Green API — API Token</label>
+                  <input
+                    type="password"
+                    placeholder="השאר ריק כדי לא לשנות"
+                    value={settingsGreenApiToken}
+                    onChange={(e) => setSettingsGreenApiToken(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                    dir="ltr"
+                  />
+                  <p className="text-[10px] text-gray-400">הטוקן נשמר מוצפן ולא מוצג שוב. השאר ריק אם אינך רוצה לשנות אותו.</p>
+                </div>
+
+                {/* Test Connection */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleTestGreenApiConnection}
+                    disabled={connectionTestResult === 'checking'}
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold bg-green-600 hover:bg-green-700 text-white transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {connectionTestResult === 'checking' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Send className="w-3.5 h-3.5" />
+                    )}
+                    {connectionTestResult === 'checking' ? 'בודק חיבור...' : 'בדוק חיבור'}
+                  </button>
+                  {connectionTestResult === 'connected' && (
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl">
+                      <CheckCircle2 className="w-4 h-4" />
+                      {connectionTestMessage}
+                    </div>
+                  )}
+                  {(connectionTestResult === 'disconnected' || connectionTestResult === 'error') && (
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      {connectionTestMessage}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-gray-400">הבדיקה משתמשת בפרטים השמורים. אם עדכנת את ה-Instance ID או הטוקן — שמור תחילה את ההגדרות ואז בדוק.</p>
+                </div>
+              </div>
+
               {/* Parts Request Delete Password */}
               <div className="space-y-1.5">
                 <label className="block text-gray-700 text-xs font-bold">סיסמת מחיקת בקשות חלקים (פורטל לקוח)</label>
@@ -3196,6 +3982,96 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 <p className="text-[10px] text-gray-400">לקוחות יתבקשו להזין סיסמה זו כדי למחוק בקשת חלק מהפורטל האישי שלהם.</p>
               </div>
 
+              {/* Customer Access Links Section */}
+              <div className="pt-4 border-t border-gray-150 space-y-4">
+                <h3 className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                  <Phone className="w-4 h-4 text-blue-600" />
+                  קישורים וגישת לקוחות
+                </h3>
+
+                {/* Customer Login Portal Link */}
+                <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">קישור דף כניסת לקוחות</span>
+                    <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-md">Mobile Portal</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${baseUrl}/${tenantId}/login`}
+                      className="flex-1 bg-white border border-slate-200 text-slate-700 text-xs font-mono py-2 px-3 rounded-xl outline-none"
+                      dir="ltr"
+                    />
+                    <button
+                      type="button"
+                      onClick={copyCustomerLoginUrl}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
+                        copiedCustomerLoginUrl
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      {copiedCustomerLoginUrl ? 'הועתק!' : 'העתק'}
+                    </button>
+                    <a
+                      href={`${baseUrl}/${tenantId}/login`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl transition-all flex items-center justify-center cursor-pointer"
+                      title="פתח בחלון חדש"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    זהו הקישור שתוכל לשלוח ללקוחות שלך. הם יזינו את הטלפון ויכנסו ישירות לפורטל האישי שלהם.
+                  </p>
+                </div>
+
+                {/* Sales Agent Part Request Link */}
+                <div className="bg-emerald-50/70 border border-emerald-200/80 p-3.5 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-900">קישור סוכן מכירות לבקשת חלקים</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">Sales Flow</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${baseUrl}/${tenantId}/request-part`}
+                      className="flex-1 bg-white border border-emerald-200 text-emerald-900 text-xs font-mono py-2 px-3 rounded-xl outline-none"
+                      dir="ltr"
+                    />
+                    <button
+                      type="button"
+                      onClick={copyAgentPartRequestUrl}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
+                        copiedAgentPartUrl
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }`}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      {copiedAgentPartUrl ? 'הועתק!' : 'העתק'}
+                    </button>
+                    <a
+                      href={`${baseUrl}/${tenantId}/request-part`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-xl transition-all flex items-center justify-center cursor-pointer"
+                      title="פתח בחלון חדש"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                  <p className="text-[10px] text-emerald-700 font-medium">
+                    קישור המיועד לסוכן מכירות לשליחה ללקוח. הלקוח מזין טלפון (או נרשם קצרות אם חדש) ומועבר ישירות לטופס לבקשת חלק.
+                  </p>
+                </div>
+              </div>
+
               {/* Submit */}
               <button
                 type="submit"
@@ -3208,6 +4084,84 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 {isSavingSettings ? 'שומר הגדרות...' : 'שמור שינויים'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Agent Modal */}
+      {isAddAgentModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-blue-600" />
+                הוספת סוכן מכירות חדש
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddAgentModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">שם מלא <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="שם הסוכן (למשל: דני כהן)"
+                  value={newAgentName}
+                  onChange={(e) => setNewAgentName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">מספר טלפון <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  placeholder="0500000000"
+                  value={newAgentPhone}
+                  onChange={(e) => setNewAgentPhone(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                  dir="ltr"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">סיסמת כניסה לסוכן <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="הגדר סיסמה (למשל: 123456)"
+                  value={newAgentPassword}
+                  onChange={(e) => setNewAgentPassword(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleCreateAgent}
+                disabled={isSavingAgent || !newAgentName.trim() || !newAgentPhone.trim() || !newAgentPassword.trim()}
+                className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSavingAgent ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                <span>צור סוכן והנפק קישור</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAddAgentModalOpen(false)}
+                className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                ביטול
+              </button>
+            </div>
           </div>
         </div>
       )}

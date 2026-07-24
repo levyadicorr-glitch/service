@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import getClientPromise from './mongodb';
 import { ObjectId, Document } from 'mongodb';
+import type { ServiceFormConfig } from './serviceFormConfig';
 
 export interface Tenant {
   id: string; // The URL slug (e.g., 'bikeshop1')
@@ -13,6 +14,14 @@ export interface Tenant {
   primaryColor?: string;
   partsRequestPhone?: string;
   partsDeletePassword?: string;
+  adminWhatsappPhone?: string;
+  adminWhatsappPhone2?: string;
+  adminWhatsappPhone3?: string;
+  quoteNotificationPhones?: string; // Comma-separated list of phones for quote approvals
+  greenApiInstanceId?: string;
+  greenApiToken?: string;
+  serviceFormConfig?: ServiceFormConfig;
+  deviceModels?: string[]; // Array of custom device models/types
   createdAt: string;
 }
 
@@ -24,11 +33,17 @@ export interface Customer {
   phone?: string;
   email?: string;
   address?: string;
+  city?: string;
   region?: 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM';
-  licensePlate?: string;
-  color?: string;
-  serialNumber?: string;
   logoUrl?: string;
+  // undefined/true = approved. Only self-registered customers start out
+  // explicitly false, pending admin approval; admin-created/imported
+  // customers are approved by default so existing flows aren't gated.
+  approved?: boolean;
+  // Unguessable secret used by the one-click WhatsApp approval link sent to
+  // the admin. Only generated for self-registered (pending) customers, and
+  // never returned to the customer's own browser.
+  approvalToken?: string;
 }
 
 export interface Driver {
@@ -38,6 +53,17 @@ export interface Driver {
   createdAt: string;
 }
 
+export interface Agent {
+  id: string; // uuid
+  name: string;
+  phone: string;
+  password?: string;
+  passwordPlain?: string;
+  token: string; // secret token for agent portal link /[tenantId]/agent/[token]
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PartRequest {
   id: string;
   requestNumber: number;
@@ -45,7 +71,12 @@ export interface PartRequest {
   customer?: Customer;
   description: string;
   photoImage: string; // base64 webp data URI — required
-  status: 'NEW' | 'FULFILLED';
+  status: 'NEW' | 'FULFILLED' | 'READY_FOR_DISPATCH';
+  quotePrice?: number;
+  quoteStatus?: 'NONE' | 'PENDING_APPROVAL' | 'APPROVED' | 'EXPIRED' | 'REJECTED';
+  quoteSentAt?: string;
+  agentId?: string;
+  agentName?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -61,7 +92,9 @@ export interface Order {
   quantity: number;
   unitPrice: number;
   totalPrice: number; // quantity * unitPrice, computed at creation
-  status: 'PENDING' | 'FULFILLED' | 'CANCELLED';
+  status: 'PENDING' | 'FULFILLED' | 'READY_FOR_DISPATCH' | 'CANCELLED';
+  agentId?: string;
+  agentName?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -82,6 +115,8 @@ export interface ServiceRequest {
   toolImages?: string[];
   agreedToInspectionFee: boolean;
   status: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' | 'COMPLETED';
+  agentId?: string;
+  agentName?: string;
   createdAt: string;
   updatedAt: string;
   issueDescription?: string;
@@ -89,6 +124,8 @@ export interface ServiceRequest {
   repairLevel?: 'RIDE_ONLY' | 'SAFE_RIDE' | 'LIKE_NEW';
   preApprovedAmount?: number;
   preApprovedNotes?: string;
+  /** Admin-defined custom fields captured on the intake form. */
+  customFields?: { key: string; label: string; value: string }[];
   pickupSignatureImage?: string;
   pickupPhotoImage?: string;
   pickupSignerName?: string;
@@ -130,6 +167,8 @@ export async function ensureIndexes(tenantId: string) {
     db.collection('orders').createIndex({ id: 1 }, { unique: true }),
     db.collection('orders').createIndex({ customerId: 1 }),
     db.collection('orders').createIndex({ driverId: 1 }),
+    db.collection('agents').createIndex({ id: 1 }, { unique: true }),
+    db.collection('agents').createIndex({ token: 1 }, { unique: true }),
   ]);
   indexedTenants.add(tenantId);
 }
@@ -203,7 +242,7 @@ export async function updateTenantAdminPassword(id: string, adminPassword: strin
 
 export async function updateTenantSettings(
   id: string,
-  update: { name?: string; businessName?: string; logoUrl?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string }
+  update: { name?: string; businessName?: string; logoUrl?: string; primaryColor?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; quoteNotificationPhones?: string; greenApiInstanceId?: string; greenApiToken?: string; serviceFormConfig?: ServiceFormConfig }
 ): Promise<void> {
   const db = await getMasterDb();
   const setObj: Record<string, any> = {};
@@ -214,13 +253,35 @@ export async function updateTenantSettings(
   if (update.whatsappTemplate !== undefined) setObj.whatsappTemplate = update.whatsappTemplate;
   if (update.partsRequestPhone !== undefined) setObj.partsRequestPhone = update.partsRequestPhone;
   if (update.partsDeletePassword !== undefined) setObj.partsDeletePassword = update.partsDeletePassword;
+  if (update.adminWhatsappPhone !== undefined) setObj.adminWhatsappPhone = update.adminWhatsappPhone;
+  if (update.adminWhatsappPhone2 !== undefined) setObj.adminWhatsappPhone2 = update.adminWhatsappPhone2;
+  if (update.adminWhatsappPhone3 !== undefined) setObj.adminWhatsappPhone3 = update.adminWhatsappPhone3;
+  if (update.quoteNotificationPhones !== undefined) setObj.quoteNotificationPhones = update.quoteNotificationPhones;
+  if (update.greenApiInstanceId !== undefined) setObj.greenApiInstanceId = update.greenApiInstanceId;
+  if (update.greenApiToken !== undefined) setObj.greenApiToken = update.greenApiToken;
   if (update.logoUrl !== undefined) setObj.logoUrl = update.logoUrl;
+  if (update.primaryColor !== undefined) setObj.primaryColor = update.primaryColor;
+  if (update.serviceFormConfig !== undefined) setObj.serviceFormConfig = update.serviceFormConfig;
   if (update.adminPassword !== undefined) setObj.adminPassword = update.adminPassword;
   if (update.adminPasswordPlain !== undefined) setObj.adminPasswordPlain = update.adminPasswordPlain;
 
   if (Object.keys(setObj).length > 0) {
     await db.collection('tenants').updateOne({ id }, { $set: setObj });
   }
+}
+
+export async function addDeviceModelToTenant(id: string, modelName: string): Promise<string[]> {
+  const db = await getMasterDb();
+  const trimmed = modelName.trim();
+  if (!trimmed) return [];
+
+  await db.collection('tenants').updateOne(
+    { id },
+    { $addToSet: { deviceModels: trimmed } } as any
+  );
+
+  const tenant = await db.collection('tenants').findOne({ id });
+  return tenant?.deviceModels || [trimmed];
 }
 
 export async function deleteTenant(id: string): Promise<boolean> {
@@ -246,6 +307,22 @@ export async function getCustomerById(tenantId: string, id: string): Promise<Cus
   if (!customer) return undefined;
   const { _id, ...rest } = customer;
   return rest as Customer;
+}
+
+export function normalizePhone(phone: string): string {
+  if (!phone) return '';
+  let digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('972')) {
+    digits = '0' + digits.slice(3);
+  }
+  return digits;
+}
+
+export async function getCustomerByPhone(tenantId: string, phone: string): Promise<Customer | undefined> {
+  const normalizedInput = normalizePhone(phone);
+  if (!normalizedInput) return undefined;
+  const customers = await getCustomers(tenantId);
+  return customers.find(c => c.phone && normalizePhone(c.phone) === normalizedInput);
 }
 
 // ---------------- Drivers ----------------
@@ -621,7 +698,11 @@ export async function getPartRequestById(tenantId: string, id: string): Promise<
   if (!request) return undefined;
   const { _id, ...rest } = request;
   void _id;
-  return rest as unknown as PartRequest;
+  const customer = rest.customerId ? await getCustomerById(tenantId, rest.customerId) : undefined;
+  return {
+    ...(rest as unknown as PartRequest),
+    customer,
+  };
 }
 
 export async function getPartRequestsByCustomerId(tenantId: string, customerId: string): Promise<PartRequest[]> {
@@ -769,7 +850,7 @@ export async function assignDriverToOrder(
 export async function updateOrderStatus(
   tenantId: string,
   id: string,
-  status: 'PENDING' | 'FULFILLED' | 'CANCELLED'
+  status: 'PENDING' | 'FULFILLED' | 'READY_FOR_DISPATCH' | 'CANCELLED'
 ): Promise<Order | undefined> {
   const db = await getDb(tenantId);
   const updatedAt = new Date().toISOString();
@@ -790,4 +871,140 @@ export async function deleteOrder(tenantId: string, id: string): Promise<boolean
   const db = await getDb(tenantId);
   const result = await db.collection('orders').deleteOne({ id });
   return result.deletedCount === 1;
+}
+
+// ---------------- Sales Agents CRUD Helpers ----------------
+
+export async function getAgents(tenantId: string): Promise<Agent[]> {
+  const db = await getDb(tenantId);
+  const agents = await db.collection('agents').find({}).sort({ createdAt: -1 }).toArray();
+  return agents.map(a => {
+    const { _id, ...rest } = a;
+    void _id;
+    return rest as unknown as Agent;
+  });
+}
+
+export async function getAgentById(tenantId: string, id: string): Promise<Agent | undefined> {
+  const db = await getDb(tenantId);
+  const agent = await db.collection('agents').findOne({ id });
+  if (!agent) return undefined;
+  const { _id, ...rest } = agent;
+  void _id;
+  return rest as unknown as Agent;
+}
+
+export async function getAgentByToken(tenantId: string, token: string): Promise<Agent | undefined> {
+  const db = await getDb(tenantId);
+  const agent = await db.collection('agents').findOne({ token });
+  if (!agent) return undefined;
+  const { _id, ...rest } = agent;
+  void _id;
+  return rest as unknown as Agent;
+}
+
+export async function createAgent(
+  tenantId: string,
+  agent: { name: string; phone: string; password?: string }
+): Promise<Agent> {
+  const db = await getDb(tenantId);
+  const token = crypto.randomBytes(16).toString('hex');
+  const now = new Date().toISOString();
+  const pwd = (agent.password || '').trim();
+  const newAgent: Agent = {
+    id: crypto.randomUUID(),
+    name: agent.name,
+    phone: agent.phone,
+    password: pwd,
+    passwordPlain: pwd,
+    token,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.collection('agents').insertOne(newAgent as unknown as Document);
+  return newAgent;
+}
+
+export async function deleteAgent(tenantId: string, id: string): Promise<boolean> {
+  const db = await getDb(tenantId);
+  const result = await db.collection('agents').deleteOne({ id });
+  return result.deletedCount === 1;
+}
+
+export async function getServiceRequestsByAgentId(
+  tenantId: string,
+  agentId: string,
+  options?: { customers?: Customer[]; drivers?: Driver[] }
+): Promise<ServiceRequest[]> {
+  const db = await getDb(tenantId);
+  const rawRequests = await db.collection('serviceRequests').find({ agentId }).sort({ createdAt: -1 }).toArray();
+
+  const [customers, drivers] = await Promise.all([
+    options?.customers ? Promise.resolve(options.customers) : getCustomers(tenantId),
+    options?.drivers ? Promise.resolve(options.drivers) : getDrivers(tenantId),
+  ]);
+
+  const customerMap = new Map(customers.map(c => [c.id, c]));
+  const driverMap = new Map(drivers.map(d => [d.id, d]));
+
+  return rawRequests.map(doc => {
+    const { _id, ...rest } = doc;
+    void _id;
+    const request = rest as unknown as ServiceRequest;
+    return {
+      ...request,
+      customer: customerMap.get(request.customerId),
+      driver: request.driverId ? driverMap.get(request.driverId) : undefined,
+    };
+  });
+}
+
+export async function getPartRequestsByAgentId(
+  tenantId: string,
+  agentId: string,
+  options?: { customers?: Customer[] }
+): Promise<PartRequest[]> {
+  const db = await getDb(tenantId);
+  const rawRequests = await db.collection('partRequests').find({ agentId }).sort({ createdAt: -1 }).toArray();
+
+  const customers = options?.customers ? await Promise.resolve(options.customers) : await getCustomers(tenantId);
+  const customerMap = new Map(customers.map(c => [c.id, c]));
+
+  return rawRequests.map(doc => {
+    const { _id, ...rest } = doc;
+    void _id;
+    const req = rest as unknown as PartRequest;
+    return {
+      ...req,
+      customer: customerMap.get(req.customerId),
+    };
+  });
+}
+
+export async function getOrdersByAgentId(
+  tenantId: string,
+  agentId: string,
+  options?: { customers?: Customer[]; drivers?: Driver[] }
+): Promise<Order[]> {
+  const db = await getDb(tenantId);
+  const rawOrders = await db.collection('orders').find({ agentId }).sort({ createdAt: -1 }).toArray();
+
+  const [customers, drivers] = await Promise.all([
+    options?.customers ? Promise.resolve(options.customers) : getCustomers(tenantId),
+    options?.drivers ? Promise.resolve(options.drivers) : getDrivers(tenantId),
+  ]);
+
+  const customerMap = new Map(customers.map(c => [c.id, c]));
+  const driverMap = new Map(drivers.map(d => [d.id, d]));
+
+  return rawOrders.map(doc => {
+    const { _id, ...rest } = doc;
+    void _id;
+    const order = rest as unknown as Order;
+    return {
+      ...order,
+      customer: customerMap.get(order.customerId),
+      driver: order.driverId ? driverMap.get(order.driverId) : undefined,
+    };
+  });
 }
