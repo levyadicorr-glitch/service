@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTenantById, getCustomerByPhone } from '@/lib/db';
 import getClientPromise from '@/lib/mongodb';
-import { sendWhatsAppMessage } from '@/lib/greenApi';
+import { sendWhatsAppMessage, getQuoteNotificationPhones } from '@/lib/greenApi';
 
 export async function POST(
   req: NextRequest,
@@ -11,20 +11,21 @@ export async function POST(
     const { tenantId } = await params;
     const body = await req.json();
 
-    console.log('[WEBHOOK] Received webhook for tenant:', tenantId);
-    console.log('[WEBHOOK] typeWebhook:', body.typeWebhook);
-    console.log('[WEBHOOK] senderData:', JSON.stringify(body.senderData));
-    console.log('[WEBHOOK] messageData:', JSON.stringify(body.messageData));
+    console.log('=================== [GREEN API WEBHOOK INCOMING] ===================');
+    console.log('[WEBHOOK TIMESTAMP]', new Date().toISOString());
+    console.log('[WEBHOOK TENANT ID]', tenantId);
+    console.log('[WEBHOOK RAW PAYLOAD]\n' + JSON.stringify(body, null, 2));
+    console.log('====================================================================');
 
     // Check if it's an incoming message webhook
     if (body.typeWebhook !== 'incomingMessageReceived' && body.typeWebhook !== 'incomingMessage') {
-      console.log('[WEBHOOK] Ignored: typeWebhook is', body.typeWebhook);
-      return NextResponse.json({ success: true, ignored: true });
+      console.log(`[WEBHOOK IGNORED] typeWebhook is "${body.typeWebhook}" (expected incomingMessageReceived / incomingMessage)`);
+      return NextResponse.json({ success: true, ignored: true, reason: `Ignored typeWebhook: ${body.typeWebhook}` });
     }
 
     const sender = body.senderData?.sender || body.senderData?.chatId;
     if (!sender || !sender.endsWith('@c.us')) {
-      console.log('[WEBHOOK] Ignored: sender is', sender);
+      console.log(`[WEBHOOK IGNORED] Sender "${sender}" is not a direct user (@c.us)`);
       return NextResponse.json({ success: true, ignored: true, reason: 'Not a direct user message' });
     }
 
@@ -34,26 +35,26 @@ export async function POST(
     if (phone.startsWith('972')) {
       phone = '0' + phone.substring(3);
     }
-    console.log('[WEBHOOK] Extracted phone:', phone, '(raw:', rawPhone, ')');
+    console.log('[WEBHOOK PARSED PHONE] Extracted:', phone, '(raw digits:', rawPhone, ')');
 
     // Extract message text
     const textMessage = body.messageData?.textMessageData?.textMessage ||
                         body.messageData?.extendedTextMessageData?.text || '';
     
-    console.log('[WEBHOOK] Message text:', textMessage);
+    console.log('[WEBHOOK MESSAGE TEXT]', JSON.stringify(textMessage));
 
-    if (!textMessage) {
-      console.log('[WEBHOOK] Ignored: no text content');
+    if (!textMessage.trim()) {
+      console.log('[WEBHOOK IGNORED] Message text is empty');
       return NextResponse.json({ success: true, ignored: true, reason: 'No text content' });
     }
 
     const approvalRegex = /מאשר|מאשרת|כן|סגור|תזמין|תשלח|אישור|אשר|אשמח|yes|ok/i;
     if (!approvalRegex.test(textMessage)) {
-      console.log('[WEBHOOK] Ignored: not an approval message');
+      console.log('[WEBHOOK IGNORED] Message text does not contain approval keywords');
       return NextResponse.json({ success: true, ignored: true, reason: 'Not an approval message' });
     }
 
-    console.log('[WEBHOOK] Approval keyword detected!');
+    console.log('[WEBHOOK MATCH] Approval keyword matched in incoming message!');
 
     const client = await getClientPromise();
     const db = client.db(tenantId);
@@ -61,10 +62,10 @@ export async function POST(
     // Find customer by phone
     const customer = await getCustomerByPhone(tenantId, phone);
     if (!customer) {
-      console.log('[WEBHOOK] Customer not found for phone:', phone);
+      console.log('[WEBHOOK IGNORED] Customer not found for phone number:', phone);
       return NextResponse.json({ success: true, ignored: true, reason: 'Customer not found' });
     }
-    console.log('[WEBHOOK] Found customer:', customer.id, customer.firstName, customer.lastName);
+    console.log('[WEBHOOK CUSTOMER FOUND]', customer.id, `${customer.firstName} ${customer.lastName}`);
 
     // Find pending quotes for this customer
     const collection = db.collection('partRequests');
@@ -77,39 +78,28 @@ export async function POST(
       quoteSentAt: { $gte: sevenDaysAgo.toISOString() }
     }).toArray();
 
-    console.log('[WEBHOOK] Found', pendingRequests.length, 'pending quotes for customer', customer.id);
+    console.log('[WEBHOOK PENDING QUOTES FOUND]', pendingRequests.length, 'active quotes for customer ID:', customer.id);
 
     if (pendingRequests.length === 0) {
-      // Debug: let's also check without the date filter
       const allPending = await collection.find({
         customerId: customer.id,
         quoteStatus: 'PENDING_APPROVAL'
       }).toArray();
-      console.log('[WEBHOOK] Total PENDING_APPROVAL (no date filter):', allPending.length);
-      if (allPending.length > 0) {
-        console.log('[WEBHOOK] First pending quoteSentAt:', allPending[0].quoteSentAt, 'sevenDaysAgo:', sevenDaysAgo.toISOString());
-      }
-      
-      // Also check all part requests for this customer
-      const allForCustomer = await collection.find({ customerId: customer.id }).toArray();
-      console.log('[WEBHOOK] All part requests for customer:', allForCustomer.length);
-      for (const pr of allForCustomer) {
-        console.log('[WEBHOOK]   - id:', pr.id, 'quoteStatus:', pr.quoteStatus, 'quoteSentAt:', pr.quoteSentAt);
-      }
+      console.log('[WEBHOOK DEBUG] Total PENDING_APPROVAL (ignoring 7-day window):', allPending.length);
 
-      return NextResponse.json({ success: true, ignored: true, reason: 'No pending active quotes found' });
+      return NextResponse.json({ success: true, ignored: true, reason: 'No pending active quotes found for customer' });
     }
 
     const tenant = await getTenantById(tenantId);
     if (!tenant?.greenApiInstanceId || !tenant?.greenApiToken) {
-       console.log('[WEBHOOK] No Green API configured for tenant');
-       return NextResponse.json({ success: false, error: 'No Green API configured' });
+       console.log('[WEBHOOK ERROR] Green API credentials missing for tenant:', tenantId);
+       return NextResponse.json({ success: false, error: 'No Green API credentials configured' });
     }
 
-    console.log('[WEBHOOK] Tenant quoteNotificationPhones:', tenant.quoteNotificationPhones);
-    console.log('[WEBHOOK] Tenant adminWhatsappPhone:', tenant.adminWhatsappPhone);
+    const notificationPhones = getQuoteNotificationPhones(tenant);
+    console.log('[WEBHOOK NOTIFICATION PHONES]', notificationPhones);
 
-    // Mark all as APPROVED
+    // Mark all pending quotes as APPROVED
     for (const pr of pendingRequests) {
       await collection.updateOne(
         { id: pr.id },
@@ -120,45 +110,27 @@ export async function POST(
           }
         }
       );
-      console.log('[WEBHOOK] Marked part request', pr.id, 'as APPROVED');
+      console.log('[WEBHOOK STATUS UPDATED] Part request ID:', pr.id, '-> quoteStatus: APPROVED');
 
-      // Notify customer
+      // Send confirmation WhatsApp message to the customer
       const custMessage = `תודה ${customer.firstName}! אישורך התקבל בהצלחה ✅\nההזמנה לחלק ("${pr.description}") נקלטה ותועבר להמשך טיפול.`;
       try {
         const custResult = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, phone, custMessage);
-        console.log('[WEBHOOK] Customer notification result:', JSON.stringify(custResult));
+        console.log('[WEBHOOK CUSTOMER NOTIFY RESULT]', JSON.stringify(custResult));
       } catch (err) {
-        console.error('[WEBHOOK] Failed to send confirmation to customer', err);
+        console.error('[WEBHOOK ERROR] Failed to send confirmation WhatsApp to customer:', err);
       }
 
-      // Notify admins
-      let notificationPhones: string[] = [];
-      if (tenant.quoteNotificationPhones && tenant.quoteNotificationPhones.trim()) {
-        notificationPhones = tenant.quoteNotificationPhones
-          .split(/[,;\n]+/)
-          .map(p => p.trim())
-          .filter(Boolean);
-      }
-      
-      if (notificationPhones.length === 0) {
-        notificationPhones = [
-          tenant.adminWhatsappPhone,
-          tenant.adminWhatsappPhone2,
-          tenant.adminWhatsappPhone3
-        ].map(p => (p || '').trim()).filter(Boolean);
-      }
-
-      console.log('[WEBHOOK] Notification phones resolved to:', notificationPhones);
-
+      // Send notification WhatsApp message to all admin/quote numbers
       const adminMessage = `🎉 אישור הצעת מחיר התקבל ב-${tenant.businessName || tenant.name}!\n\nלקוח: ${customer.firstName} ${customer.lastName} (${phone})\nחלק: ${pr.description}\nמחיר מאושר: ${pr.quotePrice} ₪`;
 
       for (const adminPhone of notificationPhones) {
         if (adminPhone) {
           try {
             const adminResult = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, adminPhone, adminMessage);
-            console.log('[WEBHOOK] Admin notification to', adminPhone, 'result:', JSON.stringify(adminResult));
+            console.log(`[WEBHOOK ADMIN NOTIFY RESULT] Phone ${adminPhone}:`, JSON.stringify(adminResult));
           } catch (err) {
-            console.error(`[WEBHOOK] Failed to notify admin ${adminPhone}`, err);
+            console.error(`[WEBHOOK ERROR] Failed to notify admin ${adminPhone}:`, err);
           }
         }
       }
@@ -167,7 +139,7 @@ export async function POST(
     return NextResponse.json({ success: true, approvedCount: pendingRequests.length });
 
   } catch (err: unknown) {
-    console.error('[WEBHOOK] Error in webhook:', err);
+    console.error('[WEBHOOK UNHANDLED ERROR]', err);
     return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
   }
 }
