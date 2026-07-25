@@ -53,7 +53,8 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   ]);
   const requests = requestsResult.requests;
 
-  const initialModels = tenantObj?.models || [];
+  const { normalizeModels } = await import('@/lib/db');
+  const initialModels = normalizeModels(tenantObj?.models);
 
   return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} greenApiInstanceId={greenApiInstanceId} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} />;
 }

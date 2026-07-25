@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest } from '@/lib/db';
+import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest, SpecificModel } from '@/lib/db';
 import { ServiceFormConfig } from '@/lib/serviceFormConfig';
 import ServiceRequestForm from '@/components/ServiceRequestForm';
 import CustomerSelectCombobox from '@/components/CustomerSelectCombobox';
@@ -23,7 +23,7 @@ interface AgentPortalProps {
   allRequests: ServiceRequest[];
   allOrders: Order[];
   initialDeviceModels: string[];
-  initialModels?: string[];
+  initialModels?: SpecificModel[];
   serviceFormConfig?: ServiceFormConfig;
 }
 
@@ -78,7 +78,7 @@ export default function AgentPortal({
   const [partRequestsList, setPartRequestsList] = useState<PartRequest[]>(initialPartRequests);
   const [requestsList, setRequestsList] = useState<ServiceRequest[]>(initialRequests);
   const [deviceModels, setDeviceModels] = useState<string[]>(initialDeviceModels);
-  const [modelsList, setModelsList] = useState<string[]>(initialModels);
+  const [modelsList, setModelsList] = useState<SpecificModel[]>(initialModels);
 
   // New Order Modal State
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
@@ -209,20 +209,21 @@ export default function AgentPortal({
   const handleAddSpecificModel = async () => {
     const trimmed = newSpecificModelInput.trim();
     if (!trimmed) return;
+    const currentDeviceType = (selectedDeviceType === 'other' ? customDeviceType : selectedDeviceType).trim();
     setIsSavingSpecificModel(true);
     try {
       const res = await fetch(`/api/${tenantId}/models`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelName: trimmed }),
+        body: JSON.stringify({ modelName: trimmed, deviceType: currentDeviceType }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'שגיאה בהוספת הדגם');
 
       if (data.models && Array.isArray(data.models)) {
         setModelsList(data.models);
-      } else if (!modelsList.includes(trimmed)) {
-        setModelsList(prev => [...prev, trimmed]);
+      } else {
+        setModelsList(prev => [...prev.filter(m => m.name !== trimmed), { name: trimmed, deviceType: currentDeviceType }]);
       }
       setNewOrderModel(trimmed);
       setNewSpecificModelInput('');
@@ -821,38 +822,45 @@ export default function AgentPortal({
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    {modelsList.length > 0 ? (
-                      <>
-                        <select
+                    {(() => {
+                      const currentType = (selectedDeviceType === 'other' ? customDeviceType : selectedDeviceType).trim();
+                      const filtered = modelsList.filter(m => !m.deviceType || m.deviceType === currentType);
+                      if (filtered.length > 0) {
+                        return (
+                          <>
+                            <select
+                              value={newOrderModel}
+                              onChange={(e) => setNewOrderModel(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-xs font-medium focus:bg-white"
+                            >
+                              <option value="">-- בחר דגם מתוך הרשימה --</option>
+                              {filtered.map(m => (
+                                <option key={m.name} value={m.name}>{m.name}</option>
+                              ))}
+                              <option value="custom">הקלד דגם אחר בחופשיות...</option>
+                            </select>
+                            {newOrderModel === 'custom' && (
+                              <input
+                                type="text"
+                                placeholder="הקלד דגם מותאם אישית..."
+                                value={customModelText}
+                                onChange={(e) => setCustomModelText(e.target.value)}
+                                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
+                              />
+                            )}
+                          </>
+                        );
+                      }
+                      return (
+                        <input
+                          type="text"
+                          placeholder="למשל: Xiaomi Pro 2"
                           value={newOrderModel}
                           onChange={(e) => setNewOrderModel(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-xs font-medium focus:bg-white"
-                        >
-                          <option value="">-- בחר דגם מתוך הרשימה --</option>
-                          {modelsList.map(m => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                          <option value="custom">הקלד דגם אחר בחופשיות...</option>
-                        </select>
-                        {newOrderModel === 'custom' && (
-                          <input
-                            type="text"
-                            placeholder="הקלד דגם מותאם אישית..."
-                            value={customModelText}
-                            onChange={(e) => setCustomModelText(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
-                          />
-                        )}
-                      </>
-                    ) : (
-                      <input
-                        type="text"
-                        placeholder="למשל: Xiaomi Pro 2"
-                        value={newOrderModel}
-                        onChange={(e) => setNewOrderModel(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
-                      />
-                    )}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
+                        />
+                      );
+                    })()}
                   </div>
                 )}
               </div>

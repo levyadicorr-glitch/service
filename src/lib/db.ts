@@ -3,6 +3,11 @@ import getClientPromise from './mongodb';
 import { ObjectId, Document } from 'mongodb';
 import type { ServiceFormConfig } from './serviceFormConfig';
 
+export interface SpecificModel {
+  name: string;
+  deviceType: string;
+}
+
 export interface Tenant {
   id: string; // The URL slug (e.g., 'bikeshop1')
   name: string; // Display name
@@ -22,7 +27,7 @@ export interface Tenant {
   greenApiToken?: string;
   serviceFormConfig?: ServiceFormConfig;
   deviceModels?: string[]; // Array of custom device models/types
-  models?: string[]; // Array of specific device models
+  models?: (string | SpecificModel)[]; // Array of specific device models with associated deviceType
   createdAt: string;
 }
 
@@ -286,18 +291,44 @@ export async function addDeviceModelToTenant(id: string, modelName: string): Pro
   return tenant?.deviceModels || [trimmed];
 }
 
-export async function addModelToTenant(id: string, modelName: string): Promise<string[]> {
+export function normalizeModels(rawModels?: any[]): SpecificModel[] {
+  if (!Array.isArray(rawModels)) return [];
+  return rawModels.map(m => {
+    if (typeof m === 'string') {
+      return { name: m, deviceType: '' };
+    }
+    if (m && typeof m === 'object' && typeof m.name === 'string') {
+      return { name: m.name, deviceType: typeof m.deviceType === 'string' ? m.deviceType : '' };
+    }
+    return { name: String(m), deviceType: '' };
+  });
+}
+
+export async function addModelToTenant(id: string, modelName: string, deviceType?: string): Promise<SpecificModel[]> {
   const db = await getMasterDb();
-  const trimmed = modelName.trim();
-  if (!trimmed) return [];
+  const trimmedName = modelName.trim();
+  const trimmedType = (deviceType || '').trim();
+  if (!trimmedName) return [];
+
+  const modelObj: SpecificModel = { name: trimmedName, deviceType: trimmedType };
+
+  // Remove existing model with same name if any, then push new modelObj
+  await db.collection('tenants').updateOne(
+    { id },
+    { $pull: { models: { name: trimmedName } } } as any
+  );
+  await db.collection('tenants').updateOne(
+    { id },
+    { $pull: { models: trimmedName } } as any
+  );
 
   await db.collection('tenants').updateOne(
     { id },
-    { $addToSet: { models: trimmed } } as any
+    { $push: { models: modelObj } } as any
   );
 
   const tenant = await db.collection('tenants').findOne({ id });
-  return tenant?.models || [trimmed];
+  return normalizeModels(tenant?.models);
 }
 
 export async function deleteDeviceModelFromTenant(id: string, modelName: string): Promise<string[]> {
@@ -310,14 +341,18 @@ export async function deleteDeviceModelFromTenant(id: string, modelName: string)
   return tenant?.deviceModels || [];
 }
 
-export async function deleteModelFromTenant(id: string, modelName: string): Promise<string[]> {
+export async function deleteModelFromTenant(id: string, modelName: string): Promise<SpecificModel[]> {
   const db = await getMasterDb();
+  await db.collection('tenants').updateOne(
+    { id },
+    { $pull: { models: { name: modelName } } } as any
+  );
   await db.collection('tenants').updateOne(
     { id },
     { $pull: { models: modelName } } as any
   );
   const tenant = await db.collection('tenants').findOne({ id });
-  return tenant?.models || [];
+  return normalizeModels(tenant?.models);
 }
 
 export async function deleteTenant(id: string): Promise<boolean> {

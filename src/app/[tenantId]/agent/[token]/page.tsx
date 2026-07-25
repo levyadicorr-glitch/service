@@ -60,7 +60,8 @@ export default async function AgentPortalPage({ params }: PageProps) {
     getOrders(tenantId, { customers, drivers }),
   ]);
 
-  const initialModels = tenantObj?.models || [];
+  const { normalizeModels } = await import('@/lib/db');
+  const initialModels = normalizeModels(tenantObj?.models);
 
   return (
     <AgentPortal

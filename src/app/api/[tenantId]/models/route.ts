@@ -16,13 +16,13 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { modelName } = body;
+    const { modelName, deviceType } = body;
 
     if (!modelName || typeof modelName !== 'string' || !modelName.trim()) {
       return NextResponse.json({ error: 'שם הדגם הוא שדה חובה' }, { status: 400 });
     }
 
-    const updatedModels = await addModelToTenant(tenantId, modelName.trim());
+    const updatedModels = await addModelToTenant(tenantId, modelName.trim(), typeof deviceType === 'string' ? deviceType : '');
     return NextResponse.json({ success: true, models: updatedModels });
   } catch (err: unknown) {
     console.error('Error adding model:', err);
