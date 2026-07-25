@@ -17,12 +17,24 @@ export async function POST(
     console.log('[WEBHOOK RAW PAYLOAD]\n' + JSON.stringify(body, null, 2));
     console.log('====================================================================');
 
-    // Check if it's an incoming message webhook
-    const isIncoming = typeof body.typeWebhook === 'string' && body.typeWebhook.toLowerCase().startsWith('incoming');
-    if (!isIncoming) {
-      console.log(`[WEBHOOK IGNORED] typeWebhook is "${body.typeWebhook}" (ignored outgoing/system event)`);
+    // Accept incoming AND outgoing message webhooks.
+    // "outgoingMessageReceived" fires when the message is sent from the
+    // connected WhatsApp device itself (e.g., admin testing, or admin is also
+    // a customer). We still rely on the downstream logic (keyword match +
+    // customer lookup + pending-quote check) to filter out irrelevant messages.
+    const ACCEPTED_TYPES = [
+      'incomingMessageReceived',
+      'incomingMessage',
+      'outgoingMessageReceived',
+      'outgoingMessage',
+    ];
+    const typeWebhook = (body.typeWebhook || '').toLowerCase();
+    const isMessage = ACCEPTED_TYPES.some(t => t.toLowerCase() === typeWebhook);
+    if (!isMessage) {
+      console.log(`[WEBHOOK IGNORED] typeWebhook is "${body.typeWebhook}" (not a text-message event)`);
       return NextResponse.json({ success: true, ignored: true, reason: `Ignored typeWebhook: ${body.typeWebhook}` });
     }
+    console.log(`[WEBHOOK ACCEPTED] typeWebhook: "${body.typeWebhook}"`);
 
     const sender = body.senderData?.sender || body.senderData?.chatId;
     if (!sender || !sender.endsWith('@c.us')) {
