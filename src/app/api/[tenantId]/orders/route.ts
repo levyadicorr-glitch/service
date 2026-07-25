@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
   try {
     const { tenantId } = await params;
     const body = await req.json();
-    const { customerId, deviceType, quantity, unitPrice, driverId, agentId, agentName } = body;
+    const { customerId, deviceType, model, quantity, unitPrice, driverId, agentId, agentName } = body;
 
     const denied = requireTenantAdmin(req, tenantId);
     if (denied && (!agentId || typeof agentId !== 'string')) {
@@ -62,6 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
     const newOrder = await createOrder(tenantId, {
       customerId,
       deviceType: deviceType.trim(),
+      model: model?.trim() || undefined,
       quantity: qty,
       unitPrice: price,
       ...(driverId ? { driverId } : {}),
@@ -78,7 +79,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
         const businessName = tenant.businessName || tenant.name || 'העסק';
         const customerName = `${customer.firstName} ${customer.lastName}`.trim() || 'לקוח';
         const agentTag = newOrder.agentName ? `\n• 👔 סוכן מטפל: ${newOrder.agentName}` : '';
-        const message = `📦 הזמנה חדשה (#${newOrder.orderNumber}) ב-${businessName}!\n\nשלום ${customerName},\nהזמנתך נקלטה במערכת וממתינה לשילוח 🚀\n\n📋 פרטי ההזמנה:\n• פריט: ${newOrder.deviceType}\n• כמות: ${newOrder.quantity}\n• מחיר ליחידה: ${newOrder.unitPrice} ₪\n• סה"כ לתשלום: ${newOrder.totalPrice} ₪${agentTag}\n\nנמשיך לעדכן אותך בכל שלב! ❤️`;
+        const modelTag = newOrder.model ? ` - ${newOrder.model}` : '';
+        const message = `📦 הזמנה חדשה (#${newOrder.orderNumber}) ב-${businessName}!\n\nשלום ${customerName},\nהזמנתך נקלטה במערכת וממתינה לשילוח 🚀\n\n📋 פרטי ההזמנה:\n• פריט: ${newOrder.deviceType}${modelTag}\n• כמות: ${newOrder.quantity}\n• מחיר ליחידה: ${newOrder.unitPrice} ₪\n• סה"כ לתשלום: ${newOrder.totalPrice} ₪${agentTag}\n\nנמשיך לעדכן אותך בכל שלב! ❤️`;
 
         const res = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, customerPhone, message);
         autoNotifySent = res.sent;

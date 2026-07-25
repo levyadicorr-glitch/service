@@ -60,6 +60,8 @@ export default async function AgentPortalPage({ params }: PageProps) {
     getOrders(tenantId, { customers, drivers }),
   ]);
 
+  const initialModels = tenantObj?.models || [];
+
   return (
     <AgentPortal
       agent={agent}
@@ -73,6 +75,7 @@ export default async function AgentPortalPage({ params }: PageProps) {
       allRequests={allRequestsResult.requests}
       allOrders={allOrders}
       initialDeviceModels={initialDeviceModels}
+      initialModels={initialModels}
       serviceFormConfig={serviceFormConfig}
     />
   );

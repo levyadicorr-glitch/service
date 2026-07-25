@@ -22,6 +22,7 @@ interface AdminDashboardProps {
   initialOrders: Order[];
   initialAgents?: Agent[];
   initialDeviceModels?: string[];
+  initialModels?: string[];
   tenantId: string;
   businessName: string;
   whatsappTemplate: string;
@@ -35,7 +36,7 @@ interface AdminDashboardProps {
   serviceFormConfig?: ServiceFormConfig;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialDeviceModels = ['קורקינט', 'אופניים'], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', greenApiInstanceId = '', logoUrl = '', serviceFormConfig }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', greenApiInstanceId = '', logoUrl = '', serviceFormConfig }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
   const [agentsList, setAgentsList] = useState<Agent[]>(initialAgents);
@@ -462,6 +463,40 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     }
   };
 
+  const [modelsList, setModelsList] = useState<string[]>(initialModels || []);
+  const [isAddingSpecificModel, setIsAddingSpecificModel] = useState(false);
+  const [newSpecificModelInput, setNewSpecificModelInput] = useState('');
+  const [isSavingSpecificModel, setIsSavingSpecificModel] = useState(false);
+  const [newOrderCustomModelText, setNewOrderCustomModelText] = useState('');
+
+  const handleAddSpecificModel = async () => {
+    const trimmed = newSpecificModelInput.trim();
+    if (!trimmed) return;
+    setIsSavingSpecificModel(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelName: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בהוספת הדגם');
+
+      if (data.models && Array.isArray(data.models)) {
+        setModelsList(data.models);
+      } else if (!modelsList.includes(trimmed)) {
+        setModelsList(prev => [...prev, trimmed]);
+      }
+      setNewOrderModel(trimmed);
+      setNewSpecificModelInput('');
+      setIsAddingSpecificModel(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בהוספת הדגם');
+    } finally {
+      setIsSavingSpecificModel(false);
+    }
+  };
+
   const ORDER_STATUSES: { key: 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED'; label: string; bg: string; text: string; border: string }[] = [
     { key: 'PENDING', label: 'בהכנה', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100' },
     { key: 'READY_FOR_DISPATCH', label: 'מוכן לשילוח', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100' },
@@ -474,6 +509,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [newOrderCustomDeviceType, setNewOrderCustomDeviceType] = useState('');
   const [newOrderQuantity, setNewOrderQuantity] = useState('1');
   const [newOrderUnitPrice, setNewOrderUnitPrice] = useState('');
+  const [newOrderModel, setNewOrderModel] = useState('');
   const [newOrderDriverId, setNewOrderDriverId] = useState('');
   const [newOrderRegion, setNewOrderRegion] = useState<'' | 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM'>('');
   const [isSavingOrder, setIsSavingOrder] = useState(false);
@@ -1027,7 +1063,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   // ---- Orders management ----
 
   const handleAddOrder = async () => {
-    const deviceType = (newOrderDeviceType === 'other' ? newOrderCustomDeviceType : newOrderDeviceType).trim();
+    const finalDeviceType = (newOrderDeviceType === 'other' ? newOrderCustomDeviceType : newOrderDeviceType).trim();
     const quantity = Number(newOrderQuantity);
     const unitPrice = Number(newOrderUnitPrice);
 
@@ -1035,8 +1071,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       alert('יש לבחור לקוח');
       return;
     }
-    if (!deviceType) {
-      alert('סוג המכשיר הוא שדה חובה');
+    if (!finalDeviceType) {
+      alert('סוג כלי הוא שדה חובה');
       return;
     }
     if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -1069,12 +1105,15 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
         applyCustomerUpdate(newOrderCustomerId, { region: newOrderRegion });
       }
 
+      const finalModel = (newOrderModel === 'custom' ? newOrderCustomModelText : newOrderModel).trim();
+
       const res = await fetch(`/api/${tenantId}/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: newOrderCustomerId,
-          deviceType,
+          deviceType: finalDeviceType,
+          model: finalModel,
           quantity,
           unitPrice,
           driverId: newOrderDriverId || undefined,
@@ -2369,7 +2408,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                           )}
                         </strong>
                         <span className="text-xs text-gray-600 block mt-1 truncate">
-                          {order.deviceType} × {order.quantity} — ₪{order.unitPrice.toLocaleString('he-IL')} ליחידה
+                          {order.deviceType} {order.model ? `- ${order.model}` : ''} × {order.quantity} — ₪{order.unitPrice.toLocaleString('he-IL')} ליחידה
                         </span>
                         <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(order.createdAt)}</span>
                       </div>
@@ -2550,7 +2589,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                                   </strong>
                                 </div>
                                 <span className="text-[10px] text-gray-500 block truncate">
-                                  {order.deviceType} × {order.quantity} · {order.customer?.address || 'ללא כתובת'}
+                                  {order.deviceType} {order.model ? `- ${order.model}` : ''} × {order.quantity} · {order.customer?.address || 'ללא כתובת'}
                                 </span>
                               </div>
                               <select
@@ -3530,7 +3569,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">הזמנת סחורה חדשה</h2>
-                <p className="text-gray-400 text-xs mt-1">בחר לקוח, סוג מכשיר, כמות ומחיר ליחידה</p>
+                <p className="text-gray-400 text-xs mt-1">בחר לקוח, סוג כלי, דגם, כמות ומחיר ליחידה</p>
               </div>
               <button
                 onClick={() => setIsAddOrderModalOpen(false)}
@@ -3573,15 +3612,15 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
               <div className="space-y-1.5">
                 <label className="block text-gray-700 text-xs font-bold flex items-center justify-between">
-                  <span>סוג / דגם מכשיר <span className="text-red-500">*</span></span>
+                  <span>סוג כלי <span className="text-red-500">*</span></span>
                   <button
                     type="button"
                     onClick={() => setIsAddingNewModel(!isAddingNewModel)}
                     className="text-blue-600 hover:text-blue-700 text-xs font-bold flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 transition-all active:scale-95 cursor-pointer"
-                    title="הוסף דגם חדש לרשימה"
+                    title="הוסף סוג חדש לרשימה"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>הוסף דגם</span>
+                    <span>הוסף סוג כלי</span>
                   </button>
                 </label>
 
@@ -3589,7 +3628,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   <div className="flex items-center gap-1.5 p-2 bg-blue-50/50 border border-blue-200 rounded-xl">
                     <input
                       type="text"
-                      placeholder="שם דגם חדש (למשל: קורקינט Xiaomi Pro)"
+                      placeholder="שם סוג כלי חדש..."
                       value={newModelInput}
                       onChange={(e) => setNewModelInput(e.target.value)}
                       className="flex-1 px-3 py-2 text-xs rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
@@ -3632,11 +3671,93 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 {newOrderDeviceType === 'other' && !isAddingNewModel && (
                   <input
                     type="text"
-                    placeholder="הקלד סוג/דגם מכשיר מותאם אישית"
+                    placeholder="הקלד סוג כלי מותאם אישית"
                     value={newOrderCustomDeviceType}
                     onChange={(e) => setNewOrderCustomDeviceType(e.target.value)}
                     className="mt-2 w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
                   />
+                )}
+              </div>
+
+              {/* Model Field */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-xs font-bold flex items-center justify-between">
+                  <span>דגם <span className="text-gray-400 font-normal">(אופציונלי)</span></span>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingSpecificModel(!isAddingSpecificModel)}
+                    className="text-blue-600 hover:text-blue-700 text-xs font-bold flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 transition-all active:scale-95 cursor-pointer"
+                    title="הוסף דגם חדש למאגר"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>הוסף דגם למאגר</span>
+                  </button>
+                </label>
+
+                {isAddingSpecificModel ? (
+                  <div className="flex items-center gap-1.5 p-2 bg-blue-50/50 border border-blue-200 rounded-xl">
+                    <input
+                      type="text"
+                      placeholder="שם דגם חדש (למשל: Xiaomi M365)..."
+                      value={newSpecificModelInput}
+                      onChange={(e) => setNewSpecificModelInput(e.target.value)}
+                      className="flex-1 px-3 py-2 text-xs rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddSpecificModel}
+                      disabled={isSavingSpecificModel || !newSpecificModelInput.trim()}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                    >
+                      {isSavingSpecificModel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      <span>שמור</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingSpecificModel(false)}
+                      className="px-2.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-xs rounded-lg cursor-pointer"
+                    >
+                      ביטול
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {modelsList.length > 0 ? (
+                      <>
+                        <select
+                          value={newOrderModel}
+                          onChange={(e) => setNewOrderModel(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all cursor-pointer font-medium"
+                        >
+                          <option value="">-- בחר דגם מתוך הרשימה --</option>
+                          {modelsList.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                          <option value="custom">הקלד דגם אחר בחופשיות...</option>
+                        </select>
+                        {newOrderModel === 'custom' && (
+                          <input
+                            type="text"
+                            placeholder="הקלד דגם מותאם אישית"
+                            value={newOrderCustomModelText}
+                            onChange={(e) => setNewOrderCustomModelText(e.target.value)}
+                            className="mt-2 w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-medium"
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="למשל: Xiaomi Pro 2"
+                        value={newOrderModel}
+                        onChange={(e) => setNewOrderModel(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-medium"
+                      />
+                    )}
+                  </div>
                 )}
               </div>
 

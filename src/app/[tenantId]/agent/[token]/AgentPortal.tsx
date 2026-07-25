@@ -23,6 +23,7 @@ interface AgentPortalProps {
   allRequests: ServiceRequest[];
   allOrders: Order[];
   initialDeviceModels: string[];
+  initialModels?: string[];
   serviceFormConfig?: ServiceFormConfig;
 }
 
@@ -38,6 +39,7 @@ export default function AgentPortal({
   allRequests,
   allOrders,
   initialDeviceModels,
+  initialModels = [],
   serviceFormConfig,
 }: AgentPortalProps) {
   const expectedPassword = agent.passwordPlain || agent.password || '';
@@ -76,6 +78,7 @@ export default function AgentPortal({
   const [partRequestsList, setPartRequestsList] = useState<PartRequest[]>(initialPartRequests);
   const [requestsList, setRequestsList] = useState<ServiceRequest[]>(initialRequests);
   const [deviceModels, setDeviceModels] = useState<string[]>(initialDeviceModels);
+  const [modelsList, setModelsList] = useState<string[]>(initialModels);
 
   // New Order Modal State
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
@@ -84,9 +87,14 @@ export default function AgentPortal({
   const [customDeviceType, setCustomDeviceType] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [unitPrice, setUnitPrice] = useState('');
+  const [newOrderModel, setNewOrderModel] = useState('');
+  const [customModelText, setCustomModelText] = useState('');
   const [selectedDriverId, setSelectedDriverId] = useState('');
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [isAddingNewModel, setIsAddingNewModel] = useState(false);
+  const [isAddingSpecificModel, setIsAddingSpecificModel] = useState(false);
+  const [newSpecificModelInput, setNewSpecificModelInput] = useState('');
+  const [isSavingSpecificModel, setIsSavingSpecificModel] = useState(false);
   const [newModelInput, setNewModelInput] = useState('');
   const [isSavingModel, setIsSavingModel] = useState(false);
 
@@ -198,6 +206,34 @@ export default function AgentPortal({
     }
   };
 
+  const handleAddSpecificModel = async () => {
+    const trimmed = newSpecificModelInput.trim();
+    if (!trimmed) return;
+    setIsSavingSpecificModel(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelName: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בהוספת הדגם');
+
+      if (data.models && Array.isArray(data.models)) {
+        setModelsList(data.models);
+      } else if (!modelsList.includes(trimmed)) {
+        setModelsList(prev => [...prev, trimmed]);
+      }
+      setNewOrderModel(trimmed);
+      setNewSpecificModelInput('');
+      setIsAddingSpecificModel(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בהוספת הדגם');
+    } finally {
+      setIsSavingSpecificModel(false);
+    }
+  };
+
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerId) {
@@ -216,6 +252,8 @@ export default function AgentPortal({
       return;
     }
 
+    const finalModel = (newOrderModel === 'custom' ? customModelText : newOrderModel).trim();
+
     setIsSavingOrder(true);
     try {
       const res = await fetch(`/api/${tenantId}/orders`, {
@@ -224,6 +262,7 @@ export default function AgentPortal({
         body: JSON.stringify({
           customerId: selectedCustomerId,
           deviceType: finalDeviceType,
+          model: finalModel,
           quantity: qty,
           unitPrice: price,
           driverId: selectedDriverId || undefined,
@@ -240,6 +279,7 @@ export default function AgentPortal({
       setSelectedCustomerId('');
       setUnitPrice('');
       setQuantity('1');
+      setNewOrderModel('');
       alert('ההזמנה נקלטה בהצלחה! 🚀');
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'שגיאה ביצירת ההזמנה');
@@ -453,7 +493,7 @@ export default function AgentPortal({
                       <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs space-y-1">
                         <div className="flex justify-between text-gray-700">
                           <span>פריט / דגם:</span>
-                          <span className="font-bold">{order.deviceType}</span>
+                          <span className="font-bold">{order.deviceType} {order.model ? `- ${order.model}` : ''}</span>
                         </div>
                         <div className="flex justify-between text-gray-700">
                           <span>כמות × מחיר:</span>
@@ -692,13 +732,13 @@ export default function AgentPortal({
 
               <div className="space-y-1">
                 <div className="flex justify-between items-center">
-                  <label className="block text-xs font-bold text-gray-700">סוג / דגם מכשיר <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-bold text-gray-700">סוג כלי <span className="text-red-500">*</span></label>
                   <button
                     type="button"
                     onClick={() => setIsAddingNewModel(!isAddingNewModel)}
-                    className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                    className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    <Plus className="w-3 h-3" /> הוסף דגם
+                    <Plus className="w-3 h-3" /> הוסף סוג כלי
                   </button>
                 </div>
 
@@ -706,7 +746,7 @@ export default function AgentPortal({
                   <div className="flex items-center gap-1.5 p-2 bg-blue-50/50 border border-blue-200 rounded-xl">
                     <input
                       type="text"
-                      placeholder="שם דגם חדש..."
+                      placeholder="שם סוג כלי חדש..."
                       value={newModelInput}
                       onChange={(e) => setNewModelInput(e.target.value)}
                       className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white"
@@ -716,7 +756,7 @@ export default function AgentPortal({
                       type="button"
                       onClick={handleAddDeviceModel}
                       disabled={isSavingModel || !newModelInput.trim()}
-                      className="px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg disabled:opacity-50"
+                      className="px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg disabled:opacity-50 cursor-pointer"
                     >
                       {isSavingModel ? <Loader2 className="w-3 h-3 animate-spin" /> : 'שמור'}
                     </button>
@@ -737,11 +777,83 @@ export default function AgentPortal({
                 {selectedDeviceType === 'other' && !isAddingNewModel && (
                   <input
                     type="text"
-                    placeholder="הקלד דגם מותאם אישית..."
+                    placeholder="הקלד סוג כלי מותאם אישית..."
                     value={customDeviceType}
                     onChange={(e) => setCustomDeviceType(e.target.value)}
-                    className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    className="mt-1.5 w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
                   />
+                )}
+              </div>
+
+              {/* Model Field */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-bold text-gray-700">
+                    דגם <span className="text-gray-400 font-normal">(אופציונלי)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingSpecificModel(!isAddingSpecificModel)}
+                    className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> הוסף דגם למאגר
+                  </button>
+                </div>
+
+                {isAddingSpecificModel ? (
+                  <div className="flex items-center gap-1.5 p-2 bg-blue-50/50 border border-blue-200 rounded-xl">
+                    <input
+                      type="text"
+                      placeholder="שם דגם חדש (למשל: Xiaomi M365)..."
+                      value={newSpecificModelInput}
+                      onChange={(e) => setNewSpecificModelInput(e.target.value)}
+                      className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddSpecificModel}
+                      disabled={isSavingSpecificModel || !newSpecificModelInput.trim()}
+                      className="px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg disabled:opacity-50 cursor-pointer"
+                    >
+                      {isSavingSpecificModel ? <Loader2 className="w-3 h-3 animate-spin" /> : 'שמור'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {modelsList.length > 0 ? (
+                      <>
+                        <select
+                          value={newOrderModel}
+                          onChange={(e) => setNewOrderModel(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-xs font-medium focus:bg-white"
+                        >
+                          <option value="">-- בחר דגם מתוך הרשימה --</option>
+                          {modelsList.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          <option value="custom">הקלד דגם אחר בחופשיות...</option>
+                        </select>
+                        {newOrderModel === 'custom' && (
+                          <input
+                            type="text"
+                            placeholder="הקלד דגם מותאם אישית..."
+                            value={customModelText}
+                            onChange={(e) => setCustomModelText(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="למשל: Xiaomi Pro 2"
+                        value={newOrderModel}
+                        onChange={(e) => setNewOrderModel(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
+                      />
+                    )}
+                  </div>
                 )}
               </div>
 

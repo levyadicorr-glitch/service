@@ -22,6 +22,7 @@ export interface Tenant {
   greenApiToken?: string;
   serviceFormConfig?: ServiceFormConfig;
   deviceModels?: string[]; // Array of custom device models/types
+  models?: string[]; // Array of specific device models
   createdAt: string;
 }
 
@@ -89,6 +90,7 @@ export interface Order {
   driverId?: string;
   driver?: Driver;
   deviceType: string; // e.g. 'קורקינט', 'אופניים', or a custom type entered by the sales agent
+  model?: string; // Open text for the specific model
   quantity: number;
   unitPrice: number;
   totalPrice: number; // quantity * unitPrice, computed at creation
@@ -282,6 +284,20 @@ export async function addDeviceModelToTenant(id: string, modelName: string): Pro
 
   const tenant = await db.collection('tenants').findOne({ id });
   return tenant?.deviceModels || [trimmed];
+}
+
+export async function addModelToTenant(id: string, modelName: string): Promise<string[]> {
+  const db = await getMasterDb();
+  const trimmed = modelName.trim();
+  if (!trimmed) return [];
+
+  await db.collection('tenants').updateOne(
+    { id },
+    { $addToSet: { models: trimmed } } as any
+  );
+
+  const tenant = await db.collection('tenants').findOne({ id });
+  return tenant?.models || [trimmed];
 }
 
 export async function deleteTenant(id: string): Promise<boolean> {
