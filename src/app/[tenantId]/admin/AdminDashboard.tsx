@@ -497,6 +497,44 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     }
   };
 
+  const handleDeleteDeviceModel = async (modelName: string) => {
+    try {
+      const res = await fetch(`/api/${tenantId}/device-models`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בהסרת סוג הכלי');
+      if (data.deviceModels && Array.isArray(data.deviceModels)) {
+        setDeviceModels(data.deviceModels);
+      } else {
+        setDeviceModels(prev => prev.filter(m => m !== modelName));
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בהסרת סוג הכלי');
+    }
+  };
+
+  const handleDeleteSpecificModel = async (modelName: string) => {
+    try {
+      const res = await fetch(`/api/${tenantId}/models`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בהסרת הדגם');
+      if (data.models && Array.isArray(data.models)) {
+        setModelsList(data.models);
+      } else {
+        setModelsList(prev => prev.filter(m => m !== modelName));
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בהסרת הדגם');
+    }
+  };
+
   const ORDER_STATUSES: { key: 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED'; label: string; bg: string; text: string; border: string }[] = [
     { key: 'PENDING', label: 'בהכנה', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100' },
     { key: 'READY_FOR_DISPATCH', label: 'מוכן לשילוח', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100' },
@@ -4190,6 +4228,122 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   <p className="text-[10px] text-emerald-700 font-medium">
                     קישור המיועד לסוכן מכירות לשליחה ללקוח. הלקוח מזין טלפון (או נרשם קצרות אם חדש) ומועבר ישירות לטופס לבקשת חלק.
                   </p>
+                </div>
+              </div>
+
+              {/* Management of Device Types and Models */}
+              <div className="pt-4 border-t border-gray-150 space-y-4">
+                <h3 className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                  <Smartphone className="w-4 h-4 text-purple-600" />
+                  ניהול סוגי כלים ודגמים במאגר העסק
+                </h3>
+
+                {/* Device Types Management */}
+                <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800">
+                      סוגי כלים שמורים (כמו קורקינט, אופניים)
+                    </label>
+                    <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-md">
+                      {deviceModels.length} סוגים
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="הוסף סוג כלי חדש..."
+                      value={newModelInput}
+                      onChange={(e) => setNewModelInput(e.target.value)}
+                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddDeviceModel}
+                      disabled={isSavingNewModel || !newModelInput.trim()}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingNewModel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      הוסף סוג
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {deviceModels.length === 0 ? (
+                      <span className="text-xs text-gray-400 font-medium">אין סוגי כלים שמורים במאגר</span>
+                    ) : (
+                      deviceModels.map((item) => (
+                        <div
+                          key={item}
+                          className="inline-flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 shadow-2xs group"
+                        >
+                          <span>{item}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDeviceModel(item)}
+                            className="text-gray-400 hover:text-red-600 transition-colors p-0.5 rounded-md hover:bg-red-50 cursor-pointer"
+                            title={`מחק ${item}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Specific Models Management */}
+                <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800">
+                      דגמים שמורים במאגר (כמו Xiaomi M365)
+                    </label>
+                    <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-md">
+                      {modelsList.length} דגמים
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="הוסף דגם חדש (למשל: Ninebot MAX)..."
+                      value={newSpecificModelInput}
+                      onChange={(e) => setNewSpecificModelInput(e.target.value)}
+                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddSpecificModel}
+                      disabled={isSavingSpecificModel || !newSpecificModelInput.trim()}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingSpecificModel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      הוסף דגם
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {modelsList.length === 0 ? (
+                      <span className="text-xs text-gray-400 font-medium">אין דגמים שמורים במאגר</span>
+                    ) : (
+                      modelsList.map((item) => (
+                        <div
+                          key={item}
+                          className="inline-flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 shadow-2xs group"
+                        >
+                          <span>{item}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSpecificModel(item)}
+                            className="text-gray-400 hover:text-red-600 transition-colors p-0.5 rounded-md hover:bg-red-50 cursor-pointer"
+                            title={`מחק ${item}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
 

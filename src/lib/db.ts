@@ -300,6 +300,26 @@ export async function addModelToTenant(id: string, modelName: string): Promise<s
   return tenant?.models || [trimmed];
 }
 
+export async function deleteDeviceModelFromTenant(id: string, modelName: string): Promise<string[]> {
+  const db = await getMasterDb();
+  await db.collection('tenants').updateOne(
+    { id },
+    { $pull: { deviceModels: modelName } } as any
+  );
+  const tenant = await db.collection('tenants').findOne({ id });
+  return tenant?.deviceModels || [];
+}
+
+export async function deleteModelFromTenant(id: string, modelName: string): Promise<string[]> {
+  const db = await getMasterDb();
+  await db.collection('tenants').updateOne(
+    { id },
+    { $pull: { models: modelName } } as any
+  );
+  const tenant = await db.collection('tenants').findOne({ id });
+  return tenant?.models || [];
+}
+
 export async function deleteTenant(id: string): Promise<boolean> {
   const db = await getMasterDb();
   const result = await db.collection('tenants').deleteOne({ id });
