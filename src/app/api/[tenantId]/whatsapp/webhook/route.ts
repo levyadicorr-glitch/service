@@ -18,8 +18,9 @@ export async function POST(
     console.log('====================================================================');
 
     // Check if it's an incoming message webhook
-    if (body.typeWebhook !== 'incomingMessageReceived' && body.typeWebhook !== 'incomingMessage') {
-      console.log(`[WEBHOOK IGNORED] typeWebhook is "${body.typeWebhook}" (expected incomingMessageReceived / incomingMessage)`);
+    const isIncoming = typeof body.typeWebhook === 'string' && body.typeWebhook.toLowerCase().startsWith('incoming');
+    if (!isIncoming) {
+      console.log(`[WEBHOOK IGNORED] typeWebhook is "${body.typeWebhook}" (ignored outgoing/system event)`);
       return NextResponse.json({ success: true, ignored: true, reason: `Ignored typeWebhook: ${body.typeWebhook}` });
     }
 
