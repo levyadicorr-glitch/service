@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createOrder, getCustomerById, getDriverById, getOrders, getTenantById } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
-import { sendWhatsAppMessage } from '@/lib/greenApi';
+import { sendWhatsAppMessage, sendQuoteNotificationToAdmins } from '@/lib/greenApi';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ tenantId: string }> }) {
   try {
@@ -84,6 +84,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
 
         const res = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, customerPhone, message);
         autoNotifySent = res.sent;
+
+        // Notify quote/admin numbers as well
+        const adminMsg = `📦 הזמנת סחורה חדשה (#${newOrder.orderNumber}) ב-${businessName}!\n\n👤 לקוח: ${customerName} (${customer.phone || 'ללא טלפון'})\n🛵 פריט / דגם: ${newOrder.deviceType}${modelTag}\n🔢 כמות: ${newOrder.quantity}\n💰 מחיר ליחידה: ${newOrder.unitPrice} ₪\n💵 סה"כ לתשלום: ${newOrder.totalPrice} ₪${agentTag}`;
+        await sendQuoteNotificationToAdmins(tenant, adminMsg);
       }
     } catch (notifyErr) {
       console.error('Error sending order creation WhatsApp:', notifyErr);

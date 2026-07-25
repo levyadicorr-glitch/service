@@ -72,3 +72,55 @@ export async function sendWhatsAppMessage(
     return { sent: false, error: err instanceof Error ? err.message : 'שגיאת רשת' };
   }
 }
+
+/**
+ * Returns the list of target WhatsApp phone numbers for Quote & Sales Agent notifications
+ * configured in the tenant settings (quoteNotificationPhones, falling back to adminWhatsappPhone & partsRequestPhone).
+ */
+export function getQuoteNotificationPhones(tenant: { quoteNotificationPhones?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; partsRequestPhone?: string }): string[] {
+  const rawQuote = (tenant.quoteNotificationPhones || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
+  if (rawQuote.length > 0) {
+    return Array.from(new Set(rawQuote));
+  }
+
+  const fallbackAdmin = [
+    tenant.adminWhatsappPhone,
+    tenant.adminWhatsappPhone2,
+    tenant.adminWhatsappPhone3,
+    tenant.partsRequestPhone,
+  ]
+    .map((p) => (p || '').trim())
+    .filter((p) => p.length > 0);
+
+  return Array.from(new Set(fallbackAdmin));
+}
+
+/**
+ * Sends a WhatsApp message to all quote notification recipients configured for the tenant.
+ */
+export async function sendQuoteNotificationToAdmins(
+  tenant: { greenApiInstanceId?: string; greenApiToken?: string; quoteNotificationPhones?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; partsRequestPhone?: string },
+  message: string
+): Promise<{ sentCount: number }> {
+  if (!tenant.greenApiInstanceId || !tenant.greenApiToken) {
+    return { sentCount: 0 };
+  }
+
+  const recipients = getQuoteNotificationPhones(tenant);
+  if (recipients.length === 0) {
+    return { sentCount: 0 };
+  }
+
+  const results = await Promise.allSettled(
+    recipients.map((phone) =>
+      sendWhatsAppMessage(tenant.greenApiInstanceId!, tenant.greenApiToken!, phone, message)
+    )
+  );
+
+  const sentCount = results.filter((r) => r.status === 'fulfilled' && r.value.sent).length;
+  return { sentCount };
+}

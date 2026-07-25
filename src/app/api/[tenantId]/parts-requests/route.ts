@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPartRequest, getCustomerById, getPartRequests, getTenantById, tenantExists } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
-import { sendWhatsAppMessage } from '@/lib/greenApi';
+import { sendWhatsAppMessage, getQuoteNotificationPhones } from '@/lib/greenApi';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB per file, before compression
 
@@ -87,13 +87,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
     try {
       const tenant = await getTenantById(tenantId);
       if (tenant?.greenApiInstanceId && tenant?.greenApiToken) {
-        // Primary recipient is the dedicated parts-request number; fall back to
-        // the admin numbers only when no parts number is configured.
+        const quotePhones = getQuoteNotificationPhones(tenant);
         const partsPhone = (tenant.partsRequestPhone || '').trim();
         const adminPhones = [tenant.adminWhatsappPhone, tenant.adminWhatsappPhone2, tenant.adminWhatsappPhone3]
           .map((p) => (p || '').trim())
           .filter((p) => p.length > 0);
-        const recipients = Array.from(new Set(partsPhone ? [partsPhone] : adminPhones));
+        const recipients = Array.from(new Set([...quotePhones, partsPhone, ...adminPhones].filter(Boolean)));
         if (recipients.length > 0) {
           const businessName = tenant.businessName || tenant.name || 'העסק';
           const customerName = `${customer.firstName} ${customer.lastName}`.trim() || 'לקוח';

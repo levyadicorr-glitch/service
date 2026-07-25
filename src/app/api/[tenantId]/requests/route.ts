@@ -3,6 +3,8 @@ import { createServiceRequest, getCustomerById, getServiceRequests, getTenantByI
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
 import { normalizeServiceFormConfig } from '@/lib/serviceFormConfig';
+import { sendQuoteNotificationToAdmins } from '@/lib/greenApi';
+import { formatRequestNumber } from '@/lib/format';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB per file, before compression
 const MAX_TOOL_IMAGES = 3;
@@ -198,7 +200,24 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       agentName,
     });
 
-    return NextResponse.json({ success: true, request: newRequest });
+    // Automatic WhatsApp notification to Quote / Admin phones configured in settings
+    let autoNotifySent = false;
+    try {
+      if (tenant?.greenApiInstanceId && tenant?.greenApiToken) {
+        const businessName = tenant.businessName || tenant.name || 'העסק';
+        const customerName = `${customer.firstName} ${customer.lastName}`.trim() || 'לקוח';
+        const agentTag = agentName ? `\n👔 סוכן מטפל: ${agentName}` : '';
+        const reqNum = formatRequestNumber(tenantId, newRequest.requestNumber);
+        const message = `📋 קריאת שירות חדשה (${reqNum}) ב-${businessName}!\n\n👤 לקוח: ${customerName}\n📞 טלפון: ${customer.phone || 'ללא טלפון'}\n🏪 שם החנות: ${storeName}\n🛵 שם בעל הכלי: ${effectiveToolOwnerName}${agentTag}\n📝 תיאור התקלה: ${issueDescription || 'ללא תיאור'}`;
+
+        const res = await sendQuoteNotificationToAdmins(tenant, message);
+        autoNotifySent = res.sentCount > 0;
+      }
+    } catch (notifyErr) {
+      console.error('Error sending service request WhatsApp notification:', notifyErr);
+    }
+
+    return NextResponse.json({ success: true, request: newRequest, autoNotifySent });
   } catch (err: unknown) {
     console.error('Error creating request:', err);
     return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
