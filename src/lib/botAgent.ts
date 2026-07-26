@@ -88,7 +88,7 @@ const RESPONSE_SCHEMA = {
   propertyOrdering: ['intent', 'confidence', 'needsHuman', 'targetRequestNumbers', 'escalationReason', 'reply'],
 };
 
-function buildSystemInstruction(tenant: Tenant, config: AiBotConfig, contextBlock: string): string {
+function buildSystemInstruction(tenant: Tenant, config: AiBotConfig, contextBlock: string, ctx?: BotContext): string {
   const businessName = tenant.businessName || tenant.name || 'העסק';
 
   const sections: string[] = [];
@@ -142,6 +142,11 @@ function buildSystemInstruction(tenant: Tenant, config: AiBotConfig, contextBloc
   }
 
   sections.push(`נתוני הלקוח הפונה — זהו כל המידע שיש לך:\n<<<נתוני_לקוח>>>\n${contextBlock}\n<<<סוף_נתוני_לקוח>>>`);
+
+  const customerFirstName = ctx?.customer?.firstName;
+  if (customerFirstName) {
+    sections.push(`זיהוי לקוח: הלקוח מזוהה במערכת בשם "${customerFirstName}". בעת פתיחת שיחה או ברכה (כגון 'שלום' / 'היי'), ברך אותו בחמימות: "היי ${customerFirstName}, איך אפשר לעזור לך היום?" והמשך לעזור לו בהתאם לפנייתו.`);
+  }
 
   if (config.greeting.trim()) {
     sections.push(`משפט פתיחה מועדף כשמדובר בברכה: ${config.greeting.trim()}`);
@@ -246,7 +251,7 @@ export async function runBot(args: {
 
   const result = await generateJson<unknown>({
     model: config.model,
-    systemInstruction: buildSystemInstruction(tenant, config, contextBlock),
+    systemInstruction: buildSystemInstruction(tenant, config, contextBlock, ctx),
     turns,
     responseSchema: RESPONSE_SCHEMA,
     timeoutMs: Math.min(6000, remaining),
