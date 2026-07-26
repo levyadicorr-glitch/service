@@ -135,8 +135,7 @@ export async function generateJson<T>(opts: {
       responseMimeType: 'application/json',
       responseSchema: opts.responseSchema,
       temperature: opts.temperature ?? 0.2,
-      maxOutputTokens: opts.maxOutputTokens ?? 512,
-      thinkingConfig: { thinkingBudget: 0 },
+      maxOutputTokens: opts.maxOutputTokens ?? 1024,
     },
     safetySettings: SAFETY_SETTINGS,
   };
