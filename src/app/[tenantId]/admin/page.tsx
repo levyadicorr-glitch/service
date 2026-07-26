@@ -27,7 +27,7 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const aiBotConfig = normalizeAiBotConfig(tenantObj?.aiBotConfig);
   // Only a derived boolean crosses to the client — the key itself is read
   // exclusively inside gemini.ts and must never become a prop.
-  const aiKeyConfigured = Boolean(process.env.OPENROUTER_API_KEY);
+  const aiKeyConfigured = Boolean(process.env.GEMINI_API_KEY);
   const initialDeviceModels = tenantObj?.deviceModels || ['קורקינט', 'אופניים'];
 
   // No data leaves the server before a valid admin session exists for this tenant.

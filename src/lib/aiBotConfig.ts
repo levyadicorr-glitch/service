@@ -41,11 +41,8 @@ export const AI_BOT_LIMITS = {
   escalationPhones: 500,
 } as const;
 
-/** Routed through OpenRouter free tier. The model string here is used
- *  for display/logging only — gemini.ts has its own fallback chain of
- *  free models and picks the first that returns usable JSON. Keep this in
- *  sync with the head of that chain so the admin screen is not misleading. */
-export const AI_BOT_MODEL = 'poolside/laguna-m.1:free';
+/** Default model for Google Gemini API: gemini-3.1-flash-lite. Fast, accurate, 1,500 RPD free. */
+export const AI_BOT_MODEL = 'gemini-3.1-flash-lite';
 
 export const DEFAULT_AI_BOT_CONFIG: AiBotConfig = {
   enabled: false,

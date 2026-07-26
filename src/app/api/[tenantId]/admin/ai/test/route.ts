@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
 
     if (!isGeminiConfigured()) {
       return NextResponse.json(
-        { error: 'מפתח OPENROUTER_API_KEY אינו מוגדר בשרת. ללא מפתח הבוט אינו פעיל, ואישורי הצעות ממשיכים לעבוד לפי מילות מפתח בלבד.' },
+        { error: 'מפתח GEMINI_API_KEY אינו מוגדר בשרת. ללא מפתח הבוט אינו פעיל, ואישורי הצעות ממשיכים לעבוד לפי מילות מפתח בלבד.' },
         { status: 400 }
       );
     }
