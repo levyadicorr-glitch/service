@@ -5,7 +5,7 @@ import { AI_BOT_MODEL } from './aiBotConfig';
  * to Google Gemini REST API.
  *
  * Contract: this module NEVER throws. Every failure — missing key, timeout,
- * quota, safety block, malformed JSON — comes back as { ok: false, kind }.
+ * quota, safety block, malformed JSON — comes back as { ok: false, kind, error }.
  * That mirrors sendWhatsAppMessage() in greenApi.ts, and it is what keeps a
  * model outage from turning a WhatsApp webhook into a 500.
  */
@@ -13,9 +13,6 @@ import { AI_BOT_MODEL } from './aiBotConfig';
 const BAZAARLINK_URL = 'https://bazaarlink.ai/api/v1/chat/completions';
 const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-/**
- * BazaarLink fallback models in order of preference.
- */
 const BAZAARLINK_MODELS = [
   'openai/gpt-4o-mini',
   'google/gemini-2.0-flash-001',
@@ -125,16 +122,23 @@ export async function generateJson<T>(opts: {
   const geminiKey = process.env.GEMINI_API_KEY;
 
   if (!bazaarKey && !geminiKey) {
-    return { ok: false, kind: 'no_key', error: 'BAZAARLINK_API_KEY / GEMINI_API_KEY is not configured', latencyMs: 0 };
+    return {
+      ok: false,
+      kind: 'no_key',
+      error: 'משתני הסביבה BAZAARLINK_API_KEY / GEMINI_API_KEY אינם מוגדרים בשרת הפריסה.',
+      latencyMs: 0,
+    };
   }
 
   const timeoutMs = opts.timeoutMs ?? 6000;
   const deadline = startedAt + timeoutMs;
+  let lastError = 'No provider responded';
+  let lastStatus: number | undefined;
 
   // --- Path 1: Try BazaarLink AI ---
   if (bazaarKey) {
     const remaining = deadline - Date.now();
-    if (remaining > 800) {
+    if (remaining > 500) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), remaining);
 
@@ -185,79 +189,102 @@ export async function generateJson<T>(opts: {
             const usedModel = body.model || 'openai/gpt-4o-mini';
             console.log(`[BAZAARLINK SUCCESS] Model: ${usedModel} in ${elapsed()}ms`);
             return { ok: true, data: parsed.data, raw, usage, model: usedModel, latencyMs: elapsed() };
+          } else {
+            lastError = `BazaarLink unparseable response: ${raw.slice(0, 200)}`;
           }
+        } else {
+          const text = await res.text().catch(() => '');
+          lastStatus = res.status;
+          lastError = `BazaarLink HTTP ${res.status}: ${text.slice(0, 250)}`;
+          console.warn(`[BAZAARLINK FAILED] HTTP ${res.status}:`, text);
         }
       } catch (err) {
         clearTimeout(timer);
-        console.warn('[BAZAARLINK] Call failed, attempting Gemini fallback:', err instanceof Error ? err.message : err);
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        lastError = isAbort ? 'BazaarLink request timed out' : `BazaarLink network error: ${err instanceof Error ? err.message : String(err)}`;
+        console.warn('[BAZAARLINK EXCEPTION]', lastError);
       }
     }
   }
 
-  // --- Path 2: Fallback to Google Gemini REST API ---
+  // --- Path 2: Try Google Gemini REST API ---
   if (geminiKey) {
     const remaining = deadline - Date.now();
-    if (remaining < 500) {
-      return { ok: false, kind: 'timeout', error: 'Budget exhausted before request', latencyMs: elapsed() };
-    }
+    if (remaining > 500) {
+      const primaryModel = opts.model || AI_BOT_MODEL;
+      const modelChain = Array.from(new Set([primaryModel, 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest']));
 
-    const primaryModel = opts.model || AI_BOT_MODEL;
-    const modelChain = Array.from(new Set([primaryModel, 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest']));
+      const payload = {
+        systemInstruction: { parts: [{ text: opts.systemInstruction }] },
+        contents: opts.turns.map(turn => ({
+          role: turn.role,
+          parts: [{ text: turn.text }],
+        })),
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: opts.responseSchema,
+          temperature: opts.temperature ?? 0.2,
+          maxOutputTokens: opts.maxOutputTokens ?? 1024,
+        },
+      };
 
-    const payload = {
-      systemInstruction: { parts: [{ text: opts.systemInstruction }] },
-      contents: opts.turns.map(turn => ({
-        role: turn.role,
-        parts: [{ text: turn.text }],
-      })),
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: opts.responseSchema,
-        temperature: opts.temperature ?? 0.2,
-        maxOutputTokens: opts.maxOutputTokens ?? 1024,
-      },
-    };
+      for (const model of modelChain) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), Math.max(500, deadline - Date.now()));
 
-    for (const model of modelChain) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), Math.max(500, deadline - Date.now()));
+        try {
+          const res = await fetch(`${GEMINI_ENDPOINT_BASE}/${model}:generateContent`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': geminiKey.trim(),
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
 
-      try {
-        const res = await fetch(`${GEMINI_ENDPOINT_BASE}/${model}:generateContent`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': geminiKey.trim(),
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            lastStatus = res.status;
+            lastError = `Gemini (${model}) HTTP ${res.status}: ${text.slice(0, 250)}`;
+            console.warn(`[GEMINI FAILED ${model}] HTTP ${res.status}:`, text);
+            continue;
+          }
 
-        if (!res.ok) continue;
+          const body = await res.json();
+          const candidate = body.candidates?.[0];
+          const raw = candidate?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
+          const parsed = parseJson<T>(raw);
+          if (!parsed.ok) {
+            lastError = `Gemini (${model}) unparseable JSON: ${raw.slice(0, 200)}`;
+            continue;
+          }
 
-        const body = await res.json();
-        const candidate = body.candidates?.[0];
-        const raw = candidate?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
-        const parsed = parseJson<T>(raw);
-        if (!parsed.ok) continue;
+          const usage: GeminiUsage = body.usageMetadata
+            ? {
+                promptTokens: body.usageMetadata.promptTokenCount ?? 0,
+                outputTokens: body.usageMetadata.candidatesTokenCount ?? 0,
+                totalTokens: body.usageMetadata.totalTokenCount ?? 0,
+              }
+            : EMPTY_USAGE;
 
-        const usage: GeminiUsage = body.usageMetadata
-          ? {
-              promptTokens: body.usageMetadata.promptTokenCount ?? 0,
-              outputTokens: body.usageMetadata.candidatesTokenCount ?? 0,
-              totalTokens: body.usageMetadata.totalTokenCount ?? 0,
-            }
-          : EMPTY_USAGE;
-
-        console.log(`[GEMINI SUCCESS] Model: ${model} in ${elapsed()}ms`);
-        return { ok: true, data: parsed.data, raw, usage, model, latencyMs: elapsed() };
-      } catch {
-        clearTimeout(timer);
-        continue;
+          console.log(`[GEMINI SUCCESS] Model: ${model} in ${elapsed()}ms`);
+          return { ok: true, data: parsed.data, raw, usage, model, latencyMs: elapsed() };
+        } catch (err) {
+          clearTimeout(timer);
+          lastError = `Gemini (${model}) network error: ${err instanceof Error ? err.message : String(err)}`;
+          continue;
+        }
       }
     }
   }
 
-  return { ok: false, kind: 'network', error: `All AI providers failed within ${elapsed()}ms`, latencyMs: elapsed() };
+  return {
+    ok: false,
+    kind: lastStatus === 429 ? 'rate_limited' : 'network',
+    error: lastError,
+    latencyMs: elapsed(),
+    status: lastStatus,
+  };
 }
