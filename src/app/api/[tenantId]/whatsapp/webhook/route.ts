@@ -341,13 +341,74 @@ export async function POST(
       return NextResponse.json({ success: true, ignored: true, reason: 'duplicate' });
     }
 
-    // ---------------- AI bot path ----------------
-    //
-    // Everything below is best-effort. Any reason not to answer — bot off, no
-    // API key, thread handed to a human, rate limited, model failure — falls
-    // through to the keyword path below with its behaviour completely intact.
-
     const tenant = await getTenantById(tenantId);
+
+    // ---------------- 1. Deterministic Quote Approval Path (No AI) ----------------
+    // Checks for keyword approval ("מאשר", "כן", etc.) and active pending quotes.
+    // Executes 100% deterministically with zero AI latency or token cost.
+
+    const approvalRegex = /מאשר|מאשרת|כן|סגור|תזמין|תשלח|אישור|אשר|אשמח|yes|ok/i;
+    if (approvalRegex.test(textMessage)) {
+      const customer = await getCustomerByPhone(tenantId, phone);
+      if (customer) {
+        const client = await getClientPromise();
+        const db = client.db(tenantId);
+        const collection = db.collection('partRequests');
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        const pendingRequests = await collection.find({
+          customerId: customer.id,
+          quoteStatus: 'PENDING_APPROVAL',
+          quoteSentAt: { $gte: sevenDaysAgo.toISOString() }
+        }).toArray();
+
+        if (pendingRequests.length > 0 && tenant?.greenApiInstanceId && tenant?.greenApiToken) {
+          console.log('[WEBHOOK REGEX APPROVAL]', pendingRequests.length, 'quotes for customer', customer.id);
+          const notificationPhones = getQuoteNotificationPhones(tenant);
+
+          for (const pr of pendingRequests) {
+            await collection.updateOne(
+              { id: pr.id },
+              {
+                $set: {
+                  quoteStatus: 'APPROVED',
+                  updatedAt: new Date().toISOString()
+                }
+              }
+            );
+
+            const custMessage = `תודה ${customer.firstName}! אישורך התקבל בהצלחה ✅\nההזמנה לחלק ("${pr.description}") נקלטה ותועבר להמשך טיפול.`;
+            const custResult = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, phone, custMessage);
+            await recordOutboundMessage(tenantId, {
+              phone,
+              chatId: body.senderData?.chatId,
+              customerId: customer.id,
+              customerName: `${customer.firstName} ${customer.lastName}`,
+              source: 'FALLBACK_REGEX',
+              text: custMessage,
+              actions: [`approved:${pr.id}`],
+              delivered: custResult.sent,
+              error: custResult.error,
+            });
+
+            const adminMessage = `🎉 אישור הצעת מחיר התקבל ב-${tenant.businessName || tenant.name}!\n\nלקוח: ${customer.firstName} ${customer.lastName} (${phone})\nחלק: ${pr.description}\nמחיר מאושר: ${pr.quotePrice} ₪`;
+
+            for (const adminPhone of notificationPhones) {
+              if (adminPhone) {
+                await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, adminPhone, adminMessage);
+              }
+            }
+          }
+
+          return NextResponse.json({ success: true, approvedCount: pendingRequests.length });
+        }
+      }
+    }
+
+    // ---------------- 2. AI Bot Path (General Customer Service & Support) ----------------
+    // For non-approval messages (general questions, stock, info), run the AI bot.
+
     const config = normalizeAiBotConfig(tenant?.aiBotConfig);
 
     if (tenant && config.enabled && isGeminiConfigured() && !(await isHandedOff(tenantId, phone))) {
@@ -363,84 +424,7 @@ export async function POST(
       if (aiOutcome) return NextResponse.json(aiOutcome);
     }
 
-    // ---------------- Keyword approval path (unchanged semantics) ----------------
-
-    const approvalRegex = /מאשר|מאשרת|כן|סגור|תזמין|תשלח|אישור|אשר|אשמח|yes|ok/i;
-    if (!approvalRegex.test(textMessage)) {
-      return NextResponse.json({ success: true, ignored: true, reason: 'Not an approval message' });
-    }
-
-    const client = await getClientPromise();
-    const db = client.db(tenantId);
-
-    const customer = await getCustomerByPhone(tenantId, phone);
-    if (!customer) {
-      console.log('[WEBHOOK IGNORED] Customer not found for', phoneTail(phone));
-      return NextResponse.json({ success: true, ignored: true, reason: 'Customer not found' });
-    }
-
-    const collection = db.collection('partRequests');
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-    const pendingRequests = await collection.find({
-      customerId: customer.id,
-      quoteStatus: 'PENDING_APPROVAL',
-      quoteSentAt: { $gte: sevenDaysAgo.toISOString() }
-    }).toArray();
-
-    console.log('[WEBHOOK PENDING QUOTES]', pendingRequests.length, 'for customer', customer.id);
-
-    if (pendingRequests.length === 0) {
-      return NextResponse.json({ success: true, ignored: true, reason: 'No pending active quotes found for customer' });
-    }
-
-    if (!tenant?.greenApiInstanceId || !tenant?.greenApiToken) {
-      console.log('[WEBHOOK ERROR] Green API credentials missing for tenant:', tenantId);
-      return NextResponse.json({ success: false, error: 'No Green API credentials configured' });
-    }
-
-    const notificationPhones = getQuoteNotificationPhones(tenant);
-
-    for (const pr of pendingRequests) {
-      await collection.updateOne(
-        { id: pr.id },
-        {
-          $set: {
-            quoteStatus: 'APPROVED',
-            updatedAt: new Date().toISOString()
-          }
-        }
-      );
-      console.log('[WEBHOOK STATUS UPDATED] Part request', pr.id, '-> APPROVED');
-
-      const custMessage = `תודה ${customer.firstName}! אישורך התקבל בהצלחה ✅\nההזמנה לחלק ("${pr.description}") נקלטה ותועבר להמשך טיפול.`;
-      const custResult = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, phone, custMessage);
-      await recordOutboundMessage(tenantId, {
-        phone,
-        chatId: body.senderData?.chatId,
-        customerId: customer.id,
-        customerName: `${customer.firstName} ${customer.lastName}`,
-        source: 'FALLBACK_REGEX',
-        text: custMessage,
-        actions: [`approved:${pr.id}`],
-        delivered: custResult.sent,
-        error: custResult.error,
-      });
-
-      const adminMessage = `🎉 אישור הצעת מחיר התקבל ב-${tenant.businessName || tenant.name}!\n\nלקוח: ${customer.firstName} ${customer.lastName} (${phone})\nחלק: ${pr.description}\nמחיר מאושר: ${pr.quotePrice} ₪`;
-
-      for (const adminPhone of notificationPhones) {
-        if (adminPhone) {
-          const adminResult = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, adminPhone, adminMessage);
-          if (!adminResult.sent) {
-            console.error(`[WEBHOOK] Failed to notify admin ${phoneTail(adminPhone)}:`, adminResult.error);
-          }
-        }
-      }
-    }
-
-    return NextResponse.json({ success: true, approvedCount: pendingRequests.length });
+    return NextResponse.json({ success: true, ignored: true, reason: 'No action taken' });
 
   } catch (err: unknown) {
     console.error('[WEBHOOK UNHANDLED ERROR]', err);
