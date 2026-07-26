@@ -65,12 +65,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
       return NextResponse.json({ error: 'לקוח לא נמצא במערכת' }, { status: 404 });
     }
 
-    const photoBuffer = Buffer.from(await photo.arrayBuffer());
-    const webpBuffer = await sharp(photoBuffer)
-      .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer();
-    const photoImage = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+    let photoImage = '';
+    try {
+      const sharp = (await import('sharp')).default;
+      const photoBuffer = Buffer.from(await photo.arrayBuffer());
+      const webpBuffer = await sharp(photoBuffer)
+        .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 80 })
+        .toBuffer();
+      photoImage = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+    } catch (sharpErr) {
+      console.warn('[PARTS] Sharp native library unavailable, fallback to raw base64:', sharpErr);
+      const photoBuffer = Buffer.from(await photo.arrayBuffer());
+      const mime = photo.type || 'image/jpeg';
+      photoImage = `data:${mime};base64,${photoBuffer.toString('base64')}`;
+    }
 
     const newRequest = await createPartRequest(tenantId, {
       customerId,
