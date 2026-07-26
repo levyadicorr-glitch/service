@@ -281,23 +281,15 @@ export async function POST(
       return NextResponse.json({ success: true, ignored: true, reason: `Ignored typeWebhook: ${body.typeWebhook}` });
     }
 
-    const sender = body.senderData?.sender || body.senderData?.chatId;
-    if (!sender || !sender.endsWith('@c.us')) {
+    // Always extract the chat ID (the customer's WhatsApp ID) first.
+    // For incoming messages, chatId === sender. For outgoing messages, chatId is
+    // the target customer chat, while sender is the connected device itself.
+    const rawSender = body.senderData?.chatId || body.senderData?.sender;
+    if (!rawSender || !rawSender.endsWith('@c.us')) {
       return NextResponse.json({ success: true, ignored: true, reason: 'Not a direct user message' });
     }
 
-    // Self-loop guard: for INCOMING messages, reject if sender is the connected
-    // device itself (prevents spoofed messages). For OUTGOING messages this
-    // check is skipped because sender is ALWAYS the connected phone — the
-    // dedup layer (recordInboundMessage unique index on idMessage) prevents
-    // the bot from re-processing its own replies.
-    const isOutgoing = typeWebhook.startsWith('outgoing');
-    const ownWid = body.instanceData?.wid;
-    if (!isOutgoing && ownWid && sender === ownWid) {
-      return NextResponse.json({ success: true, ignored: true, reason: 'Self-originated message' });
-    }
-
-    const phone = normalizePhone(sender.replace('@c.us', ''));
+    const phone = normalizePhone(rawSender.replace('@c.us', ''));
 
     const rawText = body.messageData?.textMessageData?.textMessage ||
                     body.messageData?.extendedTextMessageData?.text || '';
@@ -308,10 +300,8 @@ export async function POST(
     console.log('[WEBHOOK IN]', JSON.stringify({
       tenantId,
       typeWebhook: body.typeWebhook,
-      isOutgoing,
       idMessage,
-      sender: sender,
-      ownWid: ownWid,
+      rawSender,
       phoneTail: phoneTail(phone),
       textLen: rawText.length,
       text: rawText.slice(0, 100),
