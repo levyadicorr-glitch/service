@@ -22,11 +22,11 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
  * All are fully free on OpenRouter (`:free` suffix).
  */
 const FREE_MODELS = [
-  'inclusionai/ling-3.0-flash:free',
-  'google/gemma-4-26b-a4b-it:free',
-  'nvidia/nemotron-3-ultra-550b-a55b:free',
   'poolside/laguna-m.1:free',
-  'google/gemma-4-31b-it:free',
+  'tencent/hy3:free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'poolside/laguna-xs-2.1:free',
+  'cohere/north-mini-code:free',
 ];
 
 export type GeminiErrorKind =
@@ -188,7 +188,7 @@ export async function generateJson<T>(opts: {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey.trim()}`,
-          'HTTP-Referer': 'https://sherut.netlify.app',
+          'HTTP-Referer': 'https://sherut-mocha.vercel.app',
           'X-Title': 'Sherut AI Bot',
         },
         body: JSON.stringify({
