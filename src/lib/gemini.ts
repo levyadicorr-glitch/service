@@ -1,26 +1,26 @@
 import { AI_BOT_MODEL } from './aiBotConfig';
 
 /**
- * Minimal REST client for the Gemini generateContent API (Google AI Studio).
+ * AI inference client powered by BazaarLink AI (bazaarlink.ai) with fallback
+ * to Google Gemini REST API.
  *
  * Contract: this module NEVER throws. Every failure — missing key, timeout,
  * quota, safety block, malformed JSON — comes back as { ok: false, kind }.
  * That mirrors sendWhatsAppMessage() in greenApi.ts, and it is what keeps a
  * model outage from turning a WhatsApp webhook into a 500.
- *
- * Direct REST to Google: zero extra dependencies.
  */
 
-const ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const BAZAARLINK_URL = 'https://bazaarlink.ai/api/v1/chat/completions';
+const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
- * Models ordered by preference. If the primary model encounters a transient error,
- * the fallback chain executes seamlessly.
+ * BazaarLink fallback models in order of preference.
  */
-const GEMINI_MODELS = [
-  'gemini-3.1-flash-lite',
-  'gemini-flash-lite-latest',
-  'gemini-3.5-flash-lite',
+const BAZAARLINK_MODELS = [
+  'openai/gpt-4o-mini',
+  'google/gemini-2.0-flash-001',
+  'meta-llama/llama-3.3-70b-instruct',
+  'deepseek/deepseek-chat',
 ];
 
 export type GeminiErrorKind =
@@ -49,21 +49,10 @@ export type GeminiJsonResult<T> =
   | { ok: false; kind: GeminiErrorKind; error: string; latencyMs: number; status?: number };
 
 export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return Boolean(process.env.BAZAARLINK_API_KEY || process.env.GEMINI_API_KEY);
 }
 
 const EMPTY_USAGE: GeminiUsage = { promptTokens: 0, outputTokens: 0, totalTokens: 0 };
-
-const SAFETY_SETTINGS = [
-  'HARM_CATEGORY_HARASSMENT',
-  'HARM_CATEGORY_HATE_SPEECH',
-  'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-  'HARM_CATEGORY_DANGEROUS_CONTENT',
-].map(category => ({ category, threshold: 'BLOCK_ONLY_HIGH' }));
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 function stripCodeFence(text: string): string {
   const trimmed = text.trim();
@@ -86,18 +75,37 @@ function parseJson<T>(raw: string): { ok: true; data: T } | { ok: false } {
   }
 }
 
-interface GeminiResponseBody {
-  candidates?: {
-    content?: { parts?: { text?: string }[] };
-    finishReason?: string;
-  }[];
-  promptFeedback?: { blockReason?: string };
-  usageMetadata?: {
-    promptTokenCount?: number;
-    candidatesTokenCount?: number;
-    totalTokenCount?: number;
-  };
-  error?: { message?: string; status?: string };
+function schemaToJsonInstruction(schema: unknown): string {
+  if (!schema || typeof schema !== 'object') return '';
+  const s = schema as Record<string, unknown>;
+  const props = s.properties as Record<string, unknown> | undefined;
+  if (!props) return '';
+
+  const fields: string[] = [];
+  const ordering = (s.propertyOrdering as string[]) || Object.keys(props);
+  for (const key of ordering) {
+    const prop = props[key] as Record<string, unknown> | undefined;
+    if (!prop) continue;
+    let desc = `"${key}": `;
+    const type = (prop.type as string || '').toUpperCase();
+    if (prop.enum) {
+      desc += `one of ${JSON.stringify(prop.enum)}`;
+    } else if (type === 'ARRAY') {
+      const itemType = (prop.items as Record<string, unknown>)?.type || 'any';
+      desc += `array of ${String(itemType).toLowerCase()}`;
+    } else {
+      desc += type.toLowerCase();
+    }
+    fields.push(desc);
+  }
+
+  return [
+    '',
+    'CRITICAL: You MUST respond with valid JSON only. No markdown fences, no explanation, no extra text.',
+    'The JSON object must have exactly these fields:',
+    ...fields.map(f => `  ${f}`),
+    `Required fields: ${JSON.stringify(s.required || ordering)}`,
+  ].join('\n');
 }
 
 export async function generateJson<T>(opts: {
@@ -113,119 +121,143 @@ export async function generateJson<T>(opts: {
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return { ok: false, kind: 'no_key', error: 'GEMINI_API_KEY is not configured', latencyMs: 0 };
+  const bazaarKey = process.env.BAZAARLINK_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+
+  if (!bazaarKey && !geminiKey) {
+    return { ok: false, kind: 'no_key', error: 'BAZAARLINK_API_KEY / GEMINI_API_KEY is not configured', latencyMs: 0 };
   }
 
   const timeoutMs = opts.timeoutMs ?? 6000;
   const deadline = startedAt + timeoutMs;
-  const primaryModel = opts.model || AI_BOT_MODEL;
-  
-  // Use requested model first, followed by fallbacks
-  const modelChain = Array.from(new Set([primaryModel, ...GEMINI_MODELS]));
 
-  const payload = {
-    systemInstruction: { parts: [{ text: opts.systemInstruction }] },
-    contents: opts.turns.map(turn => ({
-      role: turn.role,
-      parts: [{ text: turn.text }],
-    })),
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: opts.responseSchema,
-      temperature: opts.temperature ?? 0.2,
-      maxOutputTokens: opts.maxOutputTokens ?? 1024,
-    },
-    safetySettings: SAFETY_SETTINGS,
-  };
+  // --- Path 1: Try BazaarLink AI ---
+  if (bazaarKey) {
+    const remaining = deadline - Date.now();
+    if (remaining > 800) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), remaining);
 
-  let lastError = 'unknown error';
-  let lastKind: GeminiErrorKind = 'network';
-  let lastStatus: number | undefined;
+      const jsonInstruction = schemaToJsonInstruction(opts.responseSchema);
+      const fullSystem = opts.systemInstruction + jsonInstruction;
 
-  for (const model of modelChain) {
+      const messages = [
+        { role: 'system', content: fullSystem },
+        ...opts.turns.map(t => ({
+          role: t.role === 'model' ? 'assistant' : 'user',
+          content: t.text,
+        })),
+      ];
+
+      try {
+        const res = await fetch(BAZAARLINK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${bazaarKey.trim()}`,
+          },
+          body: JSON.stringify({
+            model: 'openai/gpt-4o-mini',
+            models: BAZAARLINK_MODELS,
+            route: 'fallback',
+            messages,
+            response_format: { type: 'json_object' },
+            temperature: opts.temperature ?? 0.2,
+            max_tokens: opts.maxOutputTokens ?? 1024,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+
+        if (res.ok) {
+          const body = await res.json();
+          const raw = body?.choices?.[0]?.message?.content || '';
+          const parsed = parseJson<T>(raw);
+          if (parsed.ok) {
+            const usage: GeminiUsage = body.usage
+              ? {
+                  promptTokens: body.usage.prompt_tokens ?? 0,
+                  outputTokens: body.usage.completion_tokens ?? 0,
+                  totalTokens: body.usage.total_tokens ?? 0,
+                }
+              : EMPTY_USAGE;
+
+            const usedModel = body.model || 'openai/gpt-4o-mini';
+            console.log(`[BAZAARLINK SUCCESS] Model: ${usedModel} in ${elapsed()}ms`);
+            return { ok: true, data: parsed.data, raw, usage, model: usedModel, latencyMs: elapsed() };
+          }
+        }
+      } catch (err) {
+        clearTimeout(timer);
+        console.warn('[BAZAARLINK] Call failed, attempting Gemini fallback:', err instanceof Error ? err.message : err);
+      }
+    }
+  }
+
+  // --- Path 2: Fallback to Google Gemini REST API ---
+  if (geminiKey) {
     const remaining = deadline - Date.now();
     if (remaining < 500) {
       return { ok: false, kind: 'timeout', error: 'Budget exhausted before request', latencyMs: elapsed() };
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), remaining);
+    const primaryModel = opts.model || AI_BOT_MODEL;
+    const modelChain = Array.from(new Set([primaryModel, 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest']));
 
-    try {
-      const res = await fetch(`${ENDPOINT_BASE}/${model}:generateContent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey.trim(),
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+    const payload = {
+      systemInstruction: { parts: [{ text: opts.systemInstruction }] },
+      contents: opts.turns.map(turn => ({
+        role: turn.role,
+        parts: [{ text: turn.text }],
+      })),
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: opts.responseSchema,
+        temperature: opts.temperature ?? 0.2,
+        maxOutputTokens: opts.maxOutputTokens ?? 1024,
+      },
+    };
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        lastStatus = res.status;
-        lastError = `Gemini HTTP ${res.status}: ${text.slice(0, 300)}`;
-        lastKind = res.status === 429 ? 'rate_limited' : 'http';
+    for (const model of modelChain) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), Math.max(500, deadline - Date.now()));
 
-        // 429 or 404 -> try next model in fallback chain
-        if (res.status === 429 || res.status === 404 || res.status >= 500) {
-          console.warn(`[GEMINI] Model ${model} returned HTTP ${res.status}, attempting fallback...`);
-          continue;
-        }
-        return { ok: false, kind: lastKind, error: lastError, latencyMs: elapsed(), status: res.status };
+      try {
+        const res = await fetch(`${GEMINI_ENDPOINT_BASE}/${model}:generateContent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': geminiKey.trim(),
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+
+        if (!res.ok) continue;
+
+        const body = await res.json();
+        const candidate = body.candidates?.[0];
+        const raw = candidate?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
+        const parsed = parseJson<T>(raw);
+        if (!parsed.ok) continue;
+
+        const usage: GeminiUsage = body.usageMetadata
+          ? {
+              promptTokens: body.usageMetadata.promptTokenCount ?? 0,
+              outputTokens: body.usageMetadata.candidatesTokenCount ?? 0,
+              totalTokens: body.usageMetadata.totalTokenCount ?? 0,
+            }
+          : EMPTY_USAGE;
+
+        console.log(`[GEMINI SUCCESS] Model: ${model} in ${elapsed()}ms`);
+        return { ok: true, data: parsed.data, raw, usage, model, latencyMs: elapsed() };
+      } catch {
+        clearTimeout(timer);
+        continue;
       }
-
-      const body = (await res.json()) as GeminiResponseBody;
-
-      const blockReason = body.promptFeedback?.blockReason;
-      if (blockReason) {
-        return { ok: false, kind: 'blocked', error: `Prompt blocked: ${blockReason}`, latencyMs: elapsed() };
-      }
-
-      const candidate = body.candidates?.[0];
-      const finishReason = candidate?.finishReason;
-      if (finishReason === 'SAFETY' || finishReason === 'PROHIBITED_CONTENT') {
-        return { ok: false, kind: 'blocked', error: `Response blocked: ${finishReason}`, latencyMs: elapsed() };
-      }
-
-      const raw = candidate?.content?.parts?.map(p => p.text || '').join('') || '';
-      if (!raw.trim()) {
-        const kind: GeminiErrorKind = finishReason === 'MAX_TOKENS' ? 'bad_json' : 'empty';
-        return { ok: false, kind, error: `Empty response (finishReason: ${finishReason || 'none'})`, latencyMs: elapsed() };
-      }
-
-      const parsed = parseJson<T>(raw);
-      if (!parsed.ok) {
-        return { ok: false, kind: 'bad_json', error: `Unparseable JSON: ${raw.slice(0, 300)}`, latencyMs: elapsed() };
-      }
-
-      const usage: GeminiUsage = body.usageMetadata
-        ? {
-            promptTokens: body.usageMetadata.promptTokenCount ?? 0,
-            outputTokens: body.usageMetadata.candidatesTokenCount ?? 0,
-            totalTokens: body.usageMetadata.totalTokenCount ?? 0,
-          }
-        : EMPTY_USAGE;
-
-      console.log(`[GEMINI SUCCESS] Model: ${model} in ${elapsed()}ms`);
-      return { ok: true, data: parsed.data, raw, usage, model, latencyMs: elapsed() };
-    } catch (err) {
-      clearTimeout(timer);
-
-      const aborted = err instanceof Error && err.name === 'AbortError';
-      if (aborted) {
-        return { ok: false, kind: 'timeout', error: `Timed out after ${elapsed()}ms`, latencyMs: elapsed() };
-      }
-
-      lastKind = 'network';
-      lastError = err instanceof Error ? err.message : 'network error';
-      continue;
     }
   }
 
-  return { ok: false, kind: lastKind, error: lastError, latencyMs: elapsed(), status: lastStatus };
+  return { ok: false, kind: 'network', error: `All AI providers failed within ${elapsed()}ms`, latencyMs: elapsed() };
 }
