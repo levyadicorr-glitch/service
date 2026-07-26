@@ -43,8 +43,9 @@ export const AI_BOT_LIMITS = {
 
 /** Routed through OpenRouter free tier. The model string here is used
  *  for display/logging only — gemini.ts has its own fallback chain of
- *  free models. The first model that responds successfully wins. */
-export const AI_BOT_MODEL = 'inclusionai/ling-3.0-flash:free';
+ *  free models and picks the first that returns usable JSON. Keep this in
+ *  sync with the head of that chain so the admin screen is not misleading. */
+export const AI_BOT_MODEL = 'poolside/laguna-m.1:free';
 
 export const DEFAULT_AI_BOT_CONFIG: AiBotConfig = {
   enabled: false,

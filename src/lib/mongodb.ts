@@ -6,8 +6,8 @@ const options = {
   minPoolSize: 1,
 };
 
-// Cache the client on a global in every environment (not just dev). Serverless
-// platforms (Netlify/Vercel) can invoke this module in the same warm container
+// Cache the client on a global in every environment (not just dev). Netlify
+// Functions can invoke this module in the same warm container
 // across many requests, and without a global the previous code reconnected to
 // MongoDB from scratch on every cold start / concurrent invocation — a major
 // source of added latency and, under concurrency, connection-limit errors.

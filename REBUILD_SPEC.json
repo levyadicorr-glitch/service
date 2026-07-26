@@ -4,7 +4,7 @@
     "specName": "WiseWheel — Service-Call Management System — Rebuild Specification",
     "specVersion": "1.0.0",
     "generatedFrom": "Existing Next.js 16 + MongoDB production app (src/app/[tenantId]/**)",
-    "purpose": "Complete, field-accurate blueprint to rebuild the app from scratch in React + Vite (vanilla JS/TS, NO Next.js) with a LOCAL JSON database that is later swappable for MongoDB Atlas with zero UI changes. Deployable to Vercel for testing. Must stay fast and smooth for 100-200+ concurrent users.",
+    "purpose": "Complete, field-accurate blueprint to rebuild the app from scratch in React + Vite (vanilla JS/TS, NO Next.js) with a LOCAL JSON database that is later swappable for MongoDB Atlas with zero UI changes. Deployable to Netlify for testing. Must stay fast and smooth for 100-200+ concurrent users.",
     "productDescription": "A multi-tenant SaaS for micro-mobility repair shops (scooters / e-bikes). Each business (tenant) gets an isolated environment with an admin dashboard, a customer self-service portal, a public repair-request form, and a mobile driver pickup panel. A super-admin console provisions tenants.",
     "language": "Hebrew (he), fully RTL",
     "brand": "WiseWheel / Wisewheel CRM",
@@ -26,8 +26,8 @@
     "animations": "framer-motion (optional, for modals/list transitions)",
     "state": "React hooks + a thin data-repository layer (React Query / SWR recommended for caching & 100+ user smoothness)",
     "imageProcessing": "Client-side canvas resize+compress to WebP before upload/store (replaces server-side sharp). Target max 1280px longest edge, quality ~0.7.",
-    "buildOutput": "Static SPA + serverless API functions under /api (Vercel functions)",
-    "deployment": "Vercel"
+    "buildOutput": "Static SPA + serverless API functions under /api (Netlify Functions)",
+    "deployment": "Netlify"
   },
 
   "architecture": {
@@ -40,7 +40,7 @@
       "UI components (React) — never talk to storage directly",
       "Data repository interface (see dataRepositoryInterface) — the ONLY seam the storage backend plugs into",
       "Storage adapter: JSONAdapter (phase 1) | MongoAdapter (phase 2)",
-      "Serverless API routes (Vercel functions) mirroring the endpoints list — thin wrappers over the repository"
+      "Serverless API routes (Netlify Functions) mirroring the endpoints list — thin wrappers over the repository"
     ],
     "performanceTargets": {
       "concurrentUsers": "100-200+ smooth",
@@ -307,7 +307,7 @@
 
   "localDatabase": {
     "phase1_json": {
-      "goal": "A drop-in JSON-backed implementation of dataRepositoryInterface that runs behind Vercel serverless functions (or, for pure client testing, in-memory + localStorage).",
+      "goal": "A drop-in JSON-backed implementation of dataRepositoryInterface that runs behind Netlify Functions (or, for pure client testing, in-memory + localStorage).",
       "recommendedShape": {
         "master": { "tenants": ["Tenant[]"] },
         "perTenant": {
@@ -322,7 +322,7 @@
         }
       },
       "storageOptions": [
-        "Vercel: use @vercel/kv or @vercel/blob (persistent) — plain filesystem is read-only/ephemeral on Vercel, so do NOT rely on writing db.json at runtime in production.",
+        "Netlify: use @netlify/blobs (persistent) — the function filesystem is read-only/ephemeral on Netlify, so do NOT rely on writing db.json at runtime in production.",
         "Local dev: a lowdb-style JSON file works fine.",
         "Client-only demo: localStorage/IndexedDB seeded from a bundled seed.json."
       ],
@@ -630,7 +630,7 @@
   },
 
   "apiEndpoints": {
-    "note": "Mirror these as Vercel serverless functions; each is a thin wrapper over dataRepositoryInterface. In a pure client demo they can be replaced by direct repository calls.",
+    "note": "Mirror these as Netlify Functions; each is a thin wrapper over dataRepositoryInterface. In a pure client demo they can be replaced by direct repository calls.",
     "superAdmin": [
       "GET  /api/supadmin/tenants  -> list tenants (with plain passwords, auth required)",
       "POST /api/supadmin/tenants  -> create tenant {tenantId, businessName, adminPassword, whatsappTemplate?}"
@@ -677,11 +677,11 @@
   },
 
   "deployment": {
-    "target": "Vercel",
-    "spa": "Vite build → static output; add vercel.json rewrites so all non-/api routes serve index.html (client routing).",
-    "functions": "/api/** as Vercel serverless functions.",
+    "target": "Netlify",
+    "spa": "Vite build → static output; add netlify.toml redirects so all non-/api routes serve index.html (client routing).",
+    "functions": "/api/** as Netlify Functions.",
     "envVars": ["SUPER_ADMIN_EMAIL","SUPER_ADMIN_PASSWORD","SESSION_SECRET","MONGODB_URI (phase 2)","KV/BLOB tokens (phase 1 persistence)"],
-    "persistenceWarning": "Vercel filesystem is read-only at runtime — for the JSON phase use @vercel/kv or @vercel/blob (or Mongo) for writes, not a runtime-written db.json.",
+    "persistenceWarning": "The Netlify function filesystem is read-only at runtime — for the JSON phase use @netlify/blobs (or Mongo) for writes, not a runtime-written db.json.",
     "node": ">=20.9.0"
   },
 
@@ -690,7 +690,7 @@
     "Design matches design-system/DESIGN_GUIDE.md exactly (colors, radii, shadows, spacing, recipes).",
     "List views never transfer base64 images; detail views load images on demand.",
     "Storage backend is swappable JSON↔Mongo via dataRepositoryInterface with no component changes.",
-    "Deploys to Vercel and stays smooth for 100-200+ concurrent users.",
+    "Deploys to Netlify and stays smooth for 100-200+ concurrent users.",
     "Multi-tenant isolation enforced; tenantId validated against registry."
   ]
 }

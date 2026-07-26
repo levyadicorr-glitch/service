@@ -1,0 +1,21 @@
+# Netlify is the only deploy target for this project.
+# Project: sherut — https://sherut.netlify.app
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Matches .nvmrc and the >=20.9.0 engines constraint in package.json.
+  NODE_VERSION = "22"
+
+# Turns every app/api/** route and every SSR page into a Netlify Function.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# The Green API webhook must never be cached — it is a POST-only side-effect
+# endpoint, and a cached 200 would silently swallow inbound WhatsApp messages.
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-store, max-age=0"

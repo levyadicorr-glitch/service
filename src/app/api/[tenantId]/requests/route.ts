@@ -154,7 +154,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       return NextResponse.json({ error: 'חובה לצרף תמונת חשבונית או תעודת אחריות' }, { status: 400 });
     }
 
-    // Process up to 3 tool images with sharp to Base64 (Serverless & Vercel friendly)
+    // Process up to 3 tool images with sharp to Base64 (Netlify Functions friendly)
     const toolImageUrls: string[] = [];
     for (const file of toolImageFiles) {
       const toolImageBuffer = Buffer.from(await file.arrayBuffer());

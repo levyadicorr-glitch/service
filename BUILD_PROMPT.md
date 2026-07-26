@@ -31,7 +31,7 @@
 SELF-CHECK: `npm run dev` עולה, מסך ריק עם רקע `#f8fafc`, בלי שגיאות קונסול.
 
 **Phase 1 — Types + Repository seam**
-צור `src/types.ts` (כל הישויות מ-`dataModel`). צור `src/data/repository.ts` — ה-interface מ-`dataRepositoryInterface`. צור `src/data/jsonAdapter.ts` שמממש אותו מעל `seed.json` + localStorage (או @vercel/kv בפרודקשן). צור `src/data/index.ts` שמייצא instance אחד.
+צור `src/types.ts` (כל הישויות מ-`dataModel`). צור `src/data/repository.ts` — ה-interface מ-`dataRepositoryInterface`. צור `src/data/jsonAdapter.ts` שמממש אותו מעל `seed.json` + localStorage (או Netlify Blobs בפרודקשן). צור `src/data/index.ts` שמייצא instance אחד.
 SELF-CHECK: אפשר לקרוא ל-`getTenants()`, `getCustomers(t)` וכו' ולקבל דאטה מה-seed. אף רכיב עדיין לא נכתב.
 
 **Phase 2 — Design primitives**
@@ -39,7 +39,7 @@ SELF-CHECK: אפשר לקרוא ל-`getTenants()`, `getCustomers(t)` וכו' ו�
 SELF-CHECK: דף sandbox שמציג את כולם — צבעים/רדיוסים/צללים תואמים ל-`designSystem`.
 
 **Phase 3 — Routing + tenant guard**
-הגדר את כל ה-routes מ-`screens` (‎/:tenantId/admin, /:tenantId/portal/:id, /:tenantId/request/:id, /:tenantId/form, /:tenantId/driver, /:tenantId/driver/:token, /supadmin). הוסף guard שבודק `tenantExists`. הוסף `vercel.json` rewrite ל-SPA.
+הגדר את כל ה-routes מ-`screens` (‎/:tenantId/admin, /:tenantId/portal/:id, /:tenantId/request/:id, /:tenantId/form, /:tenantId/driver, /:tenantId/driver/:token, /supadmin). הוסף guard שבודק `tenantExists`. הוסף `netlify.toml` redirect ל-SPA.
 SELF-CHECK: כל route נטען (עדיין placeholders), tenant לא-קיים חוסם.
 
 **Phase 4 — Super-Admin console** (`screens.superAdminConsole`)
@@ -72,8 +72,8 @@ SELF-CHECK: כל הזרימות עובדות; מחיקת חלק דורשת סי�
 SELF-CHECK: חתימה + שם + בחירה מסמנים כ"נאסף".
 
 **Phase 10 — Serverless API + polish**
-עטוף את ה-repository ב-Vercel functions לפי `apiEndpoints`. הוסף CSRF + rate-limit על login/mutations. lazy-loading לתמונות. pagination לקריאות.
-SELF-CHECK: `npm run build` נקי; deploy ל-Vercel; רשימות מהירות בלי base64.
+עטוף את ה-repository ב-Netlify Functions לפי `apiEndpoints`. הוסף CSRF + rate-limit על login/mutations. lazy-loading לתמונות. pagination לקריאות.
+SELF-CHECK: `npm run build` נקי; deploy ל-Netlify; רשימות מהירות בלי base64.
 
 **Phase 11 — Mongo swap (הוכחת מושג)**
 צור `MongoAdapter` עם אותן חתימות; החלף ב-`index.ts` דרך env flag. אל תשנה שום רכיב.
@@ -87,7 +87,7 @@ SELF-CHECK: החלפת ה-flag מריצה את אותה אפליקציה מול 
 5. אם משהו נכשל — תקן לפני התקדמות. **אל תדלג.**
 
 ## DEFINITION OF DONE
-כל הפריטים ב-`acceptanceCriteria` שב-spec מסומנים ✓, האפליקציה עולה ב-Vercel, וכל 7 המסכים עובדים מקצה לקצה ב-RTL עברית.
+כל הפריטים ב-`acceptanceCriteria` שב-spec מסומנים ✓, האפליקציה עולה ב-Netlify, וכל 7 המסכים עובדים מקצה לקצה ב-RTL עברית.
 
 ---
 
@@ -135,9 +135,12 @@ body { background:var(--background); color:var(--foreground); font-family:'Rubik
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700;900&display=swap" rel="stylesheet">
 ```
 
-### vercel.json (SPA rewrite)
-```json
-{ "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }] }
+### netlify.toml (SPA redirect)
+```toml
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
 ```
 
 ### ENV
@@ -146,5 +149,5 @@ SUPER_ADMIN_EMAIL=
 SUPER_ADMIN_PASSWORD=
 SESSION_SECRET=
 MONGODB_URI=            # שלב 2 בלבד
-# שלב 1 בפרודקשן: KV_REST_API_URL / KV_REST_API_TOKEN (‎@vercel/kv‎) — לא כותבים לקובץ בזמן ריצה ב-Vercel
+# שלב 1 בפרודקשן: Netlify Blobs (@netlify/blobs) — לא כותבים לקובץ בזמן ריצה ב-Netlify
 ```

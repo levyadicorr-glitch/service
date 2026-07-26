@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# sherut
 
-## Getting Started
+Multi-tenant service-management app (Next.js App Router + MongoDB Atlas), with a
+WhatsApp customer-service bot per tenant.
 
-First, run the development server:
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). Every route is
+tenant-scoped: `/<tenantId>/admin`, `/<tenantId>/portal/<id>`, and so on.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment — Netlify
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This project deploys to **Netlify only**.
 
-## Learn More
+- Project: `sherut` — https://sherut.netlify.app
+- Admin: https://app.netlify.com/projects/sherut
+- Next.js runs through Netlify's Next runtime; every `app/api/**` route becomes a
+  Netlify Function.
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build
+npx netlify deploy --build --prod
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Required environment variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Set these on the Netlify project (Site configuration → Environment variables),
+not just in `.env.local` — API routes read them at runtime.
 
-## Deploy on Vercel
+| Variable | Purpose |
+| --- | --- |
+| `MONGODB_URI` | MongoDB Atlas connection string |
+| `SESSION_SECRET` | Signs admin/customer session cookies |
+| `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` | `/supadmin` login |
+| `OPENROUTER_API_KEY` | AI bot inference (OpenRouter free tier) |
+| `WHATSAPP_WEBHOOK_SECRET` | Optional. When set, Green API must send it as the `x-webhook-token` header |
+| `WEBHOOK_DEBUG` | Optional. `1` logs the raw Green API payload |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Netlify Functions time out at 10s on the default plan. The webhook handler holds
+itself to an 8s budget (`BUDGET_MS`) for that reason — Green API redelivers a
+webhook it considers slow.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## WhatsApp bot
+
+Each tenant stores its own Green API instance ID and token, plus an
+`aiBotConfig`, on its tenant document. The inbound webhook URL is per tenant:
+
+```
+https://sherut.netlify.app/api/<tenantId>/whatsapp/webhook
+```
+
+Register that as the `webhookUrl` on the matching Green API instance. Only
+`incomingMessageReceived` is acted on; duplicates are rejected by a unique index
+on `idMessage`, and any AI failure falls through to the keyword-approval path.
+
+AI inference is routed through OpenRouter's free tier with a fallback chain of
+models (`src/lib/gemini.ts`). To re-verify or re-rank that chain against the
+bot's real prompt:
+
+```bash
+node scratch/check-models.mjs
+```

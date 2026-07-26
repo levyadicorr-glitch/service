@@ -265,10 +265,17 @@ export async function POST(
     const typeWebhook = (body.typeWebhook || '').toLowerCase();
     const idMessage: string | undefined = body.idMessage || undefined;
 
-    // Only incoming messages. "outgoingMessageReceived" fires for messages the
-    // connected device itself sent — including the bot's own replies, which is
-    // a self-trigger loop waiting to happen.
-    const ACCEPTED_TYPES = ['incomingMessageReceived', 'incomingMessage'];
+    // Accept incoming AND outgoing text messages.
+    // "outgoingMessageReceived" fires when the connected device itself sends
+    // a message — needed for testing (admin sends "מאשר" from the business
+    // phone) and when the admin is also a customer.
+    // The self-loop guard below (sender === ownWid) prevents infinite loops.
+    const ACCEPTED_TYPES = [
+      'incomingMessageReceived',
+      'incomingMessage',
+      'outgoingMessageReceived',
+      'outgoingMessage',
+    ];
     const isMessage = ACCEPTED_TYPES.some(t => t.toLowerCase() === typeWebhook);
     if (!isMessage) {
       return NextResponse.json({ success: true, ignored: true, reason: `Ignored typeWebhook: ${body.typeWebhook}` });
@@ -279,10 +286,14 @@ export async function POST(
       return NextResponse.json({ success: true, ignored: true, reason: 'Not a direct user message' });
     }
 
-    // Second loop guard: never process a message whose sender is the connected
-    // instance itself, regardless of how it was typed.
+    // Self-loop guard: for INCOMING messages, reject if sender is the connected
+    // device itself (prevents spoofed messages). For OUTGOING messages this
+    // check is skipped because sender is ALWAYS the connected phone — the
+    // dedup layer (recordInboundMessage unique index on idMessage) prevents
+    // the bot from re-processing its own replies.
+    const isOutgoing = typeWebhook.startsWith('outgoing');
     const ownWid = body.instanceData?.wid;
-    if (ownWid && sender === ownWid) {
+    if (!isOutgoing && ownWid && sender === ownWid) {
       return NextResponse.json({ success: true, ignored: true, reason: 'Self-originated message' });
     }
 
@@ -297,13 +308,16 @@ export async function POST(
     console.log('[WEBHOOK IN]', JSON.stringify({
       tenantId,
       typeWebhook: body.typeWebhook,
+      isOutgoing,
       idMessage,
+      sender: sender,
+      ownWid: ownWid,
       phoneTail: phoneTail(phone),
       textLen: rawText.length,
+      text: rawText.slice(0, 100),
     }));
-    if (process.env.WEBHOOK_DEBUG === '1') {
-      console.log('[WEBHOOK RAW PAYLOAD]\n' + JSON.stringify(body, null, 2));
-    }
+    // Full payload for debugging — remove once stable
+    console.log('[WEBHOOK RAW PAYLOAD]\n' + JSON.stringify(body, null, 2));
 
     if (!rawText.trim()) {
       return NextResponse.json({ success: true, ignored: true, reason: 'No text content' });
