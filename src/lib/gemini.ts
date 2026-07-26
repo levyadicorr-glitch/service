@@ -1,17 +1,15 @@
 import { AI_BOT_MODEL } from './aiBotConfig';
 
 /**
- * AI inference client powered by BazaarLink AI (bazaarlink.ai) with fallback
- * to Google Gemini REST API.
+ * High-speed AI inference client.
+ * Primary: Google Gemini REST API (gemini-3.1-flash-lite) for ~0.6s latency.
+ * Secondary: BazaarLink AI (bazaarlink.ai) for resilient fallback.
  *
- * Contract: this module NEVER throws. Every failure — missing key, timeout,
- * quota, safety block, malformed JSON — comes back as { ok: false, kind, error }.
- * That mirrors sendWhatsAppMessage() in greenApi.ts, and it is what keeps a
- * model outage from turning a WhatsApp webhook into a 500.
+ * Contract: this module NEVER throws. Every failure comes back as { ok: false, kind, error }.
  */
 
-const BAZAARLINK_URL = 'https://bazaarlink.ai/api/v1/chat/completions';
 const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const BAZAARLINK_URL = 'https://bazaarlink.ai/api/v1/chat/completions';
 
 const BAZAARLINK_MODELS = [
   'openai/gpt-4o-mini',
@@ -46,7 +44,7 @@ export type GeminiJsonResult<T> =
   | { ok: false; kind: GeminiErrorKind; error: string; latencyMs: number; status?: number };
 
 export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.BAZAARLINK_API_KEY || process.env.GEMINI_API_KEY);
+  return Boolean(process.env.GEMINI_API_KEY || process.env.BAZAARLINK_API_KEY);
 }
 
 const EMPTY_USAGE: GeminiUsage = { promptTokens: 0, outputTokens: 0, totalTokens: 0 };
@@ -118,14 +116,14 @@ export async function generateJson<T>(opts: {
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
 
-  const bazaarKey = process.env.BAZAARLINK_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
+  const bazaarKey = process.env.BAZAARLINK_API_KEY;
 
-  if (!bazaarKey && !geminiKey) {
+  if (!geminiKey && !bazaarKey) {
     return {
       ok: false,
       kind: 'no_key',
-      error: 'משתני הסביבה BAZAARLINK_API_KEY / GEMINI_API_KEY אינם מוגדרים בשרת הפריסה.',
+      error: 'GEMINI_API_KEY / BAZAARLINK_API_KEY is not configured',
       latencyMs: 0,
     };
   }
@@ -135,7 +133,80 @@ export async function generateJson<T>(opts: {
   let lastError = 'No provider responded';
   let lastStatus: number | undefined;
 
-  // --- Path 1: Try BazaarLink AI ---
+  // --- Primary Path: Google Gemini REST API (~0.6s ultra fast) ---
+  if (geminiKey) {
+    const remaining = deadline - Date.now();
+    if (remaining > 500) {
+      const primaryModel = opts.model || AI_BOT_MODEL;
+      const modelChain = Array.from(new Set([primaryModel, 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest']));
+
+      const payload = {
+        systemInstruction: { parts: [{ text: opts.systemInstruction }] },
+        contents: opts.turns.map(turn => ({
+          role: turn.role,
+          parts: [{ text: turn.text }],
+        })),
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: opts.responseSchema,
+          temperature: opts.temperature ?? 0.2,
+          maxOutputTokens: opts.maxOutputTokens ?? 1024,
+        },
+      };
+
+      for (const model of modelChain) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), Math.max(500, deadline - Date.now()));
+
+        try {
+          const res = await fetch(`${GEMINI_ENDPOINT_BASE}/${model}:generateContent`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': geminiKey.trim(),
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            lastStatus = res.status;
+            lastError = `Gemini (${model}) HTTP ${res.status}: ${text.slice(0, 200)}`;
+            console.warn(`[GEMINI FAILED ${model}] HTTP ${res.status}:`, text);
+            continue;
+          }
+
+          const body = await res.json();
+          const candidate = body.candidates?.[0];
+          const raw = candidate?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
+          const parsed = parseJson<T>(raw);
+          if (!parsed.ok) {
+            lastError = `Gemini (${model}) unparseable JSON: ${raw.slice(0, 200)}`;
+            continue;
+          }
+
+          const usage: GeminiUsage = body.usageMetadata
+            ? {
+                promptTokens: body.usageMetadata.promptTokenCount ?? 0,
+                outputTokens: body.usageMetadata.candidatesTokenCount ?? 0,
+                totalTokens: body.usageMetadata.totalTokenCount ?? 0,
+              }
+            : EMPTY_USAGE;
+
+          console.log(`[GEMINI SUCCESS] Model: ${model} in ${elapsed()}ms`);
+          return { ok: true, data: parsed.data, raw, usage, model, latencyMs: elapsed() };
+        } catch (err) {
+          clearTimeout(timer);
+          lastError = `Gemini (${model}) network error: ${err instanceof Error ? err.message : String(err)}`;
+          continue;
+        }
+      }
+    }
+  }
+
+  // --- Fallback Path: BazaarLink AI ---
   if (bazaarKey) {
     const remaining = deadline - Date.now();
     if (remaining > 500) {
@@ -189,93 +260,15 @@ export async function generateJson<T>(opts: {
             const usedModel = body.model || 'openai/gpt-4o-mini';
             console.log(`[BAZAARLINK SUCCESS] Model: ${usedModel} in ${elapsed()}ms`);
             return { ok: true, data: parsed.data, raw, usage, model: usedModel, latencyMs: elapsed() };
-          } else {
-            lastError = `BazaarLink unparseable response: ${raw.slice(0, 200)}`;
           }
         } else {
           const text = await res.text().catch(() => '');
           lastStatus = res.status;
-          lastError = `BazaarLink HTTP ${res.status}: ${text.slice(0, 250)}`;
-          console.warn(`[BAZAARLINK FAILED] HTTP ${res.status}:`, text);
+          lastError = `BazaarLink HTTP ${res.status}: ${text.slice(0, 200)}`;
         }
       } catch (err) {
         clearTimeout(timer);
-        const isAbort = err instanceof Error && err.name === 'AbortError';
-        lastError = isAbort ? 'BazaarLink request timed out' : `BazaarLink network error: ${err instanceof Error ? err.message : String(err)}`;
-        console.warn('[BAZAARLINK EXCEPTION]', lastError);
-      }
-    }
-  }
-
-  // --- Path 2: Try Google Gemini REST API ---
-  if (geminiKey) {
-    const remaining = deadline - Date.now();
-    if (remaining > 500) {
-      const primaryModel = opts.model || AI_BOT_MODEL;
-      const modelChain = Array.from(new Set([primaryModel, 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest']));
-
-      const payload = {
-        systemInstruction: { parts: [{ text: opts.systemInstruction }] },
-        contents: opts.turns.map(turn => ({
-          role: turn.role,
-          parts: [{ text: turn.text }],
-        })),
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema: opts.responseSchema,
-          temperature: opts.temperature ?? 0.2,
-          maxOutputTokens: opts.maxOutputTokens ?? 1024,
-        },
-      };
-
-      for (const model of modelChain) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), Math.max(500, deadline - Date.now()));
-
-        try {
-          const res = await fetch(`${GEMINI_ENDPOINT_BASE}/${model}:generateContent`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': geminiKey.trim(),
-            },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-          });
-          clearTimeout(timer);
-
-          if (!res.ok) {
-            const text = await res.text().catch(() => '');
-            lastStatus = res.status;
-            lastError = `Gemini (${model}) HTTP ${res.status}: ${text.slice(0, 250)}`;
-            console.warn(`[GEMINI FAILED ${model}] HTTP ${res.status}:`, text);
-            continue;
-          }
-
-          const body = await res.json();
-          const candidate = body.candidates?.[0];
-          const raw = candidate?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
-          const parsed = parseJson<T>(raw);
-          if (!parsed.ok) {
-            lastError = `Gemini (${model}) unparseable JSON: ${raw.slice(0, 200)}`;
-            continue;
-          }
-
-          const usage: GeminiUsage = body.usageMetadata
-            ? {
-                promptTokens: body.usageMetadata.promptTokenCount ?? 0,
-                outputTokens: body.usageMetadata.candidatesTokenCount ?? 0,
-                totalTokens: body.usageMetadata.totalTokenCount ?? 0,
-              }
-            : EMPTY_USAGE;
-
-          console.log(`[GEMINI SUCCESS] Model: ${model} in ${elapsed()}ms`);
-          return { ok: true, data: parsed.data, raw, usage, model, latencyMs: elapsed() };
-        } catch (err) {
-          clearTimeout(timer);
-          lastError = `Gemini (${model}) network error: ${err instanceof Error ? err.message : String(err)}`;
-          continue;
-        }
+        lastError = `BazaarLink network error: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
   }
