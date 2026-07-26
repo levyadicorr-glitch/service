@@ -3,6 +3,7 @@ import { getTenantById, updateTenantSettings, tenantExists } from '@/lib/db';
 import { requireTenantAdmin, hashPassword } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
 import { normalizeServiceFormConfig } from '@/lib/serviceFormConfig';
+import { normalizeAiBotConfig } from '@/lib/aiBotConfig';
 
 export async function POST(req: NextRequest, props: { params: Promise<{ tenantId: string }> }) {
   const csrfError = checkCsrf(req);
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     const greenApiToken = formData.get('greenApiToken') as string;
     const password = formData.get('password') as string;
     const serviceFormConfigRaw = formData.get('serviceFormConfig') as string | null;
+    const aiBotConfigRaw = formData.get('aiBotConfig') as string | null;
     const logoFile = formData.get('logo') as File | null;
     const removeLogo = formData.get('removeLogo') === 'true';
 
@@ -53,6 +55,15 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     if (serviceFormConfigRaw) {
       try {
         update.serviceFormConfig = normalizeServiceFormConfig(JSON.parse(serviceFormConfigRaw));
+      } catch {
+        // Malformed config JSON — ignore it so the rest of the settings still save.
+      }
+    }
+    if (aiBotConfigRaw) {
+      try {
+        // normalizeAiBotConfig is the single validation point: length caps and
+        // confidence ranges are enforced here, not merely by form attributes.
+        update.aiBotConfig = normalizeAiBotConfig(JSON.parse(aiBotConfigRaw));
       } catch {
         // Malformed config JSON — ignore it so the rest of the settings still save.
       }

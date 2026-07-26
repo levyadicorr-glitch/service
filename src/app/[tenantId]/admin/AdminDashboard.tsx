@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest, SpecificModel } from '@/lib/db';
 import { ServiceFormConfig, normalizeServiceFormConfig, BUILTIN_FIELD_META, FormField, CustomFieldType } from '@/lib/serviceFormConfig';
+import { AiBotConfig, normalizeAiBotConfig, AI_BOT_LIMITS } from '@/lib/aiBotConfig';
 import ServiceRequestForm from '@/components/ServiceRequestForm';
 import CustomerSelectCombobox from '@/components/CustomerSelectCombobox';
 import { buildWhatsAppMessage, formatRequestNumber, formatDate } from '@/lib/format';
@@ -11,7 +12,8 @@ import {
   Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock,
   Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone,
   Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2, Truck, Package,
-  Menu, ShoppingCart, Pencil, Route, MapPin, SlidersHorizontal, GripVertical, Smartphone, Briefcase
+  Menu, ShoppingCart, Pencil, Route, MapPin, SlidersHorizontal, GripVertical, Smartphone, Briefcase,
+  Bot, Sparkles, MessagesSquare, ShieldAlert, Power, FlaskConical, BookOpen
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -34,16 +36,19 @@ interface AdminDashboardProps {
   greenApiInstanceId?: string;
   logoUrl?: string;
   serviceFormConfig?: ServiceFormConfig;
+  aiBotConfig?: AiBotConfig;
+  /** Derived on the server; the key itself never crosses to the client. */
+  aiKeyConfigured?: boolean;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', greenApiInstanceId = '', logoUrl = '', serviceFormConfig }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', greenApiInstanceId = '', logoUrl = '', serviceFormConfig, aiBotConfig, aiKeyConfigured = false }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
   const [agentsList, setAgentsList] = useState<Agent[]>(initialAgents);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [partRequestsList, setPartRequestsList] = useState<PartRequest[]>(initialPartRequests);
   const [ordersList, setOrdersList] = useState<Order[]>(initialOrders);
-  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'agents' | 'partRequests' | 'orders' | 'dispatch' | 'formBuilder'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'agents' | 'partRequests' | 'orders' | 'dispatch' | 'formBuilder' | 'aiBot'>('requests');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const REGIONS: { key: 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM'; label: string }[] = [
@@ -195,6 +200,193 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
   // Whether the builder has unsaved edits vs. the applied config.
   const formConfigDirty = JSON.stringify(settingsServiceFormConfig) !== JSON.stringify(normalizeServiceFormConfig(currentServiceFormConfig));
+
+  // ---------------- AI customer-service bot ----------------
+
+  const [aiConfig, setAiConfig] = useState<AiBotConfig>(normalizeAiBotConfig(aiBotConfig));
+  const [currentAiConfig, setCurrentAiConfig] = useState<AiBotConfig>(normalizeAiBotConfig(aiBotConfig));
+  const [isSavingAiConfig, setIsSavingAiConfig] = useState(false);
+  const [aiConfigError, setAiConfigError] = useState<string | null>(null);
+  const [aiConfigSaved, setAiConfigSaved] = useState(false);
+
+  const aiConfigDirty = JSON.stringify(aiConfig) !== JSON.stringify(currentAiConfig);
+
+  const updateAiConfig = <K extends keyof AiBotConfig>(key: K, value: AiBotConfig[K]) => {
+    setAiConfig(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveAiConfig = async () => {
+    setIsSavingAiConfig(true);
+    setAiConfigError(null);
+    setAiConfigSaved(false);
+    try {
+      // Only this one field goes in the FormData — the settings route skips
+      // every key that is absent, so nothing else on the tenant is touched.
+      const formData = new FormData();
+      formData.append('aiBotConfig', JSON.stringify(aiConfig));
+      const res = await fetch(`/api/${tenantId}/admin/settings`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בשמירת הגדרות הבוט');
+      const applied = normalizeAiBotConfig(aiConfig);
+      setCurrentAiConfig(applied);
+      setAiConfig(applied);
+      setAiConfigSaved(true);
+      setTimeout(() => setAiConfigSaved(false), 2500);
+    } catch (err: unknown) {
+      setAiConfigError(err instanceof Error ? err.message : 'שגיאה בחיבור לשרת');
+    } finally {
+      setIsSavingAiConfig(false);
+    }
+  };
+
+  // --- Playground ---
+  interface AiTestResult {
+    degraded?: boolean;
+    errorKind?: string;
+    error?: string;
+    intent?: string;
+    confidence?: number;
+    needsHuman?: boolean;
+    reply?: string;
+    modelReply?: string;
+    escalate?: boolean;
+    escalationReason?: string;
+    wouldApprove?: { requestNumbers: number[] };
+    contextBlock?: string;
+    usage?: { promptTokens: number; outputTokens: number; totalTokens: number };
+    latencyMs?: number;
+    model?: string;
+  }
+
+  interface AiTestEntry {
+    id: string;
+    message: string;
+    result?: AiTestResult;
+    error?: string;
+  }
+
+  const [aiTestCustomerId, setAiTestCustomerId] = useState('');
+  const [aiTestPhone, setAiTestPhone] = useState('');
+  const [aiTestMessage, setAiTestMessage] = useState('');
+  const [aiTestLog, setAiTestLog] = useState<AiTestEntry[]>([]);
+  const [isRunningAiTest, setIsRunningAiTest] = useState(false);
+  const [aiProbe, setAiProbe] = useState<{ connected: boolean; latencyMs?: number; error?: string } | null>(null);
+  const [isProbingAi, setIsProbingAi] = useState(false);
+
+  const handleProbeAi = async () => {
+    setIsProbingAi(true);
+    setAiProbe(null);
+    try {
+      const res = await fetch(`/api/${tenantId}/admin/ai/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ probe: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בבדיקת החיבור');
+      setAiProbe({ connected: Boolean(data.connected), latencyMs: data.latencyMs, error: data.error });
+    } catch (err: unknown) {
+      setAiProbe({ connected: false, error: err instanceof Error ? err.message : 'שגיאה בחיבור לשרת' });
+    } finally {
+      setIsProbingAi(false);
+    }
+  };
+
+  const handleRunAiTest = async () => {
+    const message = aiTestMessage.trim();
+    if (!message) return;
+    setIsRunningAiTest(true);
+    const entryId = `${Date.now()}`;
+    setAiTestLog(prev => [...prev, { id: entryId, message }]);
+    setAiTestMessage('');
+    try {
+      const res = await fetch(`/api/${tenantId}/admin/ai/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, phone: aiTestPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בהרצת הבדיקה');
+      setAiTestLog(prev => prev.map(e => (e.id === entryId ? { ...e, result: data } : e)));
+    } catch (err: unknown) {
+      const messageText = err instanceof Error ? err.message : 'שגיאה בחיבור לשרת';
+      setAiTestLog(prev => prev.map(e => (e.id === entryId ? { ...e, error: messageText } : e)));
+    } finally {
+      setIsRunningAiTest(false);
+    }
+  };
+
+  // --- Conversation viewer ---
+  interface AiThread {
+    phone: string;
+    customerName?: string;
+    lastText: string;
+    lastDirection: 'IN' | 'OUT';
+    lastAt: string;
+    messageCount: number;
+    escalated: boolean;
+    testMode: boolean;
+  }
+
+  interface AiMessage {
+    id: string;
+    direction: 'IN' | 'OUT';
+    source: string;
+    text: string;
+    intent?: string;
+    confidence?: number;
+    escalationReason?: string;
+    delivered?: boolean;
+    testMode?: boolean;
+    degraded?: boolean;
+    errorKind?: string;
+    latencyMs?: number;
+    createdAt: string;
+  }
+
+  const [aiThreads, setAiThreads] = useState<AiThread[]>([]);
+  const [aiSelectedPhone, setAiSelectedPhone] = useState('');
+  const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
+  const [aiLiveUsage, setAiLiveUsage] = useState<{ tenantCount: number; maxPerTenantPerDay: number } | null>(null);
+  const [isLoadingAiThreads, setIsLoadingAiThreads] = useState(false);
+
+  // Gated on the tab being open so the dashboard's initial load is untouched.
+  useEffect(() => {
+    if (activeTab !== 'aiBot') return;
+    let cancelled = false;
+    const loadThreads = async () => {
+      setIsLoadingAiThreads(true);
+      try {
+        const res = await fetch(`/api/${tenantId}/admin/ai/conversations`);
+        const data = await res.json();
+        if (cancelled) return;
+        setAiThreads(data.threads || []);
+        setAiLiveUsage(data.usage || null);
+      } catch {
+        /* the panel simply shows no threads */
+      } finally {
+        if (!cancelled) setIsLoadingAiThreads(false);
+      }
+    };
+    loadThreads();
+    return () => { cancelled = true; };
+  }, [activeTab, tenantId, aiConfigSaved]);
+
+  useEffect(() => {
+    if (activeTab !== 'aiBot' || !aiSelectedPhone) return;
+    let cancelled = false;
+    fetch(`/api/${tenantId}/admin/ai/conversations?phone=${encodeURIComponent(aiSelectedPhone)}`)
+      .then(res => res.json())
+      .then(data => { if (!cancelled) setAiMessages(data.messages || []); })
+      .catch(() => { if (!cancelled) setAiMessages([]); });
+    return () => { cancelled = true; };
+  }, [activeTab, tenantId, aiSelectedPhone]);
+
+  const PERSONA_PRESETS: { label: string; value: string }[] = [
+    { label: 'ידידותי', value: 'אתה נציג שירות חם ואדיב. פונה ללקוח בגוף שני, משתמש באימוג\'י בודד כשמתאים, ומרגיע לקוח מתוסכל לפני שאתה עונה לגופו של עניין.' },
+    { label: 'ענייני', value: 'אתה נציג שירות מקצועי ומדויק. עונה בצורה עניינית וברורה, בלי אימוג\'י ובלי מילות נימוס מיותרות.' },
+    { label: 'קצר ולעניין', value: 'אתה עונה בקצרה מאוד — משפט אחד או שניים לכל היותר. רק העובדות שהלקוח ביקש, בלי הקדמות.' },
+  ];
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1257,6 +1449,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     { key: 'orders', label: 'הזמנת סחורה', icon: ShoppingCart },
     { key: 'dispatch', label: 'לוח שילוח', icon: Route },
     { key: 'formBuilder', label: 'עיצוב הטופס', icon: SlidersHorizontal },
+    { key: 'aiBot', label: 'בוט AI שירות לקוחות', icon: Bot },
   ];
 
   const handleNavSelect = (key: typeof activeTab) => {
@@ -2847,6 +3040,523 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'aiBot' && (
+          <div className="space-y-6 pb-10">
+            {/* ===== 1. Header + save bar ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                  <Bot className="w-5 h-5 text-blue-600" />
+                  בוט AI שירות לקוחות
+                </h3>
+                <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-xl">
+                  הבוט עונה ללקוחות בוואטסאפ על סטטוס קריאות, מאשר הצעות מחיר, עונה על שאלות מבסיס הידע שתכתוב/י, ומעביר לנציג אנושי כשהוא לא בטוח.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {aiConfigSaved && (
+                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1"><Check className="w-4 h-4" /> נשמר!</span>
+                )}
+                {aiConfigError && (
+                  <span className="text-xs font-bold text-red-600 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> {aiConfigError}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAiConfig(currentAiConfig)}
+                  disabled={!aiConfigDirty || isSavingAiConfig}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  איפוס
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAiConfig}
+                  disabled={!aiConfigDirty || isSavingAiConfig}
+                  className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
+                >
+                  {isSavingAiConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {isSavingAiConfig ? 'שומר...' : 'שמור שינויים'}
+                </button>
+              </div>
+            </div>
+
+            {/* ===== 2. Status strip ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border ${aiKeyConfigured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {aiKeyConfigured ? 'מפתח AI בשרת: מוגדר' : 'מפתח AI בשרת: חסר'}
+                </span>
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border ${currentAiConfig.enabled ? (currentAiConfig.testMode ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200') : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                  <Power className="w-3.5 h-3.5" />
+                  מצב: {currentAiConfig.enabled ? (currentAiConfig.testMode ? 'בדיקה' : 'פעיל') : 'כבוי'}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleProbeAi}
+                  disabled={isProbingAi || !aiKeyConfigured}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {isProbingAi ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+                  בדיקת חיבור למודל
+                </button>
+                {aiProbe && (
+                  <span className={`text-[11px] font-bold ${aiProbe.connected ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {aiProbe.connected ? `מחובר · ${aiProbe.latencyMs}ms` : `נכשל: ${aiProbe.error || 'לא מחובר'}`}
+                  </span>
+                )}
+              </div>
+
+              {!aiKeyConfigured && (
+                <div className="mt-3 p-3 rounded-2xl bg-red-50/70 border border-red-100 text-[11px] text-red-700 leading-relaxed">
+                  <b>המפתח לא מוגדר בשרת.</b> יש להגדיר משתנה סביבה בשם <code className="font-mono bg-white/70 px-1 rounded" dir="ltr">GEMINI_API_KEY</code> (מפתח חינמי מ-Google AI Studio) ב-<code className="font-mono bg-white/70 px-1 rounded" dir="ltr">.env.local</code> ובהגדרות הפריסה. עד אז הבוט לא יפעל — ואישורי הצעות מחיר ימשיכו לעבוד כרגיל לפי מילות מפתח.
+                </div>
+              )}
+            </div>
+
+            {/* ===== 3. Master switches ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><Power className="w-4 h-4 text-emerald-600" /> הפעלה</h4>
+
+              <label className="flex items-start gap-3 p-3 rounded-2xl border border-gray-100 bg-gray-50/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={aiConfig.enabled}
+                  onChange={e => updateAiConfig('enabled', e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer"
+                />
+                <span>
+                  <span className="text-xs font-black text-gray-800">הפעלת הבוט</span>
+                  <span className="block text-[11px] text-gray-400 mt-0.5 leading-relaxed">
+                    כשכבוי, אישורי הצעות מחיר ממשיכים לעבוד כרגיל לפי מילות מפתח.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 p-3 rounded-2xl border border-amber-100 bg-amber-50/50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={aiConfig.testMode}
+                  onChange={e => updateAiConfig('testMode', e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-amber-600 cursor-pointer"
+                />
+                <span>
+                  <span className="text-xs font-black text-amber-800 flex items-center gap-1.5"><FlaskConical className="w-3.5 h-3.5" /> מצב בדיקה</span>
+                  <span className="block text-[11px] text-amber-700/80 mt-0.5 leading-relaxed">
+                    הבוט מנתח ועונה, אך התשובה נשמרת ביומן בלבד ולא נשלחת ללקוח. אישורי הצעות מחיר אינם מבוצעים.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {/* ===== 4. Persona ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><Sparkles className="w-4 h-4 text-indigo-600" /> אישיות וסגנון</h4>
+
+              <div className="flex flex-wrap gap-2">
+                {PERSONA_PRESETS.map(p => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => updateAiConfig('persona', p.value)}
+                    className="px-3 py-1.5 rounded-xl text-[11px] font-bold border border-gray-200 bg-white text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition-all cursor-pointer"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">אישיות הבוט</label>
+                <textarea
+                  value={aiConfig.persona}
+                  onChange={e => updateAiConfig('persona', e.target.value)}
+                  maxLength={AI_BOT_LIMITS.persona}
+                  rows={4}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
+                />
+                <div className="text-[10px] text-gray-400 mt-1">{aiConfig.persona.length}/{AI_BOT_LIMITS.persona}</div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">משפט פתיחה (אופציונלי)</label>
+                <input
+                  type="text"
+                  value={aiConfig.greeting}
+                  onChange={e => updateAiConfig('greeting', e.target.value)}
+                  maxLength={AI_BOT_LIMITS.greeting}
+                  placeholder="היי! הגעת לשירות הלקוחות שלנו 🛴"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+              </div>
+            </div>
+
+            {/* ===== 5. Knowledge base ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><BookOpen className="w-4 h-4 text-blue-600" /> בסיס ידע</h4>
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                כל מה שכתוב כאן הבוט יכול לענות עליו. מה שלא כתוב כאן — הוא יעביר לנציג. כדאי לכלול: שעות פעילות, אזורי שירות, זמני טיפול ממוצעים, מדיניות אחריות, ודמי בדיקה.
+              </p>
+              <textarea
+                value={aiConfig.knowledgeBase}
+                onChange={e => updateAiConfig('knowledgeBase', e.target.value)}
+                maxLength={AI_BOT_LIMITS.knowledgeBase}
+                rows={12}
+                placeholder={'שעות פעילות: א׳-ה׳ 09:00-18:00, ו׳ 09:00-13:00\nאזורי שירות: גוש דן, שרון והשפלה\nזמן טיפול ממוצע: 3-5 ימי עסקים\nאחריות: 3 חודשים על כל תיקון\nדמי בדיקה: 80 ₪, מתקזזים מול התיקון'}
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
+              />
+              <div className={`text-[10px] font-bold ${aiConfig.knowledgeBase.length > 5000 ? 'text-amber-600' : 'text-gray-400'}`}>
+                {aiConfig.knowledgeBase.length}/{AI_BOT_LIMITS.knowledgeBase}
+              </div>
+            </div>
+
+            {/* ===== 6. Quote approval ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" /> אישור הצעות מחיר</h4>
+
+              <label className="flex items-start gap-3 p-3 rounded-2xl border border-gray-100 bg-gray-50/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={aiConfig.allowQuoteApproval}
+                  onChange={e => updateAiConfig('allowQuoteApproval', e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer"
+                />
+                <span>
+                  <span className="text-xs font-black text-gray-800">הבוט רשאי לאשר הצעות מחיר</span>
+                  <span className="block text-[11px] text-gray-400 mt-0.5 leading-relaxed">
+                    האישור חל רק על הצעות פתוחות של הלקוח ששלח את ההודעה. דחיית הצעה לעולם אינה מבוצעת אוטומטית — היא תמיד עוברת לנציג.
+                  </span>
+                </span>
+              </label>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-2">
+                  רמת ודאות נדרשת לאישור: <span className="text-emerald-600 font-black">{Math.round(aiConfig.approvalConfidence * 100)}%</span>
+                </label>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={1}
+                  step={0.05}
+                  value={aiConfig.approvalConfidence}
+                  onChange={e => updateAiConfig('approvalConfidence', parseFloat(e.target.value))}
+                  className="w-full accent-emerald-600 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* ===== 7. Escalation ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-600" /> העברה לנציג אנושי</h4>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">מספרי טלפון להתראה</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={aiConfig.escalationPhones}
+                  onChange={e => updateAiConfig('escalationPhones', e.target.value)}
+                  placeholder="0501234567, 0507654321"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+                <div className="text-[10px] text-gray-400 mt-1">ריק = שימוש ברשימת מספרי ההתראה הקיימת של העסק.</div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">ההודעה שהלקוח יקבל בהעברה לנציג</label>
+                <textarea
+                  value={aiConfig.escalationMessage}
+                  onChange={e => updateAiConfig('escalationMessage', e.target.value)}
+                  maxLength={AI_BOT_LIMITS.escalationMessage}
+                  rows={2}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-1">השתקת הבוט אחרי העברה (דקות)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1440}
+                    value={aiConfig.handoffFreezeMinutes}
+                    onChange={e => updateAiConfig('handoffFreezeMinutes', parseInt(e.target.value || '0', 10))}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1">כדי שלקוח שביקש נציג לא ימשיך לקבל תשובות מהבוט.</div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-2">
+                    ודאות מינימלית לשליחת תשובה: <span className="text-amber-600 font-black">{Math.round(aiConfig.replyConfidence * 100)}%</span>
+                  </label>
+                  <input
+                    type="range"
+                    min={0.3}
+                    max={1}
+                    step={0.05}
+                    value={aiConfig.replyConfidence}
+                    onChange={e => updateAiConfig('replyConfidence', parseFloat(e.target.value))}
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1">מתחת לסף הזה הלקוח יקבל את הודעת ההעברה במקום את תשובת הבוט.</div>
+                </div>
+              </div>
+            </div>
+
+            {/* ===== 8. Limits ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-gray-500" /> מגבלות יומיות</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-1">מקסימום תשובות ללקוח ליום</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1000}
+                    value={aiConfig.maxRepliesPerCustomerPerDay}
+                    onChange={e => updateAiConfig('maxRepliesPerCustomerPerDay', parseInt(e.target.value || '0', 10))}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 block mb-1">מקסימום תשובות לעסק ליום</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10000}
+                    value={aiConfig.maxRepliesPerTenantPerDay}
+                    onChange={e => updateAiConfig('maxRepliesPerTenantPerDay', parseInt(e.target.value || '0', 10))}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
+              </div>
+              {aiLiveUsage && (
+                <div>
+                  <div className="flex items-center justify-between text-[11px] font-bold text-gray-500 mb-1">
+                    <span>נשלחו היום</span>
+                    <span className="text-gray-800">{aiLiveUsage.tenantCount} / {aiLiveUsage.maxPerTenantPerDay}</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${aiLiveUsage.tenantCount >= aiLiveUsage.maxPerTenantPerDay ? 'bg-red-500' : 'bg-blue-500'}`}
+                      style={{ width: `${Math.min(100, aiLiveUsage.maxPerTenantPerDay > 0 ? (aiLiveUsage.tenantCount / aiLiveUsage.maxPerTenantPerDay) * 100 : 0)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[10px] text-gray-400 leading-relaxed">
+                כשמגבלה נחצית הבוט שותק — ההודעה לא נענית, ומסלול אישור הצעות המחיר לפי מילות מפתח ממשיך לעבוד כרגיל.
+              </p>
+            </div>
+
+            {/* ===== 9. Playground ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+              <div>
+                <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><FlaskConical className="w-4 h-4 text-purple-600" /> מגרש בדיקות</h4>
+                <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                  בדיקה יבשה מול ההגדרות <b>השמורות</b>. לעולם לא נשלחת הודעה ולעולם לא מאושרת הצעה — רק מוצג מה היה קורה.
+                </p>
+              </div>
+
+              <CustomerSelectCombobox
+                customers={customersList}
+                selectedCustomerId={aiTestCustomerId}
+                onSelectCustomer={(c) => {
+                  setAiTestCustomerId(c?.id || '');
+                  setAiTestPhone(c?.phone || '');
+                }}
+                label="בחר/י לקוח לבדיקה (אופציונלי)"
+              />
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">טלפון הפונה</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={aiTestPhone}
+                  onChange={e => setAiTestPhone(e.target.value)}
+                  placeholder="0509611808"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <textarea
+                  value={aiTestMessage}
+                  onChange={e => setAiTestMessage(e.target.value)}
+                  rows={2}
+                  placeholder="מה קורה עם הקורקינט שלי?"
+                  className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
+                />
+                <button
+                  type="button"
+                  onClick={handleRunAiTest}
+                  disabled={isRunningAiTest || !aiTestMessage.trim() || !aiKeyConfigured}
+                  className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 flex-shrink-0"
+                >
+                  {isRunningAiTest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  הרץ בדיקה
+                </button>
+              </div>
+
+              {aiTestLog.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  {aiTestLog.map(entry => (
+                    <div key={entry.id} className="space-y-2">
+                      <div className="flex justify-end">
+                        <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tr-sm bg-gray-100 text-gray-800 text-xs leading-relaxed whitespace-pre-wrap">
+                          {entry.message}
+                        </div>
+                      </div>
+
+                      {entry.error && (
+                        <div className="flex justify-start">
+                          <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tl-sm bg-red-50 border border-red-100 text-red-700 text-xs">
+                            {entry.error}
+                          </div>
+                        </div>
+                      )}
+
+                      {entry.result && (
+                        <div className="flex flex-col items-start gap-1.5">
+                          <div className={`max-w-[85%] px-3 py-2 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap ${entry.result.degraded ? 'bg-red-50 border border-red-100 text-red-700' : entry.result.escalate ? 'bg-amber-50 border border-amber-100 text-amber-900' : 'bg-emerald-50 border border-emerald-100 text-emerald-900'}`}>
+                            {entry.result.degraded
+                              ? `הבוט לא הגיב (${entry.result.errorKind || 'שגיאה'}) — במצב אמיתי המערכת הייתה נופלת חזרה למסלול מילות המפתח. ${entry.result.error || ''}`
+                              : entry.result.reply}
+                          </div>
+
+                          {!entry.result.degraded && (
+                            <div className="flex flex-wrap gap-1.5">
+                              <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">כוונה: {entry.result.intent}</span>
+                              <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">ודאות: {Math.round((entry.result.confidence || 0) * 100)}%</span>
+                              <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">{entry.result.latencyMs}ms</span>
+                              {entry.result.usage && (
+                                <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">{entry.result.usage.totalTokens} טוקנים</span>
+                              )}
+                              {entry.result.escalate && (
+                                <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-bold">הועבר לנציג: {entry.result.escalationReason}</span>
+                              )}
+                              {(entry.result.wouldApprove?.requestNumbers.length || 0) > 0 && (
+                                <span className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                                  היה מאשר: {entry.result.wouldApprove?.requestNumbers.map(n => formatRequestNumber(tenantId, n)).join(', ')}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {entry.result.contextBlock && (
+                            <details className="w-full">
+                              <summary className="text-[10px] font-bold text-gray-400 cursor-pointer hover:text-gray-600">
+                                הצג את בלוק ההקשר המדויק שנשלח למודל
+                              </summary>
+                              <pre className="mt-1.5 p-3 rounded-xl bg-slate-900 text-slate-200 text-[10px] leading-relaxed overflow-x-auto whitespace-pre-wrap font-mono">
+                                {entry.result.contextBlock}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ===== 10. Recent conversations ===== */}
+            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                  <MessagesSquare className="w-4 h-4 text-blue-600" /> שיחות אחרונות
+                </h4>
+                {isLoadingAiThreads && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+              </div>
+
+              {aiThreads.length === 0 && !isLoadingAiThreads ? (
+                <p className="text-[11px] text-gray-400 py-6 text-center">אין עדיין שיחות מתועדות.</p>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+                  {/* Thread list */}
+                  <div className="space-y-1.5 max-h-[28rem] overflow-y-auto">
+                    {aiThreads.map(thread => (
+                      <button
+                        key={thread.phone}
+                        type="button"
+                        onClick={() => setAiSelectedPhone(thread.phone)}
+                        className={`w-full text-right p-3 rounded-2xl border transition-all cursor-pointer ${aiSelectedPhone === thread.phone ? 'bg-blue-50 border-blue-200' : 'bg-gray-50/60 border-gray-100 hover:bg-gray-100/60'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-black text-gray-800 truncate">
+                            {thread.customerName || thread.phone}
+                          </span>
+                          <span className="text-[10px] text-gray-400 flex-shrink-0" dir="ltr">
+                            {formatDate(thread.lastAt)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-gray-400 font-mono mt-0.5" dir="ltr">{thread.phone}</div>
+                        <div className="text-[11px] text-gray-500 truncate mt-1">{thread.lastText || '—'}</div>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          <span className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 text-[9px] font-bold">
+                            {thread.messageCount} הודעות
+                          </span>
+                          {thread.escalated && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[9px] font-bold">הועבר לנציג</span>
+                          )}
+                          {thread.testMode && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 text-[9px] font-bold">בדיקה</span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Transcript */}
+                  <div className="lg:col-span-2 space-y-2 max-h-[28rem] overflow-y-auto p-1">
+                    {!aiSelectedPhone ? (
+                      <p className="text-[11px] text-gray-400 py-10 text-center">בחר/י שיחה מהרשימה כדי לראות את התמלול.</p>
+                    ) : aiMessages.length === 0 ? (
+                      <p className="text-[11px] text-gray-400 py-10 text-center">אין הודעות בשיחה זו.</p>
+                    ) : (
+                      aiMessages.map(msg => (
+                        <div key={msg.id} className={`flex ${msg.direction === 'IN' ? 'justify-end' : 'justify-start'}`}>
+                          <div
+                            className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
+                              msg.direction === 'IN'
+                                ? 'bg-gray-100 text-gray-800 rounded-tr-sm'
+                                : msg.degraded
+                                  ? 'bg-red-50 text-red-700 border border-red-100 rounded-tl-sm'
+                                  : 'bg-emerald-50 text-emerald-900 rounded-tl-sm'
+                            } ${msg.direction === 'OUT' && msg.delivered === false && !msg.degraded ? 'opacity-60 border border-dashed border-emerald-300' : ''}`}
+                          >
+                            {msg.degraded
+                              ? `הבוט לא הגיב (${msg.errorKind || 'שגיאה'}) — המערכת נפלה חזרה למסלול מילות המפתח.`
+                              : msg.text || '—'}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5 opacity-70">
+                              <span className="text-[9px]" dir="ltr">{formatDate(msg.createdAt)}</span>
+                              {msg.intent && <span className="text-[9px] font-bold">· {msg.intent}</span>}
+                              {typeof msg.confidence === 'number' && (
+                                <span className="text-[9px] font-bold">· {Math.round(msg.confidence * 100)}%</span>
+                              )}
+                              {msg.direction === 'OUT' && msg.delivered === false && !msg.degraded && (
+                                <span className="text-[9px] font-bold">· לא נשלח ללקוח</span>
+                              )}
+                              {msg.source === 'FALLBACK_REGEX' && (
+                                <span className="text-[9px] font-bold">· מילות מפתח</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

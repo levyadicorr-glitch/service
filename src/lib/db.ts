@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import getClientPromise from './mongodb';
 import { ObjectId, Document } from 'mongodb';
 import type { ServiceFormConfig } from './serviceFormConfig';
+import type { AiBotConfig } from './aiBotConfig';
 
 export interface SpecificModel {
   name: string;
@@ -26,6 +27,7 @@ export interface Tenant {
   greenApiInstanceId?: string;
   greenApiToken?: string;
   serviceFormConfig?: ServiceFormConfig;
+  aiBotConfig?: AiBotConfig;
   deviceModels?: string[]; // Array of custom device models/types
   models?: (string | SpecificModel)[]; // Array of specific device models with associated deviceType
   createdAt: string;
@@ -176,6 +178,16 @@ export async function ensureIndexes(tenantId: string) {
     db.collection('orders').createIndex({ driverId: 1 }),
     db.collection('agents').createIndex({ id: 1 }, { unique: true }),
     db.collection('agents').createIndex({ token: 1 }, { unique: true }),
+    // Lets getCustomerByPhone do a lookup instead of scanning every customer.
+    // The AI bot runs it on every inbound WhatsApp message, not just approvals.
+    db.collection('customers').createIndex({ phone: 1 }),
+    // Green API retries a webhook whenever we answer slowly or non-2xx. The
+    // unique index is what makes a retry a no-op instead of a second approval.
+    db.collection('botConversations').createIndex({ idMessage: 1 }, { unique: true, sparse: true }),
+    db.collection('botConversations').createIndex({ phone: 1, createdAt: -1 }),
+    db.collection('botConversations').createIndex({ createdAt: -1 }),
+    db.collection('botConversations').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection('botUsage').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ]);
   indexedTenants.add(tenantId);
 }
@@ -249,7 +261,7 @@ export async function updateTenantAdminPassword(id: string, adminPassword: strin
 
 export async function updateTenantSettings(
   id: string,
-  update: { name?: string; businessName?: string; logoUrl?: string; primaryColor?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; quoteNotificationPhones?: string; greenApiInstanceId?: string; greenApiToken?: string; serviceFormConfig?: ServiceFormConfig }
+  update: { name?: string; businessName?: string; logoUrl?: string; primaryColor?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; quoteNotificationPhones?: string; greenApiInstanceId?: string; greenApiToken?: string; serviceFormConfig?: ServiceFormConfig; aiBotConfig?: AiBotConfig }
 ): Promise<void> {
   const db = await getMasterDb();
   const setObj: Record<string, any> = {};
@@ -269,6 +281,7 @@ export async function updateTenantSettings(
   if (update.logoUrl !== undefined) setObj.logoUrl = update.logoUrl;
   if (update.primaryColor !== undefined) setObj.primaryColor = update.primaryColor;
   if (update.serviceFormConfig !== undefined) setObj.serviceFormConfig = update.serviceFormConfig;
+  if (update.aiBotConfig !== undefined) setObj.aiBotConfig = update.aiBotConfig;
   if (update.adminPassword !== undefined) setObj.adminPassword = update.adminPassword;
   if (update.adminPasswordPlain !== undefined) setObj.adminPasswordPlain = update.adminPasswordPlain;
 
@@ -392,6 +405,23 @@ export function normalizePhone(phone: string): string {
 export async function getCustomerByPhone(tenantId: string, phone: string): Promise<Customer | undefined> {
   const normalizedInput = normalizePhone(phone);
   if (!normalizedInput) return undefined;
+
+  // Fast path: an indexed lookup on the exact spellings we store most often.
+  // Covers the overwhelming majority and matters because the AI bot resolves a
+  // customer on every inbound message, not just on the rare approval reply.
+  const db = await getDb(tenantId);
+  const intl = normalizedInput.startsWith('0') ? '972' + normalizedInput.slice(1) : normalizedInput;
+  const direct = await db.collection('customers').findOne({
+    phone: { $in: [normalizedInput, intl, '+' + intl] },
+  });
+  if (direct) {
+    const { _id, ...rest } = direct;
+    void _id;
+    return rest as unknown as Customer;
+  }
+
+  // Slow path: stored numbers may carry dashes, spaces or parentheses, which no
+  // index can match. Same result set as before, just reached less often.
   const customers = await getCustomers(tenantId);
   return customers.find(c => c.phone && normalizePhone(c.phone) === normalizedInput);
 }
@@ -865,6 +895,24 @@ export async function getOrders(
     return {
       ...(rest as unknown as Order),
       customer: customers.find(c => c.id === rest.customerId),
+      driver: rest.driverId ? drivers.find(d => d.id === rest.driverId) : undefined,
+    };
+  });
+}
+
+export async function getOrdersByCustomerId(tenantId: string, customerId: string): Promise<Order[]> {
+  const db = await getDb(tenantId);
+  const [orders, customer, drivers] = await Promise.all([
+    db.collection('orders').find({ customerId }).sort({ createdAt: -1 }).toArray(),
+    getCustomerById(tenantId, customerId),
+    getDrivers(tenantId),
+  ]);
+  return orders.map(o => {
+    const { _id, ...rest } = o;
+    void _id;
+    return {
+      ...(rest as unknown as Order),
+      customer: customer || undefined,
       driver: rest.driverId ? drivers.find(d => d.id === rest.driverId) : undefined,
     };
   });

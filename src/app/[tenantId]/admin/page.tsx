@@ -2,6 +2,7 @@ import React from 'react';
 import { cookies } from 'next/headers';
 import { getServiceRequests, getCustomers, getDrivers, getPartRequests, getOrders, getAgents, getTenantById, ensureIndexes } from '@/lib/db';
 import { normalizeServiceFormConfig } from '@/lib/serviceFormConfig';
+import { normalizeAiBotConfig } from '@/lib/aiBotConfig';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
 import AdminLogin from '../AdminLogin';
 import AdminDashboard from './AdminDashboard';
@@ -23,6 +24,10 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const greenApiInstanceId = tenantObj?.greenApiInstanceId || '';
   const logoUrl = tenantObj?.logoUrl || '';
   const serviceFormConfig = normalizeServiceFormConfig(tenantObj?.serviceFormConfig);
+  const aiBotConfig = normalizeAiBotConfig(tenantObj?.aiBotConfig);
+  // Only a derived boolean crosses to the client — the key itself is read
+  // exclusively inside gemini.ts and must never become a prop.
+  const aiKeyConfigured = Boolean(process.env.GEMINI_API_KEY);
   const initialDeviceModels = tenantObj?.deviceModels || ['קורקינט', 'אופניים'];
 
   // No data leaves the server before a valid admin session exists for this tenant.
@@ -56,5 +61,5 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const { normalizeModels } = await import('@/lib/db');
   const initialModels = normalizeModels(tenantObj?.models);
 
-  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} greenApiInstanceId={greenApiInstanceId} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} />;
+  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} greenApiInstanceId={greenApiInstanceId} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} aiBotConfig={aiBotConfig} aiKeyConfigured={aiKeyConfigured} />;
 }
