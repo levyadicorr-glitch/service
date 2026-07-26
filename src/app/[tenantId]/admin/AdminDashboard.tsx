@@ -3113,7 +3113,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
               {!aiKeyConfigured && (
                 <div className="mt-3 p-3 rounded-2xl bg-red-50/70 border border-red-100 text-[11px] text-red-700 leading-relaxed">
-                  <b>המפתח לא מוגדר בשרת.</b> יש להגדיר משתנה סביבה בשם <code className="font-mono bg-white/70 px-1 rounded" dir="ltr">GEMINI_API_KEY</code> (מפתח חינמי מ-Google AI Studio) ב-<code className="font-mono bg-white/70 px-1 rounded" dir="ltr">.env.local</code> ובהגדרות הפריסה. עד אז הבוט לא יפעל — ואישורי הצעות מחיר ימשיכו לעבוד כרגיל לפי מילות מפתח.
+                  <b>המפתח לא מוגדר בשרת.</b> יש להגדיר משתנה סביבה בשם <code className="font-mono bg-white/70 px-1 rounded" dir="ltr">OPENROUTER_API_KEY</code> (מפתח חינמי מ-OpenRouter) ב-<code className="font-mono bg-white/70 px-1 rounded" dir="ltr">.env.local</code> ובהגדרות הפריסה. עד אז הבוט לא יפעל — ואישורי הצעות מחיר ימשיכו לעבוד כרגיל לפי מילות מפתח.
                 </div>
               )}
             </div>

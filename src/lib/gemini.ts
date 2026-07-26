@@ -1,7 +1,7 @@
 import { AI_BOT_MODEL } from './aiBotConfig';
 
 /**
- * Minimal REST client for the Gemini generateContent API.
+ * AI inference client, routed through OpenRouter (openrouter.ai).
  *
  * Contract: this module NEVER throws. Every failure — missing key, timeout,
  * quota, safety block, malformed JSON — comes back as { ok: false, kind }.
@@ -9,11 +9,25 @@ import { AI_BOT_MODEL } from './aiBotConfig';
  * model outage from turning a WhatsApp webhook into a 500 (which Green API
  * would then retry, amplifying the outage).
  *
- * No SDK: fetch, AbortController and crypto are native on Node 22, so this
- * adds zero dependencies.
+ * The interface (generateJson, GeminiTurn, GeminiUsage, etc.) is kept
+ * identical so that botAgent.ts, botStore.ts and the admin playground
+ * all work without any change.
  */
 
-const ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+/**
+ * OpenRouter free-tier models, ordered by preference.
+ * The first model that responds successfully wins.
+ * All are fully free on OpenRouter (`:free` suffix).
+ */
+const FREE_MODELS = [
+  'inclusionai/ling-3.0-flash:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'poolside/laguna-m.1:free',
+  'google/gemma-4-31b-it:free',
+];
 
 export type GeminiErrorKind =
   | 'no_key'
@@ -41,29 +55,16 @@ export type GeminiJsonResult<T> =
   | { ok: false; kind: GeminiErrorKind; error: string; latencyMs: number; status?: number };
 
 export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return Boolean(process.env.OPENROUTER_API_KEY);
 }
 
 const EMPTY_USAGE: GeminiUsage = { promptTokens: 0, outputTokens: 0, totalTokens: 0 };
-
-/**
- * Default thresholds block legitimate Hebrew complaints about broken equipment
- * ("this thing is dangerous", "I'll kill whoever assembled this") at a
- * surprising rate. BLOCK_ONLY_HIGH keeps real abuse blocked without eating
- * ordinary customer frustration.
- */
-const SAFETY_SETTINGS = [
-  'HARM_CATEGORY_HARASSMENT',
-  'HARM_CATEGORY_HATE_SPEECH',
-  'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-  'HARM_CATEGORY_DANGEROUS_CONTENT',
-].map(category => ({ category, threshold: 'BLOCK_ONLY_HIGH' }));
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/** Models often wrap JSON in a markdown fence despite responseMimeType. */
+/** Models often wrap JSON in a markdown fence despite instructions. */
 function stripCodeFence(text: string): string {
   const trimmed = text.trim();
   if (!trimmed.startsWith('```')) return trimmed;
@@ -85,18 +86,68 @@ function parseJson<T>(raw: string): { ok: true; data: T } | { ok: false } {
   }
 }
 
-interface GeminiResponseBody {
-  candidates?: {
-    content?: { parts?: { text?: string }[] };
-    finishReason?: string;
-  }[];
-  promptFeedback?: { blockReason?: string };
-  usageMetadata?: {
-    promptTokenCount?: number;
-    candidatesTokenCount?: number;
-    totalTokenCount?: number;
-  };
-  error?: { message?: string; status?: string };
+/**
+ * Converts the Gemini-style responseSchema into a plain-language JSON
+ * instruction block appended to the system prompt. OpenRouter models don't
+ * support Gemini's native responseSchema, so we instruct via prose instead.
+ */
+function schemaToJsonInstruction(schema: unknown): string {
+  if (!schema || typeof schema !== 'object') return '';
+  const s = schema as Record<string, unknown>;
+  const props = s.properties as Record<string, unknown> | undefined;
+  if (!props) return '';
+
+  const fields: string[] = [];
+  const ordering = (s.propertyOrdering as string[]) || Object.keys(props);
+  for (const key of ordering) {
+    const prop = props[key] as Record<string, unknown> | undefined;
+    if (!prop) continue;
+    let desc = `"${key}": `;
+    const type = (prop.type as string || '').toUpperCase();
+    if (prop.enum) {
+      desc += `one of ${JSON.stringify(prop.enum)}`;
+    } else if (type === 'ARRAY') {
+      const itemType = (prop.items as Record<string, unknown>)?.type || 'any';
+      desc += `array of ${String(itemType).toLowerCase()}`;
+    } else {
+      desc += type.toLowerCase();
+    }
+    fields.push(desc);
+  }
+
+  return [
+    '',
+    'CRITICAL: You MUST respond with valid JSON only. No markdown, no explanation, no text before or after the JSON.',
+    'The JSON object must have exactly these fields in this order:',
+    ...fields.map(f => `  ${f}`),
+    `Required fields: ${JSON.stringify(s.required || ordering)}`,
+  ].join('\n');
+}
+
+/**
+ * Converts GeminiTurn[] into OpenAI-compatible message array,
+ * and prepends the system instruction.
+ */
+function buildMessages(
+  systemInstruction: string,
+  turns: GeminiTurn[],
+  responseSchema: unknown
+): { role: string; content: string }[] {
+  const jsonInstruction = schemaToJsonInstruction(responseSchema);
+  const fullSystem = systemInstruction + jsonInstruction;
+
+  const messages: { role: string; content: string }[] = [
+    { role: 'system', content: fullSystem },
+  ];
+
+  for (const turn of turns) {
+    messages.push({
+      role: turn.role === 'model' ? 'assistant' : 'user',
+      content: turn.text,
+    });
+  }
+
+  return messages;
 }
 
 export async function generateJson<T>(opts: {
@@ -112,124 +163,92 @@ export async function generateJson<T>(opts: {
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    return { ok: false, kind: 'no_key', error: 'GEMINI_API_KEY is not configured', latencyMs: 0 };
+    return { ok: false, kind: 'no_key', error: 'OPENROUTER_API_KEY is not configured', latencyMs: 0 };
   }
 
-  const model = opts.model || AI_BOT_MODEL;
   const timeoutMs = opts.timeoutMs ?? 6000;
-  const maxAttempts = 1 + (opts.retries ?? 1);
   const deadline = startedAt + timeoutMs;
+  const messages = buildMessages(opts.systemInstruction, opts.turns, opts.responseSchema);
 
-  const payload = {
-    systemInstruction: { parts: [{ text: opts.systemInstruction }] },
-    contents: opts.turns.map(turn => ({
-      role: turn.role,
-      parts: [{ text: turn.text }],
-    })),
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: opts.responseSchema,
-      temperature: opts.temperature ?? 0.2,
-      maxOutputTokens: opts.maxOutputTokens ?? 512,
-      // The single most important line in this file. Current Gemini flash
-      // models think by default, and thinking tokens are billed against
-      // maxOutputTokens: measured on this project's key, 3.5-flash with
-      // thinking on burned 490 of the 512 budget on thoughts and returned
-      // truncated JSON (finishReason MAX_TOKENS) — a bad_json on every single
-      // call. Disabled, the pinned model answers in roughly 0.9s.
-      // Note this is also why the model is pinned: 3.6-flash rejects this
-      // field outright with a 400.
-      thinkingConfig: { thinkingBudget: 0 },
-    },
-    safetySettings: SAFETY_SETTINGS,
-  };
-
-  let lastError = 'unknown error';
-  let lastKind: GeminiErrorKind = 'network';
-  let lastStatus: number | undefined;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  // Try free models with fallback
+  for (const model of FREE_MODELS) {
     const remaining = deadline - Date.now();
-    if (remaining < 500) {
+    if (remaining < 800) {
       return { ok: false, kind: 'timeout', error: 'Budget exhausted before request', latencyMs: elapsed() };
     }
 
-    // Manual controller rather than AbortSignal.timeout: a retry needs a fresh
-    // one, and the per-attempt window is derived from the shared deadline.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remaining);
 
     try {
-      const res = await fetch(`${ENDPOINT_BASE}/${model}:generateContent`, {
+      const res = await fetch(OPENROUTER_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Header, not ?key= — a key in the query string ends up in proxy,
-          // CDN and access logs.
-          'x-goog-api-key': apiKey,
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'HTTP-Referer': 'https://sherut.netlify.app',
+          'X-Title': 'Sherut AI Bot',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: opts.temperature ?? 0.2,
+          max_tokens: opts.maxOutputTokens ?? 512,
+          response_format: { type: 'json_object' },
+        }),
         signal: controller.signal,
       });
       clearTimeout(timer);
 
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        lastStatus = res.status;
-        lastError = `Gemini HTTP ${res.status}: ${text.slice(0, 300)}`;
-        lastKind = res.status === 429 ? 'rate_limited' : 'http';
+        const status = res.status;
 
-        // 400/403 are deterministic (bad request, bad key, quota disabled) —
-        // retrying just burns the remaining budget.
-        const retryable = res.status === 429 || res.status >= 500;
-        if (retryable && attempt < maxAttempts - 1) {
-          const backoff = 600 + Math.floor(Math.random() * 400);
-          if (deadline - Date.now() > backoff + 1200) {
-            await sleep(backoff);
-            continue;
-          }
+        if (status === 429) {
+          // Rate limited on this model — try next
+          console.warn(`[AI] OpenRouter ${model} rate limited (429), trying next...`);
+          continue;
         }
-        return { ok: false, kind: lastKind, error: lastError, latencyMs: elapsed(), status: res.status };
+        if (status === 404) {
+          // Model not available — try next
+          console.warn(`[AI] OpenRouter ${model} not available (404), trying next...`);
+          continue;
+        }
+        // 400/403 are deterministic failures
+        return {
+          ok: false,
+          kind: status === 429 ? 'rate_limited' : 'http',
+          error: `OpenRouter HTTP ${status}: ${text.slice(0, 300)}`,
+          latencyMs: elapsed(),
+          status,
+        };
       }
 
-      const body = (await res.json()) as GeminiResponseBody;
+      const body = await res.json();
 
-      const blockReason = body.promptFeedback?.blockReason;
-      if (blockReason) {
-        return { ok: false, kind: 'blocked', error: `Prompt blocked: ${blockReason}`, latencyMs: elapsed() };
-      }
-
-      const candidate = body.candidates?.[0];
-      const finishReason = candidate?.finishReason;
-      if (finishReason === 'SAFETY' || finishReason === 'PROHIBITED_CONTENT') {
-        return { ok: false, kind: 'blocked', error: `Response blocked: ${finishReason}`, latencyMs: elapsed() };
-      }
-
-      const raw = candidate?.content?.parts?.map(p => p.text || '').join('') || '';
+      const raw = body?.choices?.[0]?.message?.content || '';
       if (!raw.trim()) {
-        // MAX_TOKENS here means the model was cut off mid-object, so the
-        // failure is structural rather than an empty answer.
-        const kind: GeminiErrorKind = finishReason === 'MAX_TOKENS' ? 'bad_json' : 'empty';
-        return { ok: false, kind, error: `Empty response (finishReason: ${finishReason || 'none'})`, latencyMs: elapsed() };
+        console.warn(`[AI] OpenRouter ${model} returned empty, trying next...`);
+        continue;
       }
 
       const parsed = parseJson<T>(raw);
       if (!parsed.ok) {
-        // Includes the MAX_TOKENS case: output truncated mid-object is
-        // indistinguishable from any other malformed payload downstream.
-        return { ok: false, kind: 'bad_json', error: `Unparseable JSON: ${raw.slice(0, 300)}`, latencyMs: elapsed() };
+        console.warn(`[AI] OpenRouter ${model} returned unparseable JSON, trying next...`);
+        continue;
       }
 
-      const usage: GeminiUsage = body.usageMetadata
+      const usage: GeminiUsage = body.usage
         ? {
-            promptTokens: body.usageMetadata.promptTokenCount ?? 0,
-            outputTokens: body.usageMetadata.candidatesTokenCount ?? 0,
-            totalTokens: body.usageMetadata.totalTokenCount ?? 0,
+            promptTokens: body.usage.prompt_tokens ?? 0,
+            outputTokens: body.usage.completion_tokens ?? 0,
+            totalTokens: body.usage.total_tokens ?? 0,
           }
         : EMPTY_USAGE;
 
+      console.log(`[AI] OpenRouter SUCCESS with ${model} in ${elapsed()}ms`);
       return { ok: true, data: parsed.data, raw, usage, model, latencyMs: elapsed() };
     } catch (err) {
       clearTimeout(timer);
@@ -239,18 +258,17 @@ export async function generateJson<T>(opts: {
         return { ok: false, kind: 'timeout', error: `Timed out after ${elapsed()}ms`, latencyMs: elapsed() };
       }
 
-      lastKind = 'network';
-      lastError = err instanceof Error ? err.message : 'network error';
-      if (attempt < maxAttempts - 1) {
-        const backoff = 600 + Math.floor(Math.random() * 400);
-        if (deadline - Date.now() > backoff + 1200) {
-          await sleep(backoff);
-          continue;
-        }
-      }
-      return { ok: false, kind: lastKind, error: lastError, latencyMs: elapsed() };
+      // Network error on this model — try next
+      console.warn(`[AI] OpenRouter ${model} network error, trying next...`, err instanceof Error ? err.message : err);
+      continue;
     }
   }
 
-  return { ok: false, kind: lastKind, error: lastError, latencyMs: elapsed(), status: lastStatus };
+  // All models exhausted
+  return {
+    ok: false,
+    kind: 'network',
+    error: `All OpenRouter free models exhausted within ${elapsed()}ms`,
+    latencyMs: elapsed(),
+  };
 }

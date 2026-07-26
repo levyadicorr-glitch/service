@@ -5,10 +5,10 @@
  * fields, because the admin page selects tenant fields one by one — a nested
  * object costs three edits to thread through instead of two dozen.
  *
- * The Gemini API key is deliberately NOT here: getTenantsWithPasswords()
- * returns every tenant field except adminPassword to the super-admin browser,
- * so a key stored on the tenant would leak. It lives in process.env and is read
- * only inside gemini.ts.
+ *  The API key is deliberately NOT here: getTenantsWithPasswords()
+ *  returns every tenant field except adminPassword to the super-admin browser,
+ *  so a key stored on the tenant would leak. It lives in process.env and is read
+ *  only inside gemini.ts (which routes through OpenRouter).
  */
 
 export interface AiBotConfig {
@@ -41,16 +41,10 @@ export const AI_BOT_LIMITS = {
   escalationPhones: 500,
 } as const;
 
-/** Pinned, not a "-latest" alias: a silent model swap that changes JSON
- *  adherence is exactly the failure you cannot debug from platform logs.
- *
- *  Chosen by measurement against this project's key, not by reputation:
- *    gemini-2.5-flash      404 — no longer served to new API keys
- *    gemini-3.6-flash      400 — rejects thinkingConfig.thinkingBudget
- *    gemini-3.5-flash      works, but ~5.7s p50 — eats the whole webhook budget
- *    gemini-3.1-flash-lite ~0.9s p50, honours thinkingBudget: 0, clean Hebrew
- *  Re-measure before changing this; latency is the binding constraint. */
-export const AI_BOT_MODEL = 'gemini-3.1-flash-lite';
+/** Routed through OpenRouter free tier. The model string here is used
+ *  for display/logging only — gemini.ts has its own fallback chain of
+ *  free models. The first model that responds successfully wins. */
+export const AI_BOT_MODEL = 'inclusionai/ling-3.0-flash:free';
 
 export const DEFAULT_AI_BOT_CONFIG: AiBotConfig = {
   enabled: false,
@@ -104,9 +98,9 @@ export function normalizeAiBotConfig(raw: unknown): AiBotConfig {
   return {
     enabled: toBool(input.enabled, d.enabled),
     testMode: toBool(input.testMode, d.testMode),
-    // Not free text: an arbitrary model string would be a server-side request
-    // forgery vector into the Google endpoint path.
-    model: input.model === AI_BOT_MODEL ? AI_BOT_MODEL : d.model,
+    // Model is resolved server-side by gemini.ts fallback chain.
+    // This field is for display/logging; the actual model is chosen at runtime.
+    model: typeof input.model === 'string' && input.model.trim() ? input.model.trim() : d.model,
     persona: toText(input.persona, AI_BOT_LIMITS.persona, d.persona),
     knowledgeBase: toText(input.knowledgeBase, AI_BOT_LIMITS.knowledgeBase, d.knowledgeBase),
     greeting: toText(input.greeting, AI_BOT_LIMITS.greeting, d.greeting),
