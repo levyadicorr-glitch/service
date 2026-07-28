@@ -1,6 +1,11 @@
+import fs from 'node:fs';
 import { MongoClient } from 'mongodb';
 
-const uri = 'mongodb+srv://adi050levy_db_user:mc6KiMR1apAsvaHc@cluster0.xhavxfi.mongodb.net/?appName=Cluster0';
+// Load MONGODB_URI from .env.local at runtime — never hardcode credentials in a
+// tracked file (this script lives in a public repo).
+const env = fs.readFileSync(new URL('../.env.local', import.meta.url), 'utf8');
+const uri = env.split(/\r?\n/).find((l) => l.startsWith('MONGODB_URI='))?.slice('MONGODB_URI='.length).trim().replace(/^["']|["']$/g, '');
+if (!uri) { console.error('MONGODB_URI not found in .env.local'); process.exit(1); }
 
 async function main() {
   const client = new MongoClient(uri);
