@@ -61,8 +61,10 @@ export async function PATCH(
 
         if (recipients.length === 0) {
           notify = { sent: false, sentCount: 0, reason: 'no_phones' };
-        } else if (!tenant?.greenApiInstanceId || !tenant?.greenApiToken) {
-          notify = { sent: false, sentCount: 0, reason: 'no_greenapi' };
+        } else if (!tenant?.greenApiInstanceId) {
+          notify = { sent: false, sentCount: 0, reason: 'no_instance' };
+        } else if (!tenant?.greenApiToken) {
+          notify = { sent: false, sentCount: 0, reason: 'no_token' };
         } else {
           const businessName = tenant.businessName || tenant.name || 'העסק';
           const factoryLine = updated.factory ? `\n🏭 מפעל: ${updated.factory}` : '';

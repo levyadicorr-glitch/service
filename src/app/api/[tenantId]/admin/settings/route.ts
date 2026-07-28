@@ -10,7 +10,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
   if (csrfError) return csrfError;
 
   try {
-    const sharp = (await import('sharp')).default;
     const { tenantId } = await props.params;
     if (!(await tenantExists(tenantId))) {
       return NextResponse.json({ error: 'סביבה לא נמצאה' }, { status: 404 });
@@ -78,27 +77,36 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       if (!logoFile.type.startsWith('image/')) {
         return NextResponse.json({ error: 'קובץ הלוגו חייב להיות תמונה' }, { status: 400 });
       }
-      
-      const logoBuffer = Buffer.from(await logoFile.arrayBuffer());
-      const webpBuffer = await sharp(logoBuffer)
-        .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 80 })
-        .toBuffer();
-      update.logoUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
-      
-      // Extract dynamic primary color from the logo
+
+      // Logo processing depends on the native `sharp` binary, which can fail to
+      // load on some deployments. Keep it fully isolated so a sharp/vibrant
+      // failure only skips the logo — it must never 500 the settings save and
+      // drop the phone numbers / Green API credentials the admin just entered.
       try {
-        const Vibrant = (await import('node-vibrant')).default;
-        const palette = await Vibrant.from(webpBuffer).getPalette();
-        if (palette.Vibrant) {
-          update.primaryColor = palette.Vibrant.hex;
-        } else if (palette.Muted) {
-          update.primaryColor = palette.Muted.hex;
-        } else if (palette.LightVibrant) {
-          update.primaryColor = palette.LightVibrant.hex;
+        const sharp = (await import('sharp')).default;
+        const logoBuffer = Buffer.from(await logoFile.arrayBuffer());
+        const webpBuffer = await sharp(logoBuffer)
+          .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toBuffer();
+        update.logoUrl = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+
+        // Extract dynamic primary color from the logo
+        try {
+          const Vibrant = (await import('node-vibrant')).default;
+          const palette = await Vibrant.from(webpBuffer).getPalette();
+          if (palette.Vibrant) {
+            update.primaryColor = palette.Vibrant.hex;
+          } else if (palette.Muted) {
+            update.primaryColor = palette.Muted.hex;
+          } else if (palette.LightVibrant) {
+            update.primaryColor = palette.LightVibrant.hex;
+          }
+        } catch (colorErr) {
+          console.error('Error extracting color with Vibrant:', colorErr);
         }
-      } catch (colorErr) {
-        console.error('Error extracting color with Vibrant:', colorErr);
+      } catch (logoErr) {
+        console.error('[SETTINGS] Logo processing failed (sharp unavailable?); saving other settings anyway:', logoErr);
       }
     }
 

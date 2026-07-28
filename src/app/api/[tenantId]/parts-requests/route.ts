@@ -35,7 +35,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
   if (csrfError) return csrfError;
 
   try {
-    const sharp = (await import('sharp')).default;
     const { tenantId } = await params;
     // Public endpoint (customer portal) — validate the tenant before touching its DB.
     if (!(await tenantExists(tenantId))) {

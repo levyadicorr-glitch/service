@@ -23,6 +23,9 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const quoteNotificationPhones = tenantObj?.quoteNotificationPhones || '';
   const chinaOrderNotificationPhones = tenantObj?.chinaOrderNotificationPhones || '';
   const greenApiInstanceId = tenantObj?.greenApiInstanceId || '';
+  // Only a derived boolean crosses to the client — the token itself never
+  // becomes a prop (it is a write-only secret, like the AI key below).
+  const greenApiTokenConfigured = Boolean(tenantObj?.greenApiToken);
   const logoUrl = tenantObj?.logoUrl || '';
   const serviceFormConfig = normalizeServiceFormConfig(tenantObj?.serviceFormConfig);
   const aiBotConfig = normalizeAiBotConfig(tenantObj?.aiBotConfig);
@@ -65,5 +68,5 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const { normalizeModels } = await import('@/lib/db');
   const initialModels = normalizeModels(tenantObj?.models);
 
-  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialChinaOrders={chinaOrders} initialTechnicians={technicians} initialFactories={initialFactories} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} chinaOrderNotificationPhones={chinaOrderNotificationPhones} greenApiInstanceId={greenApiInstanceId} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} aiBotConfig={aiBotConfig} aiKeyConfigured={aiKeyConfigured} />;
+  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialChinaOrders={chinaOrders} initialTechnicians={technicians} initialFactories={initialFactories} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} chinaOrderNotificationPhones={chinaOrderNotificationPhones} greenApiInstanceId={greenApiInstanceId} greenApiTokenConfigured={greenApiTokenConfigured} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} aiBotConfig={aiBotConfig} aiKeyConfigured={aiKeyConfigured} />;
 }

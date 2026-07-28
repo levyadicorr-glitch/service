@@ -38,6 +38,8 @@ interface AdminDashboardProps {
   quoteNotificationPhones?: string;
   chinaOrderNotificationPhones?: string;
   greenApiInstanceId?: string;
+  /** Derived on the server; the token itself never crosses to the client. */
+  greenApiTokenConfigured?: boolean;
   logoUrl?: string;
   serviceFormConfig?: ServiceFormConfig;
   aiBotConfig?: AiBotConfig;
@@ -45,7 +47,7 @@ interface AdminDashboardProps {
   aiKeyConfigured?: boolean;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialChinaOrders = [], initialTechnicians = [], initialFactories = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', chinaOrderNotificationPhones = '', greenApiInstanceId = '', logoUrl = '', serviceFormConfig, aiBotConfig, aiKeyConfigured = false }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialChinaOrders = [], initialTechnicians = [], initialFactories = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', chinaOrderNotificationPhones = '', greenApiInstanceId = '', greenApiTokenConfigured = false, logoUrl = '', serviceFormConfig, aiBotConfig, aiKeyConfigured = false }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
   const [agentsList, setAgentsList] = useState<Agent[]>(initialAgents);
@@ -724,8 +726,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
           alert(`✅ הודעת וואטסאפ נשלחה ל-${n.sentCount} מספרים.`);
         } else if (n.reason === 'no_phones') {
           alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא הוגדרו מספרי טלפון להתראות הזמנות סין.\nהגדרות עסק ← "מספרי טלפון להתראות הזמנות חלקים מסין".');
-        } else if (n.reason === 'no_greenapi') {
-          alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: חיבור ה-Green API אינו מוגדר.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)".');
+        } else if (n.reason === 'no_instance') {
+          alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא הוגדר Green API — Instance ID.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)".');
+        } else if (n.reason === 'no_token' || n.reason === 'no_greenapi') {
+          alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא נשמר Green API — API Token.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)" ← הזן ושמור את הטוקן.');
         } else {
           alert(`⚠️ החלק סומן כ"הוזמן", אך שליחת הוואטסאפ נכשלה:\n${n.reason}`);
         }
@@ -5362,16 +5366,31 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
                 {/* Green API Token */}
                 <div className="space-y-1.5">
-                  <label className="block text-gray-700 text-xs font-bold">Green API — API Token</label>
+                  <label className="text-gray-700 text-xs font-bold flex items-center gap-1.5">
+                    Green API — API Token
+                    {greenApiTokenConfigured ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        <CheckCircle2 className="w-3 h-3" /> טוקן שמור
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                        <AlertCircle className="w-3 h-3" /> לא הוגדר טוקן
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="password"
-                    placeholder="השאר ריק כדי לא לשנות"
+                    placeholder={greenApiTokenConfigured ? 'השאר ריק כדי לא לשנות' : 'הזן API Token'}
                     value={settingsGreenApiToken}
                     onChange={(e) => setSettingsGreenApiToken(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
                     dir="ltr"
                   />
-                  <p className="text-[10px] text-gray-400">הטוקן נשמר מוצפן ולא מוצג שוב. השאר ריק אם אינך רוצה לשנות אותו.</p>
+                  {greenApiTokenConfigured ? (
+                    <p className="text-[10px] text-gray-400">הטוקן נשמר מוצפן ולא מוצג שוב. השאר ריק אם אינך רוצה לשנות אותו.</p>
+                  ) : (
+                    <p className="text-[10px] text-amber-600 font-bold">לא נשמר טוקן עדיין — יש להזין ולשמור טוקן כדי שהאוטומציה של הוואטסאפ (כולל התראות הזמנות מסין) תעבוד.</p>
+                  )}
                 </div>
 
                 {/* Test Connection */}
