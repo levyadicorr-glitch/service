@@ -715,6 +715,21 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'שגיאה בעדכון הסטטוס');
       setChinaOrdersList(prev => prev.map(o => (o.id === id ? { ...o, status } : o)));
+
+      // Surface the WhatsApp automation result when marking as ORDERED, so a
+      // silent no-send becomes an actionable message instead of a mystery.
+      if (status === 'ORDERED' && data.notify) {
+        const n = data.notify;
+        if (n.sent) {
+          alert(`✅ הודעת וואטסאפ נשלחה ל-${n.sentCount} מספרים.`);
+        } else if (n.reason === 'no_phones') {
+          alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא הוגדרו מספרי טלפון להתראות הזמנות סין.\nהגדרות עסק ← "מספרי טלפון להתראות הזמנות חלקים מסין".');
+        } else if (n.reason === 'no_greenapi') {
+          alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: חיבור ה-Green API אינו מוגדר.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)".');
+        } else {
+          alert(`⚠️ החלק סומן כ"הוזמן", אך שליחת הוואטסאפ נכשלה:\n${n.reason}`);
+        }
+      }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'שגיאה בעדכון הסטטוס');
     } finally {

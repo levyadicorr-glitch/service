@@ -35,33 +35,58 @@ export async function PATCH(
 
     // When a China part is marked ORDERED, notify the dedicated China-order
     // notification phones over WhatsApp. Best-effort: a failed/absent send must
-    // never fail the status update itself.
-    let autoNotifySent = false;
+    // never fail the status update itself. `notify` reports back exactly what
+    // happened so the admin UI can explain why a message did/didn't go out.
+    let notify: { sent: boolean; sentCount: number; reason: string } = {
+      sent: false,
+      sentCount: 0,
+      reason: 'not_ordered',
+    };
     if (status === 'ORDERED') {
       try {
         const tenant = await getTenantById(tenantId);
         const recipients = Array.from(new Set(
           (tenant?.chinaOrderNotificationPhones || '')
-            .split(',')
+            .split(/[,\n;]/)
             .map((p) => p.trim())
             .filter((p) => p.length > 0)
         ));
-        if (recipients.length > 0 && tenant?.greenApiInstanceId && tenant?.greenApiToken) {
+        console.log('[CHINA-ORDERS] ORDERED notify:', {
+          tenantId,
+          orderId: id,
+          recipients,
+          hasInstance: !!tenant?.greenApiInstanceId,
+          hasToken: !!tenant?.greenApiToken,
+        });
+
+        if (recipients.length === 0) {
+          notify = { sent: false, sentCount: 0, reason: 'no_phones' };
+        } else if (!tenant?.greenApiInstanceId || !tenant?.greenApiToken) {
+          notify = { sent: false, sentCount: 0, reason: 'no_greenapi' };
+        } else {
           const businessName = tenant.businessName || tenant.name || 'העסק';
           const factoryLine = updated.factory ? `\n🏭 מפעל: ${updated.factory}` : '';
           const techLine = updated.technicianName ? `\n🔧 טכנאי: ${updated.technicianName}` : '';
           const message = `📦 הוזמן חלק מסין ב-${businessName}\nחלק: ${updated.partName}\nכמות: ${updated.quantity}${factoryLine}${techLine}\nמספר הזמנה: #${updated.orderNumber}`;
-          const results = await Promise.allSettled(
+          const results = await Promise.all(
             recipients.map((p) => sendWhatsAppMessage(tenant.greenApiInstanceId!, tenant.greenApiToken!, p, message))
           );
-          autoNotifySent = results.some((r) => r.status === 'fulfilled' && r.value.sent);
+          const sentCount = results.filter((r) => r.sent).length;
+          const firstError = results.find((r) => !r.sent)?.error;
+          console.log('[CHINA-ORDERS] send results:', results);
+          notify = {
+            sent: sentCount > 0,
+            sentCount,
+            reason: sentCount > 0 ? 'sent' : `send_failed: ${firstError || 'unknown'}`,
+          };
         }
       } catch (notifyErr) {
         console.error('Error sending China-order WhatsApp notification:', notifyErr);
+        notify = { sent: false, sentCount: 0, reason: `error: ${notifyErr instanceof Error ? notifyErr.message : 'unknown'}` };
       }
     }
 
-    return NextResponse.json({ success: true, order: updated, autoNotifySent });
+    return NextResponse.json({ success: true, order: updated, notify });
   } catch (err: unknown) {
     console.error('Error updating china order:', err);
     return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
