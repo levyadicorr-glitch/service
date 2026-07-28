@@ -1,4 +1,4 @@
-import type { ServiceRequest, PartRequest, Order } from './db';
+import type { ServiceRequest, PartRequest, Order, ChinaOrder } from './db';
 
 /**
  * Canonical Hebrew status labels.
@@ -17,6 +17,7 @@ export type ServiceRequestStatus = ServiceRequest['status'];
 export type PartRequestStatus = PartRequest['status'];
 export type QuoteStatus = NonNullable<PartRequest['quoteStatus']>;
 export type OrderStatus = Order['status'];
+export type ChinaOrderStatus = ChinaOrder['status'];
 
 export const SERVICE_REQUEST_STATUS_LABELS: Record<ServiceRequestStatus, string> = {
   NEW: 'חדש',
@@ -46,6 +47,13 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   CANCELLED: 'בוטל',
 };
 
+export const CHINA_ORDER_STATUS_LABELS: Record<ChinaOrderStatus, string> = {
+  PENDING_APPROVAL: 'ממתין לאישור',
+  WAITING_TO_ORDER: 'ממתין להזמנה',
+  ORDERED: 'הוזמן',
+  ARRIVED: 'הגיע',
+};
+
 // Each lookup falls back to the raw string rather than throwing: an unknown
 // status must degrade to a slightly odd label, never to a failed webhook.
 function lookup(map: Record<string, string>, status?: string): string {
@@ -67,4 +75,8 @@ export function quoteStatusLabel(status?: string): string {
 
 export function orderStatusLabel(status?: string): string {
   return lookup(ORDER_STATUS_LABELS, status);
+}
+
+export function chinaOrderStatusLabel(status?: string): string {
+  return lookup(CHINA_ORDER_STATUS_LABELS, status);
 }

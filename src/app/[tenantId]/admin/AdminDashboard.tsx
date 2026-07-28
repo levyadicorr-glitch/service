@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest, SpecificModel } from '@/lib/db';
+import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest, SpecificModel, ChinaOrder, Technician } from '@/lib/db';
 import { ServiceFormConfig, normalizeServiceFormConfig, BUILTIN_FIELD_META, FormField, CustomFieldType } from '@/lib/serviceFormConfig';
 import { AiBotConfig, normalizeAiBotConfig, AI_BOT_LIMITS } from '@/lib/aiBotConfig';
 import ServiceRequestForm from '@/components/ServiceRequestForm';
@@ -13,7 +13,7 @@ import {
   Trash2, Copy, Send, ExternalLink, Info, Check, User, Store, Phone,
   Eye, Navigation, Settings, HelpCircle, FileText, X, RotateCw, Loader2, Truck, Package,
   Menu, ShoppingCart, Pencil, Route, MapPin, SlidersHorizontal, GripVertical, Smartphone, Briefcase,
-  Bot, Sparkles, MessagesSquare, ShieldAlert, Power, FlaskConical, BookOpen
+  Bot, Sparkles, MessagesSquare, ShieldAlert, Power, FlaskConical, BookOpen, Boxes, Wrench, Factory, Camera, Image as ImageIcon
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -23,6 +23,9 @@ interface AdminDashboardProps {
   initialPartRequests: PartRequest[];
   initialOrders: Order[];
   initialAgents?: Agent[];
+  initialChinaOrders?: ChinaOrder[];
+  initialTechnicians?: Technician[];
+  initialFactories?: string[];
   initialDeviceModels?: string[];
   initialModels?: SpecificModel[];
   tenantId: string;
@@ -33,6 +36,7 @@ interface AdminDashboardProps {
   adminWhatsappPhone2?: string;
   adminWhatsappPhone3?: string;
   quoteNotificationPhones?: string;
+  chinaOrderNotificationPhones?: string;
   greenApiInstanceId?: string;
   logoUrl?: string;
   serviceFormConfig?: ServiceFormConfig;
@@ -41,14 +45,17 @@ interface AdminDashboardProps {
   aiKeyConfigured?: boolean;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', greenApiInstanceId = '', logoUrl = '', serviceFormConfig, aiBotConfig, aiKeyConfigured = false }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialChinaOrders = [], initialTechnicians = [], initialFactories = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', chinaOrderNotificationPhones = '', greenApiInstanceId = '', logoUrl = '', serviceFormConfig, aiBotConfig, aiKeyConfigured = false }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
   const [agentsList, setAgentsList] = useState<Agent[]>(initialAgents);
   const [requests, setRequests] = useState<ServiceRequest[]>(initialRequests);
   const [partRequestsList, setPartRequestsList] = useState<PartRequest[]>(initialPartRequests);
   const [ordersList, setOrdersList] = useState<Order[]>(initialOrders);
-  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'agents' | 'partRequests' | 'orders' | 'dispatch' | 'formBuilder' | 'aiBot'>('requests');
+  const [chinaOrdersList, setChinaOrdersList] = useState<ChinaOrder[]>(initialChinaOrders);
+  const [techniciansList, setTechniciansList] = useState<Technician[]>(initialTechnicians);
+  const [factories, setFactories] = useState<string[]>(initialFactories);
+  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'agents' | 'partRequests' | 'orders' | 'chinaOrders' | 'dispatch' | 'formBuilder' | 'aiBot'>('requests');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const REGIONS: { key: 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM'; label: string }[] = [
@@ -75,6 +82,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [currentAdminWhatsappPhone2, setCurrentAdminWhatsappPhone2] = useState(adminWhatsappPhone2);
   const [currentAdminWhatsappPhone3, setCurrentAdminWhatsappPhone3] = useState(adminWhatsappPhone3);
   const [currentQuoteNotificationPhones, setCurrentQuoteNotificationPhones] = useState(quoteNotificationPhones);
+  const [currentChinaOrderNotificationPhones, setCurrentChinaOrderNotificationPhones] = useState(chinaOrderNotificationPhones);
   const [currentGreenApiInstanceId, setCurrentGreenApiInstanceId] = useState(greenApiInstanceId);
   const [currentLogoUrl, setCurrentLogoUrl] = useState(logoUrl);
   const [currentServiceFormConfig, setCurrentServiceFormConfig] = useState<ServiceFormConfig>(() => normalizeServiceFormConfig(serviceFormConfig));
@@ -90,6 +98,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [settingsAdminWhatsappPhone2, setSettingsAdminWhatsappPhone2] = useState(adminWhatsappPhone2);
   const [settingsAdminWhatsappPhone3, setSettingsAdminWhatsappPhone3] = useState(adminWhatsappPhone3);
   const [settingsQuoteNotificationPhones, setSettingsQuoteNotificationPhones] = useState(quoteNotificationPhones);
+  const [settingsChinaOrderNotificationPhones, setSettingsChinaOrderNotificationPhones] = useState(chinaOrderNotificationPhones);
   const [settingsGreenApiInstanceId, setSettingsGreenApiInstanceId] = useState(greenApiInstanceId);
   const [settingsGreenApiToken, setSettingsGreenApiToken] = useState('');
   const [connectionTestResult, setConnectionTestResult] = useState<'idle' | 'checking' | 'connected' | 'disconnected' | 'error'>('idle');
@@ -115,6 +124,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     setSettingsAdminWhatsappPhone2(currentAdminWhatsappPhone2);
     setSettingsAdminWhatsappPhone3(currentAdminWhatsappPhone3);
     setSettingsQuoteNotificationPhones(currentQuoteNotificationPhones);
+    setSettingsChinaOrderNotificationPhones(currentChinaOrderNotificationPhones);
     setSettingsGreenApiInstanceId(currentGreenApiInstanceId);
     setSettingsGreenApiToken('');
     setConnectionTestResult('idle');
@@ -403,6 +413,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       formData.append('adminWhatsappPhone2', settingsAdminWhatsappPhone2.trim());
       formData.append('adminWhatsappPhone3', settingsAdminWhatsappPhone3.trim());
       formData.append('quoteNotificationPhones', settingsQuoteNotificationPhones.trim());
+      formData.append('chinaOrderNotificationPhones', settingsChinaOrderNotificationPhones.trim());
       formData.append('greenApiInstanceId', settingsGreenApiInstanceId.trim());
       if (settingsGreenApiToken.trim()) {
         formData.append('greenApiToken', settingsGreenApiToken.trim());
@@ -436,6 +447,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       setCurrentAdminWhatsappPhone2(settingsAdminWhatsappPhone2);
       setCurrentAdminWhatsappPhone3(settingsAdminWhatsappPhone3);
       setCurrentQuoteNotificationPhones(settingsQuoteNotificationPhones);
+      setCurrentChinaOrderNotificationPhones(settingsChinaOrderNotificationPhones);
       setCurrentGreenApiInstanceId(settingsGreenApiInstanceId);
       if (removeLogoFlag) {
         setCurrentLogoUrl('');
@@ -616,6 +628,252 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       setDeletingAgentId(null);
     }
   };
+
+  // ---------------- China Parts Orders State & Handlers ----------------
+  const CHINA_ORDER_STATUSES: { key: 'WAITING_TO_ORDER' | 'ORDERED' | 'ARRIVED'; label: string; bg: string; text: string; border: string }[] = [
+    { key: 'WAITING_TO_ORDER', label: 'ממתין להזמנה', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100' },
+    { key: 'ORDERED', label: 'הוזמן', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100' },
+    { key: 'ARRIVED', label: 'הגיע', bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-100' },
+  ];
+
+  const [chinaOrderSearch, setChinaOrderSearch] = useState('');
+  const [chinaStatusFilter, setChinaStatusFilter] = useState<string>('ALL');
+
+  // New China order modal
+  const [isAddChinaOrderModalOpen, setIsAddChinaOrderModalOpen] = useState(false);
+  const [newChinaPartName, setNewChinaPartName] = useState('');
+  const [newChinaQuantity, setNewChinaQuantity] = useState('1');
+  const [newChinaFactory, setNewChinaFactory] = useState('');
+  const [newChinaPhoto, setNewChinaPhoto] = useState<File | null>(null);
+  const [newChinaPhotoPreview, setNewChinaPhotoPreview] = useState<string | null>(null);
+  const [isSavingChinaOrder, setIsSavingChinaOrder] = useState(false);
+  const chinaFileInputRef = useRef<HTMLInputElement>(null);
+  const chinaCameraInputRef = useRef<HTMLInputElement>(null);
+  const [updatingChinaOrderId, setUpdatingChinaOrderId] = useState<string | null>(null);
+
+  const handleChinaPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setNewChinaPhoto(file);
+      setNewChinaPhotoPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const resetChinaOrderForm = () => {
+    setNewChinaPartName('');
+    setNewChinaQuantity('1');
+    setNewChinaFactory('');
+    setNewChinaPhoto(null);
+    setNewChinaPhotoPreview(null);
+    setIsAddingFactoryInline(false);
+    setNewFactoryInput('');
+  };
+
+  const handleCreateChinaOrder = async () => {
+    if (!newChinaPartName.trim()) {
+      alert('יש להזין שם חלק');
+      return;
+    }
+    const qty = parseInt(newChinaQuantity, 10);
+    if (!Number.isFinite(qty) || qty < 1) {
+      alert('כמות לא תקינה');
+      return;
+    }
+    setIsSavingChinaOrder(true);
+    try {
+      const formData = new FormData();
+      formData.append('partName', newChinaPartName.trim());
+      formData.append('quantity', String(qty));
+      formData.append('factory', newChinaFactory.trim());
+      if (newChinaPhoto) formData.append('photo', newChinaPhoto);
+
+      const res = await fetch(`/api/${tenantId}/china-orders`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה ביצירת ההזמנה');
+
+      setChinaOrdersList(prev => [data.order, ...prev]);
+      resetChinaOrderForm();
+      setIsAddChinaOrderModalOpen(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה ביצירת ההזמנה');
+    } finally {
+      setIsSavingChinaOrder(false);
+    }
+  };
+
+  const handleChinaOrderStatusChange = async (id: string, status: ChinaOrder['status']) => {
+    setUpdatingChinaOrderId(id);
+    try {
+      const res = await fetch(`/api/${tenantId}/china-orders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בעדכון הסטטוס');
+      setChinaOrdersList(prev => prev.map(o => (o.id === id ? { ...o, status } : o)));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בעדכון הסטטוס');
+    } finally {
+      setUpdatingChinaOrderId(null);
+    }
+  };
+
+  const handleApproveChinaOrder = (id: string) => handleChinaOrderStatusChange(id, 'WAITING_TO_ORDER');
+
+  const handleDeleteChinaOrder = async (id: string) => {
+    if (!confirm('האם למחוק הזמנה זו?')) return;
+    try {
+      const res = await fetch(`/api/${tenantId}/china-orders/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'שגיאה במחיקת ההזמנה');
+      }
+      setChinaOrdersList(prev => prev.filter(o => o.id !== id));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה במחיקת ההזמנה');
+    }
+  };
+
+  // ---------------- Technicians State & Handlers ----------------
+  const [isAddTechnicianModalOpen, setIsAddTechnicianModalOpen] = useState(false);
+  const [newTechnicianName, setNewTechnicianName] = useState('');
+  const [newTechnicianPhone, setNewTechnicianPhone] = useState('');
+  const [newTechnicianPassword, setNewTechnicianPassword] = useState('');
+  const [isSavingTechnician, setIsSavingTechnician] = useState(false);
+  const [deletingTechnicianId, setDeletingTechnicianId] = useState<string | null>(null);
+  const [copiedTechnicianToken, setCopiedTechnicianToken] = useState<string | null>(null);
+
+  const copyTechnicianPortalUrl = (token: string) => {
+    const url = `${baseUrl}/${tenantId}/technician/${token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedTechnicianToken(token);
+    setTimeout(() => setCopiedTechnicianToken(null), 2000);
+  };
+
+  const handleCreateTechnician = async () => {
+    if (!newTechnicianName.trim() || !newTechnicianPhone.trim() || !newTechnicianPassword.trim()) {
+      alert('יש למלא שם, טלפון וסיסמת כניסה לטכנאי');
+      return;
+    }
+    setIsSavingTechnician(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/technicians`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newTechnicianName.trim(),
+          phone: newTechnicianPhone.trim(),
+          password: newTechnicianPassword.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה ביצירת טכנאי');
+
+      setTechniciansList(prev => [data.technician, ...prev]);
+      setNewTechnicianName('');
+      setNewTechnicianPhone('');
+      setNewTechnicianPassword('');
+      setIsAddTechnicianModalOpen(false);
+      alert('טכנאי חדש נוצר בהצלחה! 🎉');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה ביצירת טכנאי');
+    } finally {
+      setIsSavingTechnician(false);
+    }
+  };
+
+  const handleDeleteTechnician = async (technicianId: string) => {
+    if (!confirm('האם למחוק טכנאי זה? הקישור האישי שלו יפסיק לעבוד.')) return;
+    setDeletingTechnicianId(technicianId);
+    try {
+      const res = await fetch(`/api/${tenantId}/technicians/${technicianId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'שגיאה במחיקת טכנאי');
+      }
+      setTechniciansList(prev => prev.filter(t => t.id !== technicianId));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה במחיקת טכנאי');
+    } finally {
+      setDeletingTechnicianId(null);
+    }
+  };
+
+  // ---------------- Factories (מפעלים) State & Handlers ----------------
+  const [newFactoryInput, setNewFactoryInput] = useState('');
+  const [isSavingFactory, setIsSavingFactory] = useState(false);
+  // Inline "+" add-factory flow inside the new China order modal.
+  const [isAddingFactoryInline, setIsAddingFactoryInline] = useState(false);
+
+  const handleAddFactory = async (): Promise<string | null> => {
+    const trimmed = newFactoryInput.trim();
+    if (!trimmed) return null;
+    setIsSavingFactory(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/factories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ factoryName: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בהוספת המפעל');
+      if (data.factories && Array.isArray(data.factories)) {
+        setFactories(data.factories);
+      } else if (!factories.includes(trimmed)) {
+        setFactories(prev => [...prev, trimmed]);
+      }
+      setNewFactoryInput('');
+      return trimmed;
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בהוספת המפעל');
+      return null;
+    } finally {
+      setIsSavingFactory(false);
+    }
+  };
+
+  // Adds a factory from the new-order modal and auto-selects it.
+  const handleAddFactoryInline = async () => {
+    const added = await handleAddFactory();
+    if (added) {
+      setNewChinaFactory(added);
+      setIsAddingFactoryInline(false);
+    }
+  };
+
+  const handleDeleteFactory = async (factoryName: string) => {
+    try {
+      const res = await fetch(`/api/${tenantId}/factories`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ factoryName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה במחיקת המפעל');
+      if (data.factories && Array.isArray(data.factories)) {
+        setFactories(data.factories);
+      } else {
+        setFactories(prev => prev.filter(f => f !== factoryName));
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה במחיקת המפעל');
+    }
+  };
+
+  // China orders split: pending technician submissions vs the live orders table.
+  const pendingChinaOrders = chinaOrdersList.filter(o => o.status === 'PENDING_APPROVAL');
+  const activeChinaOrders = chinaOrdersList.filter(o => o.status !== 'PENDING_APPROVAL');
+  const filteredChinaOrders = activeChinaOrders.filter(o => {
+    const matchesSearch = !chinaOrderSearch.trim()
+      || o.partName.toLowerCase().includes(chinaOrderSearch.trim().toLowerCase())
+      || (o.factory || '').toLowerCase().includes(chinaOrderSearch.trim().toLowerCase());
+    const matchesStatus = chinaStatusFilter === 'ALL' || o.status === chinaStatusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const multiDriver = driversList.length > 1;
 
@@ -1447,6 +1705,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     { key: 'agents', label: 'סוכני מכירות', icon: Briefcase },
     { key: 'partRequests', label: 'בקשות חלקים', icon: Package },
     { key: 'orders', label: 'הזמנת סחורה', icon: ShoppingCart },
+    { key: 'chinaOrders', label: 'הזמנות חלקים בסין', icon: Boxes },
     { key: 'dispatch', label: 'לוח שילוח', icon: Route },
     { key: 'formBuilder', label: 'עיצוב הטופס', icon: SlidersHorizontal },
     { key: 'aiBot', label: 'בוט AI שירות לקוחות', icon: Bot },
@@ -1540,7 +1799,9 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   key={item.key}
                   onClick={() => handleNavSelect(item.key)}
                   className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                    activeTab === item.key ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
+                    activeTab === item.key
+                      ? (item.key === 'chinaOrders' ? 'bg-red-600 text-white shadow-md' : 'bg-gray-900 text-white shadow-md')
+                      : (item.key === 'chinaOrders' ? 'text-red-600 hover:bg-red-50 font-black' : 'text-gray-600 hover:bg-gray-100')
                   }`}
                 >
                   <ItemIcon className="w-4 h-4" />
@@ -1582,7 +1843,9 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   key={item.key}
                   onClick={() => setActiveTab(item.key)}
                   className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
-                    activeTab === item.key ? 'bg-gray-900 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
+                    activeTab === item.key
+                      ? (item.key === 'chinaOrders' ? 'bg-red-600 text-white shadow-md' : 'bg-gray-900 text-white shadow-md')
+                      : (item.key === 'chinaOrders' ? 'text-red-600 hover:bg-red-50 font-black' : 'text-gray-600 hover:bg-gray-100')
                   }`}
                 >
                   <ItemIcon className="w-4 h-4" />
@@ -2726,6 +2989,264 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'chinaOrders' && (
+          <div className="space-y-6">
+            {/* Pending technician submissions awaiting approval */}
+            {pendingChinaOrders.length > 0 && (
+              <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-amber-200/70 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  בקשות טכנאים ממתינות לאישור ({pendingChinaOrders.length})
+                </h3>
+                <div className="space-y-2">
+                  {pendingChinaOrders.map(o => (
+                    <div key={o.id} className="p-3 bg-amber-50/60 border border-amber-100 rounded-2xl flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/${tenantId}/china-orders/${o.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                          <span>{o.partName}</span>
+                          {o.technicianName && (
+                            <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200/60 rounded-full text-[10px] font-bold flex items-center gap-1">
+                              🔧 טכנאי: {o.technicianName}
+                            </span>
+                          )}
+                        </strong>
+                        <span className="text-xs text-gray-600 block mt-1 truncate">
+                          כמות: {o.quantity}{o.factory ? ` · מפעל: ${o.factory}` : ''}
+                        </span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(o.createdAt)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleApproveChinaOrder(o.id)}
+                          disabled={updatingChinaOrderId === o.id}
+                          className="px-3 py-2 rounded-xl text-[10px] font-bold bg-green-50 hover:bg-green-100 text-green-600 border border-green-100/50 transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <Check className="w-3.5 h-3.5" /> אשר
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteChinaOrder(o.id)}
+                          className="px-3 py-2 rounded-xl text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-100/50 transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <X className="w-3.5 h-3.5" /> דחה
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Orders toolbar */}
+            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+                <div className="relative w-full sm:w-72">
+                  <input
+                    type="text"
+                    placeholder="חיפוש לפי שם חלק או מפעל..."
+                    value={chinaOrderSearch}
+                    onChange={(e) => setChinaOrderSearch(e.target.value)}
+                    className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-red-500/10 focus:border-red-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                  />
+                  <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
+                </div>
+                <select
+                  value={chinaStatusFilter}
+                  onChange={(e) => setChinaStatusFilter(e.target.value)}
+                  className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-red-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <option value="ALL">כל הסטטוסים</option>
+                  {CHINA_ORDER_STATUSES.map(s => (
+                    <option key={s.key} value={s.key}>{s.label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { resetChinaOrderForm(); setIsAddChinaOrderModalOpen(true); }}
+                  className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  הזמנה חדשה
+                </button>
+              </div>
+              <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">נמצאו {filteredChinaOrders.length} הזמנות</span>
+            </div>
+
+            {/* Orders table */}
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+              {filteredChinaOrders.length === 0 ? (
+                <div className="p-10 text-center text-gray-400 text-sm">
+                  {activeChinaOrders.length === 0 ? 'עדיין לא נוצרו הזמנות חלקים מסין.' : 'לא נמצאו הזמנות תואמות לחיפוש.'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredChinaOrders.map(o => {
+                    const statusObj = CHINA_ORDER_STATUSES.find(s => s.key === o.status) || CHINA_ORDER_STATUSES[0];
+                    return (
+                      <div key={o.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center gap-3">
+                        <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
+                          {/* Thumbnail loads on demand from the image endpoint (lazy). */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={`/api/${tenantId}/china-orders/${o.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                            <span>{o.partName}</span>
+                            {o.source === 'technician' && o.technicianName && (
+                              <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200/60 rounded-full text-[10px] font-bold flex items-center gap-1">
+                                🔧 {o.technicianName}
+                              </span>
+                            )}
+                          </strong>
+                          <span className="text-xs text-gray-600 block mt-1 truncate">
+                            כמות: {o.quantity}{o.factory ? ` · מפעל: ${o.factory}` : ''}
+                          </span>
+                          <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(o.createdAt)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                          <select
+                            value={o.status}
+                            onChange={(e) => handleChinaOrderStatusChange(o.id, e.target.value as ChinaOrder['status'])}
+                            disabled={updatingChinaOrderId === o.id}
+                            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                          >
+                            {CHINA_ORDER_STATUSES.map(st => (
+                              <option key={st.key} value={st.key}>{st.label}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteChinaOrder(o.id)}
+                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                            title="מחק הזמנה"
+                            aria-label="מחק הזמנה"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Technicians management */}
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-red-600" />
+                    טכנאים ({techniciansList.length})
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    לכל טכנאי קישור אישי מאובטח בסיסמה להעלאת בקשות חלקים מסין. הבקשות ממתינות לאישורך.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddTechnicianModalOpen(true)}
+                  className="px-4 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md shadow-red-500/10 transition-all active:scale-[0.98] cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  הוסף טכנאי
+                </button>
+              </div>
+
+              {techniciansList.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                  <Wrench className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 text-sm font-bold">אין טכנאים מוגדרים במערכת</p>
+                  <p className="text-gray-400 text-xs mt-1">לחץ על "הוסף טכנאי" כדי ליצור טכנאי חדש ולקבל עבורו קישור אישי.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {techniciansList.map((tech) => (
+                    <div key={tech.id} className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm space-y-4 hover:shadow-md transition-all">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red-600 font-bold text-sm">
+                            🔧
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-gray-900 text-sm">{tech.name}</h4>
+                            <p className="text-xs text-gray-500" dir="ltr">{tech.phone}</p>
+                            {(tech.passwordPlain || tech.password) && (
+                              <p className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100 inline-block mt-1">
+                                🔑 סיסמה: {tech.passwordPlain || tech.password}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTechnician(tech.id)}
+                          disabled={deletingTechnicianId === tech.id}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                          title="מחק טכנאי"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="pt-3 border-t border-gray-100 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => copyTechnicianPortalUrl(tech.token)}
+                          className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          {copiedTechnicianToken === tech.token ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-green-600" />
+                              <span className="text-green-600">הועתק!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-gray-500" />
+                              <span>העתק קישור אישי</span>
+                            </>
+                          )}
+                        </button>
+
+                        {tech.phone && (
+                          <a
+                            href={`https://wa.me/${tech.phone.startsWith('0') ? '972' + tech.phone.slice(1) : tech.phone}?text=${encodeURIComponent(
+                              `שלום ${tech.name},\nזהו הקישור האישי שלך להעלאת בקשות חלקים מסין ב-${currentBusinessName}:\n${baseUrl}/${tenantId}/technician/${tech.token}\n\nהסיסמה שלך: ${tech.passwordPlain || tech.password || ''}`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200/50 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                            title="שלח קישור אישי ב-WhatsApp"
+                          >
+                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
+                            </svg>
+                          </a>
+                        )}
+
+                        <a
+                          href={`/${tenantId}/technician/${tech.token}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                          title="פתח פורטל טכנאי"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </a>
                       </div>
                     </div>
                   ))}
@@ -4782,6 +5303,25 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 </p>
               </div>
 
+              {/* China Order Notification Phones */}
+              <div className="pt-4 border-t border-gray-150 space-y-2">
+                <label className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                  <Boxes className="w-4 h-4 text-red-600" />
+                  מספרי טלפון להתראות הזמנות חלקים מסין (מופרדים בפסיק)
+                </label>
+                <input
+                  type="text"
+                  placeholder="0501234567, 0529876543"
+                  value={settingsChinaOrderNotificationPhones}
+                  onChange={(e) => setSettingsChinaOrderNotificationPhones(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                  dir="ltr"
+                />
+                <p className="text-[10px] text-gray-400">
+                  ברגע שהזמנת חלק מסין מסומנת כ״הוזמן״, תישלח הודעת וואטסאפ אוטומטית למספרים האלו (דורש חיבור Green API תקין למטה).
+                </p>
+              </div>
+
               {/* Green API — WhatsApp Automation Connection */}
               <div className="pt-4 border-t border-gray-150 space-y-3">
                 <h3 className="text-xs font-black text-gray-900 flex items-center gap-1.5">
@@ -5015,6 +5555,62 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   </div>
                 </div>
 
+                {/* Factories (מפעלים) Management — used by China parts orders */}
+                <div className="bg-red-50/50 border border-red-200/80 p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Factory className="w-4 h-4 text-red-600" />
+                      מפעלים להזמנות חלקים מסין
+                    </label>
+                    <span className="text-[10px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-md">
+                      {factories.length} מפעלים
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="הוסף שם מפעל חדש..."
+                      value={newFactoryInput}
+                      onChange={(e) => setNewFactoryInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddFactory(); } }}
+                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddFactory}
+                      disabled={isSavingFactory || !newFactoryInput.trim()}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingFactory ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      הוסף מפעל
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {factories.length === 0 ? (
+                      <span className="text-xs text-gray-400 font-medium">אין מפעלים שמורים במאגר</span>
+                    ) : (
+                      factories.map((item) => (
+                        <div
+                          key={item}
+                          className="inline-flex items-center gap-1.5 bg-white border border-red-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 shadow-2xs group"
+                        >
+                          <span>{item}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFactory(item)}
+                            className="text-gray-400 hover:text-red-600 transition-colors p-0.5 rounded-md hover:bg-red-50 cursor-pointer"
+                            title={`מחק ${item}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
                 {/* Specific Models Management */}
                 <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl space-y-3">
                   <div className="flex items-center justify-between">
@@ -5170,6 +5766,259 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
               <button
                 type="button"
                 onClick={() => setIsAddAgentModalOpen(false)}
+                className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New China Order Modal */}
+      {isAddChinaOrderModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <Boxes className="w-5 h-5 text-red-600" />
+                הזמנת חלק חדשה מסין
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddChinaOrderModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">שם החלק <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: בקר מהירות 48V"
+                  value={newChinaPartName}
+                  onChange={(e) => setNewChinaPartName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                  autoFocus
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-gray-700">כמות <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={newChinaQuantity}
+                    onChange={(e) => setNewChinaQuantity(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-gray-700">מפעל מייצר</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={newChinaFactory}
+                      onChange={(e) => setNewChinaFactory(e.target.value)}
+                      className="flex-1 min-w-0 px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                    >
+                      <option value="">ללא מפעל</option>
+                      {factories.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { setIsAddingFactoryInline(v => !v); setNewFactoryInput(''); }}
+                      className="px-3 py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-xl transition-all cursor-pointer flex items-center justify-center flex-shrink-0"
+                      title="הוסף מפעל חדש"
+                      aria-label="הוסף מפעל חדש"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {isAddingFactoryInline && (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="שם מפעל חדש..."
+                    value={newFactoryInput}
+                    onChange={(e) => setNewFactoryInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddFactoryInline(); } }}
+                    autoFocus
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-red-200 bg-white focus:outline-none focus:ring-2 focus:ring-red-500/20 text-gray-800 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddFactoryInline}
+                    disabled={isSavingFactory || !newFactoryInput.trim()}
+                    className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingFactory ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                    הוסף
+                  </button>
+                </div>
+              )}
+              {factories.length === 0 && !isAddingFactoryInline && (
+                <p className="text-[11px] text-gray-400">אין מפעלים עדיין — לחץ על ➕ להוספת מפעל חדש.</p>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">תמונת החלק</label>
+                <input type="file" accept="image/*" ref={chinaFileInputRef} onChange={handleChinaPhotoChange} className="hidden" />
+                <input type="file" accept="image/*" capture="environment" ref={chinaCameraInputRef} onChange={handleChinaPhotoChange} className="hidden" />
+                {newChinaPhotoPreview ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-red-200 bg-gray-50 aspect-video flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={newChinaPhotoPreview} alt="תצוגה מקדימה" className="w-full h-full object-contain" />
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => chinaCameraInputRef.current?.click()}
+                        className="px-2.5 py-1 bg-red-600/90 hover:bg-red-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Camera className="w-3.5 h-3.5" /> צלם
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => chinaFileInputRef.current?.click()}
+                        className="px-2.5 py-1 bg-gray-700/90 text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        גלריה
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setNewChinaPhoto(null); setNewChinaPhotoPreview(null); }}
+                        className="px-2 py-1 bg-red-700/90 text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        הסר
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed border-gray-200 rounded-2xl p-5 flex flex-col items-center justify-center bg-gray-50/50 gap-3">
+                    <span className="text-xs font-bold text-gray-500">צלם במצלמה או העלה מהגלריה</span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => chinaCameraInputRef.current?.click()}
+                        className="px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>צלם במצלמה</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => chinaFileInputRef.current?.click()}
+                        className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                      >
+                        <ImageIcon className="w-4 h-4 text-gray-400" />
+                        <span>בחר מהגלריה</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleCreateChinaOrder}
+                disabled={isSavingChinaOrder || !newChinaPartName.trim()}
+                className="flex-1 py-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSavingChinaOrder ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                <span>צור הזמנה</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAddChinaOrderModalOpen(false)}
+                className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Technician Modal */}
+      {isAddTechnicianModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <Wrench className="w-5 h-5 text-red-600" />
+                הוספת טכנאי חדש
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddTechnicianModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">שם מלא <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="שם הטכנאי (למשל: יוסי לוי)"
+                  value={newTechnicianName}
+                  onChange={(e) => setNewTechnicianName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">מספר טלפון <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  placeholder="0500000000"
+                  value={newTechnicianPhone}
+                  onChange={(e) => setNewTechnicianPhone(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                  dir="ltr"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">סיסמת כניסה לטכנאי <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="הגדר סיסמה (למשל: 123456)"
+                  value={newTechnicianPassword}
+                  onChange={(e) => setNewTechnicianPassword(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleCreateTechnician}
+                disabled={isSavingTechnician || !newTechnicianName.trim() || !newTechnicianPhone.trim() || !newTechnicianPassword.trim()}
+                className="flex-1 py-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSavingTechnician ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                <span>צור טכנאי והנפק קישור</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAddTechnicianModalOpen(false)}
                 className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
               >
                 ביטול

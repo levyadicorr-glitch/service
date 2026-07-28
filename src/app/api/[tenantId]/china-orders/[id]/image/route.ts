@@ -1,0 +1,42 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getChinaOrderById } from '@/lib/db';
+import { requireTenantAdmin } from '@/lib/auth';
+
+// Serves a china order's photo as raw image bytes (not base64-in-JSON), so the
+// admin china-orders list can lazy-load thumbnails on demand instead of shipping
+// every image inside the page payload. The browser caches the result.
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ tenantId: string; id: string }> }
+) {
+  try {
+    const { tenantId, id } = await params;
+    const denied = requireTenantAdmin(req, tenantId);
+    if (denied) return denied;
+
+    const order = await getChinaOrderById(tenantId, id);
+    if (!order || !order.photoImage) {
+      return NextResponse.json({ error: 'תמונה לא נמצאה' }, { status: 404 });
+    }
+
+    // Stored as a "data:image/webp;base64,...." data URI — decode it back to
+    // binary and serve with the real content type.
+    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]*)$/.exec(order.photoImage);
+    if (!match) {
+      return NextResponse.json({ error: 'פורמט תמונה לא תקין' }, { status: 500 });
+    }
+    const contentType = match[1];
+    const bytes = Buffer.from(match[2], 'base64');
+
+    return new NextResponse(bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'private, max-age=3600',
+      },
+    });
+  } catch (err: unknown) {
+    console.error('Error fetching china order image:', err);
+    return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });
+  }
+}

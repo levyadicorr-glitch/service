@@ -24,12 +24,14 @@ export interface Tenant {
   adminWhatsappPhone2?: string;
   adminWhatsappPhone3?: string;
   quoteNotificationPhones?: string; // Comma-separated list of phones for quote approvals
+  chinaOrderNotificationPhones?: string; // Comma-separated phones notified when a China part is marked ORDERED
   greenApiInstanceId?: string;
   greenApiToken?: string;
   serviceFormConfig?: ServiceFormConfig;
   aiBotConfig?: AiBotConfig;
   deviceModels?: string[]; // Array of custom device models/types
   models?: (string | SpecificModel)[]; // Array of specific device models with associated deviceType
+  factories?: string[]; // Array of manufacturing factories (מפעלים) for China parts orders
   createdAt: string;
 }
 
@@ -68,6 +70,32 @@ export interface Agent {
   password?: string;
   passwordPlain?: string;
   token: string; // secret token for agent portal link /[tenantId]/agent/[token]
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Technician {
+  id: string; // uuid
+  name: string;
+  phone: string;
+  password?: string;
+  passwordPlain?: string;
+  token: string; // secret token for technician portal link /[tenantId]/technician/[token]
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChinaOrder {
+  id: string;
+  orderNumber: number;
+  partName: string;
+  photoImage: string; // base64 webp data URI, stored inline — may be empty
+  quantity: number;
+  factory: string; // dropdown value from tenant.factories
+  status: 'PENDING_APPROVAL' | 'WAITING_TO_ORDER' | 'ORDERED' | 'ARRIVED';
+  source: 'admin' | 'technician';
+  technicianId?: string;
+  technicianName?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -178,6 +206,11 @@ export async function ensureIndexes(tenantId: string) {
     db.collection('orders').createIndex({ driverId: 1 }),
     db.collection('agents').createIndex({ id: 1 }, { unique: true }),
     db.collection('agents').createIndex({ token: 1 }, { unique: true }),
+    db.collection('technicians').createIndex({ id: 1 }, { unique: true }),
+    db.collection('technicians').createIndex({ token: 1 }, { unique: true }),
+    db.collection('chinaOrders').createIndex({ id: 1 }, { unique: true }),
+    db.collection('chinaOrders').createIndex({ status: 1 }),
+    db.collection('chinaOrders').createIndex({ createdAt: -1 }),
     // Lets getCustomerByPhone do a lookup instead of scanning every customer.
     // The AI bot runs it on every inbound WhatsApp message, not just approvals.
     db.collection('customers').createIndex({ phone: 1 }),
@@ -261,7 +294,7 @@ export async function updateTenantAdminPassword(id: string, adminPassword: strin
 
 export async function updateTenantSettings(
   id: string,
-  update: { name?: string; businessName?: string; logoUrl?: string; primaryColor?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; quoteNotificationPhones?: string; greenApiInstanceId?: string; greenApiToken?: string; serviceFormConfig?: ServiceFormConfig; aiBotConfig?: AiBotConfig }
+  update: { name?: string; businessName?: string; logoUrl?: string; primaryColor?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; quoteNotificationPhones?: string; chinaOrderNotificationPhones?: string; greenApiInstanceId?: string; greenApiToken?: string; serviceFormConfig?: ServiceFormConfig; aiBotConfig?: AiBotConfig }
 ): Promise<void> {
   const db = await getMasterDb();
   const setObj: Record<string, any> = {};
@@ -276,6 +309,7 @@ export async function updateTenantSettings(
   if (update.adminWhatsappPhone2 !== undefined) setObj.adminWhatsappPhone2 = update.adminWhatsappPhone2;
   if (update.adminWhatsappPhone3 !== undefined) setObj.adminWhatsappPhone3 = update.adminWhatsappPhone3;
   if (update.quoteNotificationPhones !== undefined) setObj.quoteNotificationPhones = update.quoteNotificationPhones;
+  if (update.chinaOrderNotificationPhones !== undefined) setObj.chinaOrderNotificationPhones = update.chinaOrderNotificationPhones;
   if (update.greenApiInstanceId !== undefined) setObj.greenApiInstanceId = update.greenApiInstanceId;
   if (update.greenApiToken !== undefined) setObj.greenApiToken = update.greenApiToken;
   if (update.logoUrl !== undefined) setObj.logoUrl = update.logoUrl;
@@ -352,6 +386,30 @@ export async function deleteDeviceModelFromTenant(id: string, modelName: string)
   );
   const tenant = await db.collection('tenants').findOne({ id });
   return tenant?.deviceModels || [];
+}
+
+export async function addFactoryToTenant(id: string, factoryName: string): Promise<string[]> {
+  const db = await getMasterDb();
+  const trimmed = factoryName.trim();
+  if (!trimmed) return [];
+
+  await db.collection('tenants').updateOne(
+    { id },
+    { $addToSet: { factories: trimmed } } as any
+  );
+
+  const tenant = await db.collection('tenants').findOne({ id });
+  return tenant?.factories || [trimmed];
+}
+
+export async function deleteFactoryFromTenant(id: string, factoryName: string): Promise<string[]> {
+  const db = await getMasterDb();
+  await db.collection('tenants').updateOne(
+    { id },
+    { $pull: { factories: factoryName } } as any
+  );
+  const tenant = await db.collection('tenants').findOne({ id });
+  return tenant?.factories || [];
 }
 
 export async function deleteModelFromTenant(id: string, modelName: string): Promise<SpecificModel[]> {
@@ -1126,4 +1184,145 @@ export async function getOrdersByAgentId(
       driver: order.driverId ? driverMap.get(order.driverId) : undefined,
     };
   });
+}
+
+// ---------------- Technicians CRUD Helpers ----------------
+
+export async function getTechnicians(tenantId: string): Promise<Technician[]> {
+  const db = await getDb(tenantId);
+  const technicians = await db.collection('technicians').find({}).sort({ createdAt: -1 }).toArray();
+  return technicians.map(t => {
+    const { _id, ...rest } = t;
+    void _id;
+    return rest as unknown as Technician;
+  });
+}
+
+export async function getTechnicianById(tenantId: string, id: string): Promise<Technician | undefined> {
+  const db = await getDb(tenantId);
+  const technician = await db.collection('technicians').findOne({ id });
+  if (!technician) return undefined;
+  const { _id, ...rest } = technician;
+  void _id;
+  return rest as unknown as Technician;
+}
+
+export async function getTechnicianByToken(tenantId: string, token: string): Promise<Technician | undefined> {
+  const db = await getDb(tenantId);
+  const technician = await db.collection('technicians').findOne({ token });
+  if (!technician) return undefined;
+  const { _id, ...rest } = technician;
+  void _id;
+  return rest as unknown as Technician;
+}
+
+export async function createTechnician(
+  tenantId: string,
+  technician: { name: string; phone: string; password?: string }
+): Promise<Technician> {
+  const db = await getDb(tenantId);
+  const token = crypto.randomBytes(16).toString('hex');
+  const now = new Date().toISOString();
+  const pwd = (technician.password || '').trim();
+  const newTechnician: Technician = {
+    id: crypto.randomUUID(),
+    name: technician.name,
+    phone: technician.phone,
+    password: pwd,
+    passwordPlain: pwd,
+    token,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.collection('technicians').insertOne(newTechnician as unknown as Document);
+  return newTechnician;
+}
+
+export async function deleteTechnician(tenantId: string, id: string): Promise<boolean> {
+  const db = await getDb(tenantId);
+  const result = await db.collection('technicians').deleteOne({ id });
+  return result.deletedCount === 1;
+}
+
+// ---------------- China Parts Orders CRUD Helpers ----------------
+
+// excludeImages projects out the base64 photoImage so list views don't ship it
+// (thumbnails load on demand via the china-orders image endpoint).
+export async function getChinaOrders(
+  tenantId: string,
+  options?: { excludeImages?: boolean; status?: ChinaOrder['status'] }
+): Promise<ChinaOrder[]> {
+  const db = await getDb(tenantId);
+  const projection = options?.excludeImages ? { photoImage: 0 } : {};
+  const filter = options?.status ? { status: options.status } : {};
+  const orders = await db.collection('chinaOrders')
+    .find(filter, { projection })
+    .sort({ createdAt: -1 })
+    .toArray();
+  return orders.map(o => {
+    const { _id, ...rest } = o;
+    void _id;
+    return rest as unknown as ChinaOrder;
+  });
+}
+
+export async function getChinaOrderById(tenantId: string, id: string): Promise<ChinaOrder | undefined> {
+  const db = await getDb(tenantId);
+  const order = await db.collection('chinaOrders').findOne({ id });
+  if (!order) return undefined;
+  const { _id, ...rest } = order;
+  void _id;
+  return rest as unknown as ChinaOrder;
+}
+
+export async function createChinaOrder(
+  tenantId: string,
+  order: Omit<ChinaOrder, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt'>
+): Promise<ChinaOrder> {
+  const db = await getDb(tenantId);
+
+  const counterResult = await db.collection('counters').findOneAndUpdate(
+    { _id: 'chinaOrderNumber' as any },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  const orderNumber = counterResult?.seq || 1;
+
+  const now = new Date().toISOString();
+  const newOrder: ChinaOrder = {
+    ...order,
+    id: crypto.randomUUID(),
+    orderNumber,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await db.collection('chinaOrders').insertOne(newOrder as unknown as Document);
+  return newOrder;
+}
+
+export async function updateChinaOrderStatus(
+  tenantId: string,
+  id: string,
+  status: ChinaOrder['status']
+): Promise<ChinaOrder | undefined> {
+  const db = await getDb(tenantId);
+  const updatedAt = new Date().toISOString();
+
+  const result = await db.collection('chinaOrders').findOneAndUpdate(
+    { id },
+    { $set: { status, updatedAt } },
+    { returnDocument: 'after' }
+  );
+
+  if (!result) return undefined;
+  const { _id, ...rest } = result;
+  void _id;
+  return rest as unknown as ChinaOrder;
+}
+
+export async function deleteChinaOrder(tenantId: string, id: string): Promise<boolean> {
+  const db = await getDb(tenantId);
+  const result = await db.collection('chinaOrders').deleteOne({ id });
+  return result.deletedCount === 1;
 }

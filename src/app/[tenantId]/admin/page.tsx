@@ -1,6 +1,6 @@
 import React from 'react';
 import { cookies } from 'next/headers';
-import { getServiceRequests, getCustomers, getDrivers, getPartRequests, getOrders, getAgents, getTenantById, ensureIndexes } from '@/lib/db';
+import { getServiceRequests, getCustomers, getDrivers, getPartRequests, getOrders, getAgents, getChinaOrders, getTechnicians, getTenantById, ensureIndexes } from '@/lib/db';
 import { normalizeServiceFormConfig } from '@/lib/serviceFormConfig';
 import { normalizeAiBotConfig } from '@/lib/aiBotConfig';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
@@ -21,6 +21,7 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const adminWhatsappPhone2 = tenantObj?.adminWhatsappPhone2 || '';
   const adminWhatsappPhone3 = tenantObj?.adminWhatsappPhone3 || '';
   const quoteNotificationPhones = tenantObj?.quoteNotificationPhones || '';
+  const chinaOrderNotificationPhones = tenantObj?.chinaOrderNotificationPhones || '';
   const greenApiInstanceId = tenantObj?.greenApiInstanceId || '';
   const logoUrl = tenantObj?.logoUrl || '';
   const serviceFormConfig = normalizeServiceFormConfig(tenantObj?.serviceFormConfig);
@@ -29,6 +30,7 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   // exclusively inside gemini.ts and must never become a prop.
   const aiKeyConfigured = Boolean(process.env.GEMINI_API_KEY);
   const initialDeviceModels = tenantObj?.deviceModels || ['קורקינט', 'אופניים'];
+  const initialFactories = tenantObj?.factories || [];
 
   // No data leaves the server before a valid admin session exists for this tenant.
   const cookieStore = await cookies();
@@ -50,16 +52,18 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
     getDrivers(tenantId),
   ]);
 
-  const [requestsResult, partRequests, orders, agents] = await Promise.all([
+  const [requestsResult, partRequests, orders, agents, chinaOrders, technicians] = await Promise.all([
     getServiceRequests(tenantId, { page: 1, limit: 200, excludeImages: true, customers, drivers }),
     getPartRequests(tenantId, { excludeImages: true, customers }),
     getOrders(tenantId, { customers, drivers }),
     getAgents(tenantId),
+    getChinaOrders(tenantId, { excludeImages: true }),
+    getTechnicians(tenantId),
   ]);
   const requests = requestsResult.requests;
 
   const { normalizeModels } = await import('@/lib/db');
   const initialModels = normalizeModels(tenantObj?.models);
 
-  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} greenApiInstanceId={greenApiInstanceId} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} aiBotConfig={aiBotConfig} aiKeyConfigured={aiKeyConfigured} />;
+  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialChinaOrders={chinaOrders} initialTechnicians={technicians} initialFactories={initialFactories} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} chinaOrderNotificationPhones={chinaOrderNotificationPhones} greenApiInstanceId={greenApiInstanceId} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} aiBotConfig={aiBotConfig} aiKeyConfigured={aiKeyConfigured} />;
 }

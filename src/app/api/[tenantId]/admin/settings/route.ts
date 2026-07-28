@@ -28,6 +28,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     const adminWhatsappPhone2 = formData.get('adminWhatsappPhone2') as string;
     const adminWhatsappPhone3 = formData.get('adminWhatsappPhone3') as string;
     const quoteNotificationPhones = formData.get('quoteNotificationPhones') as string;
+    const chinaOrderNotificationPhones = formData.get('chinaOrderNotificationPhones') as string;
     const greenApiInstanceId = formData.get('greenApiInstanceId') as string;
     const greenApiToken = formData.get('greenApiToken') as string;
     const password = formData.get('password') as string;
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     if (adminWhatsappPhone2 !== null) update.adminWhatsappPhone2 = adminWhatsappPhone2.trim();
     if (adminWhatsappPhone3 !== null) update.adminWhatsappPhone3 = adminWhatsappPhone3.trim();
     if (quoteNotificationPhones !== null) update.quoteNotificationPhones = quoteNotificationPhones.trim();
+    if (chinaOrderNotificationPhones !== null) update.chinaOrderNotificationPhones = chinaOrderNotificationPhones.trim();
     if (greenApiInstanceId !== null) update.greenApiInstanceId = greenApiInstanceId.trim();
     if (greenApiToken && greenApiToken.trim()) update.greenApiToken = greenApiToken.trim();
     if (partsDeletePassword && partsDeletePassword.trim()) update.partsDeletePassword = partsDeletePassword.trim();
