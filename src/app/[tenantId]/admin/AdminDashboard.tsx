@@ -730,6 +730,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
           alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא הוגדר Green API — Instance ID.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)".');
         } else if (n.reason === 'no_token' || n.reason === 'no_greenapi') {
           alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא נשמר Green API — API Token.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)" ← הזן ושמור את הטוקן.');
+        } else if (typeof n.reason === 'string' && n.reason.includes('not authorized')) {
+          alert('⚠️ החלק סומן כ"הוזמן", אך הוואטסאפ לא נשלח: האינסטנס של Green API אינו מחובר (המכשיר לא מחובר / ה-QR פג).\nהיכנס ל-green-api.com, סרוק מחדש את ה-QR עם מספר הוואטסאפ, ואז לחץ "בדוק חיבור" בהגדרות — צריך להופיע "מחובר ומאושר".');
         } else {
           alert(`⚠️ החלק סומן כ"הוזמן", אך שליחת הוואטסאפ נכשלה:\n${n.reason}`);
         }

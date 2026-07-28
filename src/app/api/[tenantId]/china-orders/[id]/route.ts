@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { deleteChinaOrder, updateChinaOrderStatus, getTenantById } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
-import { sendWhatsAppMessage } from '@/lib/greenApi';
+import { sendWhatsAppMessage, getInstanceState } from '@/lib/greenApi';
 
 const VALID_STATUSES = ['PENDING_APPROVAL', 'WAITING_TO_ORDER', 'ORDERED', 'ARRIVED'] as const;
 type ChinaOrderStatus = (typeof VALID_STATUSES)[number];
@@ -75,12 +75,32 @@ export async function PATCH(
           );
           const sentCount = results.filter((r) => r.sent).length;
           const firstError = results.find((r) => !r.sent)?.error;
-          console.log('[CHINA-ORDERS] send results:', results);
-          notify = {
-            sent: sentCount > 0,
-            sentCount,
-            reason: sentCount > 0 ? 'sent' : `send_failed: ${firstError || 'unknown'}`,
-          };
+          console.log('[CHINA-ORDERS] send results:', JSON.stringify(results));
+
+          if (sentCount > 0) {
+            notify = { sent: true, sentCount, reason: 'sent' };
+          } else {
+            // Everything failed. The overwhelmingly common cause once the token
+            // is set is that the Green API instance itself is not authorized
+            // (the WhatsApp phone/QR isn't actually connected). Probe the live
+            // instance state so the reason is actionable instead of a raw error.
+            let stateNote = '';
+            try {
+              const state = await getInstanceState(tenant.greenApiInstanceId!, tenant.greenApiToken!);
+              console.log('[CHINA-ORDERS] instance state:', state);
+              if (!state.connected) {
+                stateNote = ` | instance not authorized (state: ${state.stateInstance || 'unknown'}) — scan the QR in Green API`;
+              }
+            } catch (stateErr) {
+              stateNote = ` | instance state check failed: ${stateErr instanceof Error ? stateErr.message : 'unknown'}`;
+              console.error('[CHINA-ORDERS] instance state check failed:', stateErr);
+            }
+            notify = {
+              sent: false,
+              sentCount: 0,
+              reason: `send_failed: ${firstError || 'unknown'}${stateNote}`,
+            };
+          }
         }
       } catch (notifyErr) {
         console.error('Error sending China-order WhatsApp notification:', notifyErr);
