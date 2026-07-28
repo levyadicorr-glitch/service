@@ -99,6 +99,72 @@ export function getQuoteNotificationPhones(tenant: { quoteNotificationPhones?: s
   return Array.from(new Set(fallbackAdmin));
 }
 
+export interface ChinaNotifyResult {
+  sent: boolean;
+  sentCount: number;
+  /**
+   * Machine-readable outcome the admin UI turns into a human message:
+   * 'sent' | 'no_phones' | 'no_instance' | 'no_token' | 'send_failed: <detail>'.
+   */
+  reason: string;
+}
+
+/**
+ * Parses the tenant's China-order notification recipients. The field is a free
+ * text list separated by commas, newlines or semicolons.
+ */
+export function getChinaOrderNotificationPhones(tenant: { chinaOrderNotificationPhones?: string }): string[] {
+  return Array.from(new Set(
+    (tenant.chinaOrderNotificationPhones || '')
+      .split(/[,\n;]/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+  ));
+}
+
+/**
+ * Sends a China-order WhatsApp notification to the tenant's configured admin
+ * numbers (chinaOrderNotificationPhones) via their Green API instance. Shared by
+ * both the "order created" and "order marked ORDERED" flows so they behave
+ * identically. Never throws — returns a structured reason the caller surfaces to
+ * the admin. On a total failure it probes the live instance state so the reason
+ * explains the most common real cause (instance not authorized / QR expired).
+ */
+export async function sendChinaOrderNotification(
+  tenant: { greenApiInstanceId?: string; greenApiToken?: string; chinaOrderNotificationPhones?: string },
+  message: string
+): Promise<ChinaNotifyResult> {
+  const recipients = getChinaOrderNotificationPhones(tenant);
+  if (recipients.length === 0) return { sent: false, sentCount: 0, reason: 'no_phones' };
+  if (!tenant.greenApiInstanceId) return { sent: false, sentCount: 0, reason: 'no_instance' };
+  if (!tenant.greenApiToken) return { sent: false, sentCount: 0, reason: 'no_token' };
+
+  const results = await Promise.all(
+    recipients.map((p) => sendWhatsAppMessage(tenant.greenApiInstanceId!, tenant.greenApiToken!, p, message))
+  );
+  console.log('[CHINA-ORDERS] send results:', JSON.stringify(results));
+  const sentCount = results.filter((r) => r.sent).length;
+  if (sentCount > 0) return { sent: true, sentCount, reason: 'sent' };
+
+  // Everything failed. The overwhelmingly common cause once credentials are set
+  // is that the Green API instance itself is not authorized (the WhatsApp phone
+  // / QR isn't actually connected). Probe the live state so the reason is
+  // actionable instead of a raw error.
+  const firstError = results.find((r) => !r.sent)?.error;
+  let stateNote = '';
+  try {
+    const state = await getInstanceState(tenant.greenApiInstanceId, tenant.greenApiToken);
+    console.log('[CHINA-ORDERS] instance state:', state);
+    if (!state.connected) {
+      stateNote = ` | instance not authorized (state: ${state.stateInstance || 'unknown'}) — scan the QR in Green API`;
+    }
+  } catch (stateErr) {
+    stateNote = ` | instance state check failed: ${stateErr instanceof Error ? stateErr.message : 'unknown'}`;
+    console.error('[CHINA-ORDERS] instance state check failed:', stateErr);
+  }
+  return { sent: false, sentCount: 0, reason: `send_failed: ${firstError || 'unknown'}${stateNote}` };
+}
+
 /**
  * Sends a WhatsApp message to all quote notification recipients configured for the tenant.
  */

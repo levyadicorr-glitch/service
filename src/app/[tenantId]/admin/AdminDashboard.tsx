@@ -699,10 +699,34 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       setChinaOrdersList(prev => [data.order, ...prev]);
       resetChinaOrderForm();
       setIsAddChinaOrderModalOpen(false);
+      explainChinaNotify(data.notify, 'ההזמנה נוצרה');
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'שגיאה ביצירת ההזמנה');
     } finally {
       setIsSavingChinaOrder(false);
+    }
+  };
+
+  // Turns the server's China-order WhatsApp `notify` result into a human alert.
+  // Shared by the "order created" and "order marked ORDERED" flows so both give
+  // the admin the same actionable feedback instead of a silent no-send.
+  const explainChinaNotify = (
+    n: { sent: boolean; sentCount: number; reason: string } | undefined,
+    head: string
+  ) => {
+    if (!n || n.reason === 'skipped' || n.reason === 'not_ordered') return;
+    if (n.sent) {
+      alert(`✅ ${head}, והודעת וואטסאפ נשלחה ל-${n.sentCount} מספרים.`);
+    } else if (n.reason === 'no_phones') {
+      alert(`⚠️ ${head}, אך לא נשלחה הודעה: לא הוגדרו מספרי טלפון להתראות הזמנות סין.\nהגדרות עסק ← "מספרי טלפון להתראות הזמנות חלקים מסין".`);
+    } else if (n.reason === 'no_instance') {
+      alert(`⚠️ ${head}, אך לא נשלחה הודעה: לא הוגדר Green API — Instance ID.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)".`);
+    } else if (n.reason === 'no_token' || n.reason === 'no_greenapi') {
+      alert(`⚠️ ${head}, אך לא נשלחה הודעה: לא נשמר Green API — API Token.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)" ← הזן ושמור את הטוקן.`);
+    } else if (typeof n.reason === 'string' && n.reason.includes('not authorized')) {
+      alert(`⚠️ ${head}, אך הוואטסאפ לא נשלח: האינסטנס של Green API אינו מחובר (המכשיר לא מחובר / ה-QR פג).\nהיכנס ל-green-api.com, סרוק מחדש את ה-QR עם מספר הוואטסאפ, ואז לחץ "בדוק חיבור" בהגדרות — צריך להופיע "מחובר ומאושר".`);
+    } else {
+      alert(`⚠️ ${head}, אך שליחת הוואטסאפ נכשלה:\n${n.reason}`);
     }
   };
 
@@ -720,21 +744,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
       // Surface the WhatsApp automation result when marking as ORDERED, so a
       // silent no-send becomes an actionable message instead of a mystery.
-      if (status === 'ORDERED' && data.notify) {
-        const n = data.notify;
-        if (n.sent) {
-          alert(`✅ הודעת וואטסאפ נשלחה ל-${n.sentCount} מספרים.`);
-        } else if (n.reason === 'no_phones') {
-          alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא הוגדרו מספרי טלפון להתראות הזמנות סין.\nהגדרות עסק ← "מספרי טלפון להתראות הזמנות חלקים מסין".');
-        } else if (n.reason === 'no_instance') {
-          alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא הוגדר Green API — Instance ID.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)".');
-        } else if (n.reason === 'no_token' || n.reason === 'no_greenapi') {
-          alert('⚠️ החלק סומן כ"הוזמן", אך לא נשלחה הודעה: לא נשמר Green API — API Token.\nהגדרות עסק ← "חיבור וואטסאפ אוטומטי (Green API)" ← הזן ושמור את הטוקן.');
-        } else if (typeof n.reason === 'string' && n.reason.includes('not authorized')) {
-          alert('⚠️ החלק סומן כ"הוזמן", אך הוואטסאפ לא נשלח: האינסטנס של Green API אינו מחובר (המכשיר לא מחובר / ה-QR פג).\nהיכנס ל-green-api.com, סרוק מחדש את ה-QR עם מספר הוואטסאפ, ואז לחץ "בדוק חיבור" בהגדרות — צריך להופיע "מחובר ומאושר".');
-        } else {
-          alert(`⚠️ החלק סומן כ"הוזמן", אך שליחת הוואטסאפ נכשלה:\n${n.reason}`);
-        }
+      if (status === 'ORDERED') {
+        explainChinaNotify(data.notify, 'החלק סומן כ"הוזמן"');
       }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'שגיאה בעדכון הסטטוס');

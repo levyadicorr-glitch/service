@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createChinaOrder, getChinaOrders, getTechnicianByToken, tenantExists } from '@/lib/db';
+import { createChinaOrder, getChinaOrders, getTechnicianByToken, tenantExists, getTenantById } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
+import { sendChinaOrderNotification, type ChinaNotifyResult } from '@/lib/greenApi';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB per file, before compression
 
@@ -111,7 +112,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
       technicianName,
     });
 
-    return NextResponse.json({ success: true, order: newOrder }, { status: 201 });
+    // Best-effort automatic WhatsApp notification to the admin numbers when a
+    // China part order is placed (by admin or technician). A failure here must
+    // never fail the order creation itself — `notify` reports back exactly what
+    // happened so the admin UI can explain why a message did/didn't go out.
+    let notify: ChinaNotifyResult = { sent: false, sentCount: 0, reason: 'skipped' };
+    try {
+      const tenant = await getTenantById(tenantId);
+      const businessName = tenant?.businessName || tenant?.name || 'העסק';
+      const factoryLine = newOrder.factory ? `\n🏭 מפעל: ${newOrder.factory}` : '';
+      const bySource = source === 'technician'
+        ? `\n🔧 נפתחה ע"י טכנאי: ${technicianName || ''}`.trimEnd()
+        : '\n👤 נפתחה מממשק הניהול';
+      const statusLine = status === 'PENDING_APPROVAL' ? '\n⏳ ממתינה לאישור' : '';
+      const message = `🆕 הזמנת חלק מסין חדשה ב-${businessName}\nחלק: ${newOrder.partName}\nכמות: ${newOrder.quantity}${factoryLine}${bySource}${statusLine}\nמספר הזמנה: #${newOrder.orderNumber}`;
+      notify = await sendChinaOrderNotification(tenant || {}, message);
+      console.log('[CHINA-ORDERS] CREATE notify:', { tenantId, orderId: newOrder.id, reason: notify.reason });
+    } catch (notifyErr) {
+      console.error('Error sending China-order creation WhatsApp notification:', notifyErr);
+      notify = { sent: false, sentCount: 0, reason: `error: ${notifyErr instanceof Error ? notifyErr.message : 'unknown'}` };
+    }
+
+    return NextResponse.json({ success: true, order: newOrder, notify }, { status: 201 });
   } catch (err: unknown) {
     console.error('Error creating china order:', err);
     return NextResponse.json({ error: 'שגיאת שרת פנימית' }, { status: 500 });

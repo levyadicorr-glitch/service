@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { deleteChinaOrder, updateChinaOrderStatus, getTenantById } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
-import { sendWhatsAppMessage, getInstanceState } from '@/lib/greenApi';
+import { sendChinaOrderNotification, type ChinaNotifyResult } from '@/lib/greenApi';
 
 const VALID_STATUSES = ['PENDING_APPROVAL', 'WAITING_TO_ORDER', 'ORDERED', 'ARRIVED'] as const;
 type ChinaOrderStatus = (typeof VALID_STATUSES)[number];
@@ -37,7 +37,7 @@ export async function PATCH(
     // notification phones over WhatsApp. Best-effort: a failed/absent send must
     // never fail the status update itself. `notify` reports back exactly what
     // happened so the admin UI can explain why a message did/didn't go out.
-    let notify: { sent: boolean; sentCount: number; reason: string } = {
+    let notify: ChinaNotifyResult = {
       sent: false,
       sentCount: 0,
       reason: 'not_ordered',
@@ -45,63 +45,12 @@ export async function PATCH(
     if (status === 'ORDERED') {
       try {
         const tenant = await getTenantById(tenantId);
-        const recipients = Array.from(new Set(
-          (tenant?.chinaOrderNotificationPhones || '')
-            .split(/[,\n;]/)
-            .map((p) => p.trim())
-            .filter((p) => p.length > 0)
-        ));
-        console.log('[CHINA-ORDERS] ORDERED notify:', {
-          tenantId,
-          orderId: id,
-          recipients,
-          hasInstance: !!tenant?.greenApiInstanceId,
-          hasToken: !!tenant?.greenApiToken,
-        });
-
-        if (recipients.length === 0) {
-          notify = { sent: false, sentCount: 0, reason: 'no_phones' };
-        } else if (!tenant?.greenApiInstanceId) {
-          notify = { sent: false, sentCount: 0, reason: 'no_instance' };
-        } else if (!tenant?.greenApiToken) {
-          notify = { sent: false, sentCount: 0, reason: 'no_token' };
-        } else {
-          const businessName = tenant.businessName || tenant.name || 'העסק';
-          const factoryLine = updated.factory ? `\n🏭 מפעל: ${updated.factory}` : '';
-          const techLine = updated.technicianName ? `\n🔧 טכנאי: ${updated.technicianName}` : '';
-          const message = `📦 הוזמן חלק מסין ב-${businessName}\nחלק: ${updated.partName}\nכמות: ${updated.quantity}${factoryLine}${techLine}\nמספר הזמנה: #${updated.orderNumber}`;
-          const results = await Promise.all(
-            recipients.map((p) => sendWhatsAppMessage(tenant.greenApiInstanceId!, tenant.greenApiToken!, p, message))
-          );
-          const sentCount = results.filter((r) => r.sent).length;
-          const firstError = results.find((r) => !r.sent)?.error;
-          console.log('[CHINA-ORDERS] send results:', JSON.stringify(results));
-
-          if (sentCount > 0) {
-            notify = { sent: true, sentCount, reason: 'sent' };
-          } else {
-            // Everything failed. The overwhelmingly common cause once the token
-            // is set is that the Green API instance itself is not authorized
-            // (the WhatsApp phone/QR isn't actually connected). Probe the live
-            // instance state so the reason is actionable instead of a raw error.
-            let stateNote = '';
-            try {
-              const state = await getInstanceState(tenant.greenApiInstanceId!, tenant.greenApiToken!);
-              console.log('[CHINA-ORDERS] instance state:', state);
-              if (!state.connected) {
-                stateNote = ` | instance not authorized (state: ${state.stateInstance || 'unknown'}) — scan the QR in Green API`;
-              }
-            } catch (stateErr) {
-              stateNote = ` | instance state check failed: ${stateErr instanceof Error ? stateErr.message : 'unknown'}`;
-              console.error('[CHINA-ORDERS] instance state check failed:', stateErr);
-            }
-            notify = {
-              sent: false,
-              sentCount: 0,
-              reason: `send_failed: ${firstError || 'unknown'}${stateNote}`,
-            };
-          }
-        }
+        const businessName = tenant?.businessName || tenant?.name || 'העסק';
+        const factoryLine = updated.factory ? `\n🏭 מפעל: ${updated.factory}` : '';
+        const techLine = updated.technicianName ? `\n🔧 טכנאי: ${updated.technicianName}` : '';
+        const message = `📦 הוזמן חלק מסין ב-${businessName}\nחלק: ${updated.partName}\nכמות: ${updated.quantity}${factoryLine}${techLine}\nמספר הזמנה: #${updated.orderNumber}`;
+        notify = await sendChinaOrderNotification(tenant || {}, message);
+        console.log('[CHINA-ORDERS] ORDERED notify:', { tenantId, orderId: id, reason: notify.reason });
       } catch (notifyErr) {
         console.error('Error sending China-order WhatsApp notification:', notifyErr);
         notify = { sent: false, sentCount: 0, reason: `error: ${notifyErr instanceof Error ? notifyErr.message : 'unknown'}` };
