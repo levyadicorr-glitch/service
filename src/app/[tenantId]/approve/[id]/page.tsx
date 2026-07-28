@@ -1,5 +1,5 @@
 import React from 'react';
-import { getCustomerById } from '@/lib/db';
+import { getCustomerById, getCustomerApprovalToken } from '@/lib/db';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -107,7 +107,8 @@ export default async function ApproveCustomerPage({ params, searchParams }: Page
     );
   }
 
-  const tokenValid = typeof token === 'string' && !!customer.approvalToken && token === customer.approvalToken;
+  const approvalToken = await getCustomerApprovalToken(tenantId, id);
+  const tokenValid = typeof token === 'string' && !!approvalToken && token === approvalToken;
 
   if (!tokenValid) {
     return (

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { addModelToTenant, tenantExists } from '@/lib/db';
+import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
 
 export async function POST(
@@ -14,6 +15,9 @@ export async function POST(
     if (!(await tenantExists(tenantId))) {
       return NextResponse.json({ error: 'סביבה לא נמצאה' }, { status: 404 });
     }
+
+    const denied = requireTenantAdmin(req, tenantId);
+    if (denied) return denied;
 
     const body = await req.json();
     const { modelName, deviceType } = body;
@@ -42,6 +46,9 @@ export async function DELETE(
     if (!(await tenantExists(tenantId))) {
       return NextResponse.json({ error: 'סביבה לא נמצאה' }, { status: 404 });
     }
+
+    const denied = requireTenantAdmin(req, tenantId);
+    if (denied) return denied;
 
     const body = await req.json();
     const { modelName } = body;

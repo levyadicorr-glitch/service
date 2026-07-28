@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { tenantExists, createCustomer, getCustomerByPhone, getTenantById } from '@/lib/db';
+import { tenantExists, createCustomer, getCustomerByPhone, getCustomerApprovalToken, getTenantById } from '@/lib/db';
 import { checkCsrf } from '@/lib/csrf';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { sendWhatsAppMessage } from '@/lib/greenApi';
@@ -65,10 +65,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
           const origin = req.headers.get('origin') || `https://${req.headers.get('host')}`;
           const portalUrl = `${origin}/${tenantId}/portal/${customer.id}`;
           // The approval token never leaves the server (it's not part of the
-          // JSON response below), so this one-click link only ever reaches
-          // the admin via the Green API message sent here.
-          const approveLine = customer.approved === false && customer.approvalToken
-            ? `\n\nלאישור הלקוח לחץ כאן:\n${origin}/${tenantId}/approve/${customer.id}?token=${customer.approvalToken}`
+          // JSON response below — getCustomerApprovalToken is the only reader),
+          // so this one-click link only ever reaches the admin via the Green
+          // API message sent here.
+          const approvalToken = customer.approved === false ? await getCustomerApprovalToken(tenantId, customer.id) : undefined;
+          const approveLine = approvalToken
+            ? `\n\nלאישור הלקוח לחץ כאן:\n${origin}/${tenantId}/approve/${customer.id}?token=${approvalToken}`
             : '';
           const message = `שלום, נרשמתי כלקוח חדש ב-${businessName}.\nשם החנות: ${storeName.trim()}\nטלפון: ${phone}\nלצפייה בפורטל הלקוח:\n${portalUrl}${approveLine}`;
 
@@ -82,9 +84,15 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
       }
     }
 
+    // Defense in depth: createCustomer() echoes back exactly what it was given
+    // (including approvalToken, for the new-customer path above), so strip it
+    // again here before this object crosses into the browser response.
+    const { approvalToken: _omit, ...publicCustomer } = customer as typeof customer & { approvalToken?: string };
+    void _omit;
+
     return NextResponse.json({
       success: true,
-      customer,
+      customer: publicCustomer,
       customerId: customer.id,
       customerName: `${customer.firstName} ${customer.lastName}`.trim(),
       customerPhone: customer.phone || phone,

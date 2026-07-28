@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createOrder, getCustomerById, getDriverById, getOrders, getTenantById } from '@/lib/db';
+import { createOrder, getAgentById, getCustomerById, getDriverById, getOrders, getTenantById } from '@/lib/db';
 import { requireTenantAdmin } from '@/lib/auth';
 import { checkCsrf } from '@/lib/csrf';
 import { sendWhatsAppMessage, sendQuoteNotificationToAdmins } from '@/lib/greenApi';
@@ -28,8 +28,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ten
     const { customerId, deviceType, model, quantity, unitPrice, driverId, agentId, agentName } = body;
 
     const denied = requireTenantAdmin(req, tenantId);
-    if (denied && (!agentId || typeof agentId !== 'string')) {
-      return denied;
+    if (denied) {
+      // Non-admin callers (the agent portal) may create an order only on behalf
+      // of a real agent of this tenant — verify agentId actually resolves to one
+      // instead of trusting any caller-supplied string.
+      if (!agentId || typeof agentId !== 'string' || !(await getAgentById(tenantId, agentId))) {
+        return denied;
+      }
     }
 
     if (!customerId || typeof customerId !== 'string') {

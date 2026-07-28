@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCustomerById, updateCustomer } from '@/lib/db';
+import { getCustomerById, getCustomerApprovalToken, updateCustomer } from '@/lib/db';
 import { checkCsrf } from '@/lib/csrf';
 
 // Public, unauthenticated endpoint — access is gated by possession of the
@@ -14,7 +14,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
   const token = formData.get('token') as string;
 
   const customer = await getCustomerById(tenantId, id);
-  const tokenValid = !!customer && !!customer.approvalToken && token === customer.approvalToken;
+  const approvalToken = await getCustomerApprovalToken(tenantId, id);
+  const tokenValid = !!customer && !!approvalToken && token === approvalToken;
 
   if (customer && tokenValid && customer.approved === false) {
     await updateCustomer(tenantId, id, { approved: true });

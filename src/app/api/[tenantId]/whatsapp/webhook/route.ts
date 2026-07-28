@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { getTenantById, getCustomerByPhone, tenantExists, ensureIndexes, normalizePhone, type Tenant } from '@/lib/db';
 import getClientPromise from '@/lib/mongodb';
@@ -254,10 +255,21 @@ export async function POST(
     // checkCsrf() would 403 every real delivery — this is the usable
     // equivalent. Skipped entirely when the env var is unset so the currently
     // registered webhook URL keeps working.
-    const expectedSecret = process.env.WHATSAPP_WEBHOOK_SECRET;
-    if (expectedSecret && req.headers.get('x-webhook-token') !== expectedSecret) {
-      console.warn('[WEBHOOK REJECTED] Bad or missing x-webhook-token');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    //
+    // Green API's own webhook-auth mechanism (SetSettings' `webhookUrlToken`)
+    // delivers the configured value back verbatim as the `Authorization`
+    // header on every webhook call — there is no custom header support. Set
+    // WHATSAPP_WEBHOOK_SECRET here to the same value configured as
+    // `webhookUrlToken` in Green API (e.g. `Bearer <random-secret>`).
+    const expectedAuthHeader = process.env.WHATSAPP_WEBHOOK_SECRET;
+    if (expectedAuthHeader) {
+      const actual = Buffer.from(req.headers.get('authorization') || '');
+      const expected = Buffer.from(expectedAuthHeader);
+      const valid = actual.length === expected.length && timingSafeEqual(actual, expected);
+      if (!valid) {
+        console.warn('[WEBHOOK REJECTED] Bad or missing Authorization header');
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
     }
 
     const body = await req.json();

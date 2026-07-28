@@ -447,8 +447,21 @@ export async function getCustomerById(tenantId: string, id: string): Promise<Cus
   const db = await getDb(tenantId);
   const customer = await db.collection('customers').findOne({ id });
   if (!customer) return undefined;
-  const { _id, ...rest } = customer;
+  const { _id, approvalToken, ...rest } = customer;
+  void approvalToken;
   return rest as Customer;
+}
+
+/**
+ * The one place allowed to read a customer's approvalToken (the one-click
+ * WhatsApp admin-approval secret) — used only to build that admin-only link
+ * and to verify it on the approve endpoint. getCustomerById/getCustomerByPhone
+ * strip this field so it never reaches a customer-facing response.
+ */
+export async function getCustomerApprovalToken(tenantId: string, id: string): Promise<string | undefined> {
+  const db = await getDb(tenantId);
+  const customer = await db.collection('customers').findOne({ id }, { projection: { approvalToken: 1 } });
+  return customer?.approvalToken;
 }
 
 export function normalizePhone(phone: string): string {
@@ -473,15 +486,20 @@ export async function getCustomerByPhone(tenantId: string, phone: string): Promi
     phone: { $in: [normalizedInput, intl, '+' + intl] },
   });
   if (direct) {
-    const { _id, ...rest } = direct;
+    const { _id, approvalToken, ...rest } = direct;
     void _id;
+    void approvalToken;
     return rest as unknown as Customer;
   }
 
   // Slow path: stored numbers may carry dashes, spaces or parentheses, which no
   // index can match. Same result set as before, just reached less often.
   const customers = await getCustomers(tenantId);
-  return customers.find(c => c.phone && normalizePhone(c.phone) === normalizedInput);
+  const found = customers.find(c => c.phone && normalizePhone(c.phone) === normalizedInput);
+  if (!found) return undefined;
+  const { approvalToken, ...rest } = found as Customer & { approvalToken?: string };
+  void approvalToken;
+  return rest as Customer;
 }
 
 // ---------------- Drivers ----------------
