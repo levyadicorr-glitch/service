@@ -25,6 +25,14 @@ export interface Tenant {
   adminWhatsappPhone3?: string;
   quoteNotificationPhones?: string; // Comma-separated list of phones for quote approvals
   chinaOrderNotificationPhones?: string; // Comma-separated phones notified when a China part is marked ORDERED
+  testApprovalPrice?: number; // Default price (₪) for a new test/inspection approval request
+  // Up to 4 dedicated numbers notified when a customer approves a test/inspection
+  // request — separate from quoteNotificationPhones so this module's recipients
+  // don't have to match the part-request quote recipients.
+  testApprovalPhone1?: string;
+  testApprovalPhone2?: string;
+  testApprovalPhone3?: string;
+  testApprovalPhone4?: string;
   greenApiInstanceId?: string;
   greenApiToken?: string;
   serviceFormConfig?: ServiceFormConfig;
@@ -98,6 +106,24 @@ export interface ChinaOrder {
   technicianName?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// Test/inspection approval requests (בקשת אישור בדיקה). Outbound message to the
+// customer is sent manually by the admin (Green API free-tier can't reliably
+// auto-send); the customer's "מאשר" reply is picked up automatically by the
+// existing WhatsApp webhook, matched by phone, and flips status to APPROVED.
+export interface TestApproval {
+  id: string;
+  requestNumber: number;
+  customerId: string;
+  customerName: string; // snapshotted at creation, so it survives even if the customer record changes
+  customerPhone: string; // normalized (normalizePhone), used to match inbound "מאשר" replies
+  toolDescription?: string;
+  price: number;
+  status: 'PENDING_APPROVAL' | 'APPROVED';
+  createdAt: string;
+  updatedAt: string;
+  approvedAt?: string;
 }
 
 export interface PartRequest {
@@ -269,7 +295,7 @@ export async function getTenantById(id: string): Promise<Tenant | undefined> {
 
 export async function createTenant(tenant: Omit<Tenant, 'createdAt'>): Promise<Tenant> {
   const db = await getMasterDb();
-  
+
   // check if exists
   const existing = await db.collection('tenants').findOne({ id: tenant.id });
   if (existing) {
@@ -294,7 +320,7 @@ export async function updateTenantAdminPassword(id: string, adminPassword: strin
 
 export async function updateTenantSettings(
   id: string,
-  update: { name?: string; businessName?: string; logoUrl?: string; primaryColor?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; quoteNotificationPhones?: string; chinaOrderNotificationPhones?: string; greenApiInstanceId?: string; greenApiToken?: string; serviceFormConfig?: ServiceFormConfig; aiBotConfig?: AiBotConfig }
+  update: { name?: string; businessName?: string; logoUrl?: string; primaryColor?: string; adminPassword?: string; adminPasswordPlain?: string; whatsappTemplate?: string; partsRequestPhone?: string; partsDeletePassword?: string; adminWhatsappPhone?: string; adminWhatsappPhone2?: string; adminWhatsappPhone3?: string; quoteNotificationPhones?: string; chinaOrderNotificationPhones?: string; testApprovalPrice?: number; testApprovalPhone1?: string; testApprovalPhone2?: string; testApprovalPhone3?: string; testApprovalPhone4?: string; greenApiInstanceId?: string; greenApiToken?: string; serviceFormConfig?: ServiceFormConfig; aiBotConfig?: AiBotConfig }
 ): Promise<void> {
   const db = await getMasterDb();
   const setObj: Record<string, any> = {};
@@ -310,6 +336,11 @@ export async function updateTenantSettings(
   if (update.adminWhatsappPhone3 !== undefined) setObj.adminWhatsappPhone3 = update.adminWhatsappPhone3;
   if (update.quoteNotificationPhones !== undefined) setObj.quoteNotificationPhones = update.quoteNotificationPhones;
   if (update.chinaOrderNotificationPhones !== undefined) setObj.chinaOrderNotificationPhones = update.chinaOrderNotificationPhones;
+  if (update.testApprovalPrice !== undefined) setObj.testApprovalPrice = update.testApprovalPrice;
+  if (update.testApprovalPhone1 !== undefined) setObj.testApprovalPhone1 = update.testApprovalPhone1;
+  if (update.testApprovalPhone2 !== undefined) setObj.testApprovalPhone2 = update.testApprovalPhone2;
+  if (update.testApprovalPhone3 !== undefined) setObj.testApprovalPhone3 = update.testApprovalPhone3;
+  if (update.testApprovalPhone4 !== undefined) setObj.testApprovalPhone4 = update.testApprovalPhone4;
   if (update.greenApiInstanceId !== undefined) setObj.greenApiInstanceId = update.greenApiInstanceId;
   if (update.greenApiToken !== undefined) setObj.greenApiToken = update.greenApiToken;
   if (update.logoUrl !== undefined) setObj.logoUrl = update.logoUrl;
@@ -674,7 +705,7 @@ export async function createServiceRequest(
   request: Omit<ServiceRequest, 'id' | 'requestNumber' | 'status' | 'createdAt' | 'updatedAt'> & { status?: 'NEW' | 'WAITING_FOR_PICKUP' | 'PICKED_UP_BY_DRIVER' | 'COMPLETED' }
 ): Promise<ServiceRequest> {
   const db = await getDb(tenantId);
-  
+
   const counterResult = await db.collection('counters').findOneAndUpdate(
     { _id: 'requestNumber' as any },
     { $inc: { seq: 1 } },
@@ -707,16 +738,16 @@ export async function markRequestsPickedUpWithSignature(
   tenantId: string,
   requestIds: string[],
   driverId: string,
-  data: { 
-    signatureImage: string; 
-    photoImage?: string; 
+  data: {
+    signatureImage: string;
+    photoImage?: string;
     signerName: string;
     conditionNotesMap?: Record<string, string>;
   }
 ): Promise<number> {
   const db = await getDb(tenantId);
   const now = new Date().toISOString();
-  
+
   let modifiedCount = 0;
   for (const id of requestIds) {
     const notes = data.conditionNotesMap?.[id] || '';
@@ -746,13 +777,13 @@ export async function updateServiceRequestStatus(
 ): Promise<ServiceRequest | undefined> {
   const db = await getDb(tenantId);
   const updatedAt = new Date().toISOString();
-  
+
   const result = await db.collection('serviceRequests').findOneAndUpdate(
     { id },
     { $set: { status, updatedAt } },
     { returnDocument: 'after' }
   );
-  
+
   if (!result) return undefined;
   const { _id, ...rest } = result;
   return rest as unknown as ServiceRequest;
@@ -791,9 +822,9 @@ export async function getServiceRequestsByCustomerId(tenantId: string, customerI
     .find({ customerId })
     .sort({ createdAt: -1 })
     .toArray();
-  
+
   const customer = await getCustomerById(tenantId, customerId);
-  
+
   return requests.map(req => {
     const { _id, ...rest } = req;
     return {
@@ -821,12 +852,12 @@ export async function deleteServiceRequest(tenantId: string, id: string): Promis
 export async function deleteCustomer(tenantId: string, id: string): Promise<boolean> {
   const db = await getDb(tenantId);
   await db.collection('serviceRequests').deleteMany({ customerId: id });
-  
+
   let filter = { id };
   if (ObjectId.isValid(id)) {
     filter = { $or: [{ id }, { _id: new ObjectId(id) }] } as any;
   }
-  
+
   const result = await db.collection('customers').deleteOne(filter);
   return result.deletedCount === 1;
 }
@@ -1342,5 +1373,100 @@ export async function updateChinaOrderStatus(
 export async function deleteChinaOrder(tenantId: string, id: string): Promise<boolean> {
   const db = await getDb(tenantId);
   const result = await db.collection('chinaOrders').deleteOne({ id });
+  return result.deletedCount === 1;
+}
+
+// ---------------- Test/Inspection Approval Requests CRUD Helpers ----------------
+
+export async function getTestApprovals(tenantId: string): Promise<TestApproval[]> {
+  const db = await getDb(tenantId);
+  const approvals = await db.collection('testApprovals').find({}).sort({ createdAt: -1 }).toArray();
+  return approvals.map(a => {
+    const { _id, ...rest } = a;
+    void _id;
+    return rest as unknown as TestApproval;
+  });
+}
+
+export async function getTestApprovalById(tenantId: string, id: string): Promise<TestApproval | undefined> {
+  const db = await getDb(tenantId);
+  const approval = await db.collection('testApprovals').findOne({ id });
+  if (!approval) return undefined;
+  const { _id, ...rest } = approval;
+  void _id;
+  return rest as unknown as TestApproval;
+}
+
+// Matches the sender's normalized phone against pending test-approval requests —
+// used by the WhatsApp webhook's deterministic "מאשר" path, the same way the
+// existing part-request quote approval resolves by phone rather than by a
+// customer lookup (works even if the phone was entered slightly differently).
+export async function getPendingTestApprovalsByPhone(tenantId: string, phone: string): Promise<TestApproval[]> {
+  const db = await getDb(tenantId);
+  const normalized = normalizePhone(phone);
+  if (!normalized) return [];
+  const approvals = await db.collection('testApprovals').find({
+    status: 'PENDING_APPROVAL',
+    customerPhone: normalized,
+  }).toArray();
+  return approvals.map(a => {
+    const { _id, ...rest } = a;
+    void _id;
+    return rest as unknown as TestApproval;
+  });
+}
+
+export async function createTestApproval(
+  tenantId: string,
+  approval: Omit<TestApproval, 'id' | 'requestNumber' | 'status' | 'createdAt' | 'updatedAt'>
+): Promise<TestApproval> {
+  const db = await getDb(tenantId);
+
+  const counterResult = await db.collection('counters').findOneAndUpdate(
+    { _id: 'testApprovalNumber' as any },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  const requestNumber = counterResult?.seq || 1;
+
+  const now = new Date().toISOString();
+  const newApproval: TestApproval = {
+    ...approval,
+    id: crypto.randomUUID(),
+    requestNumber,
+    status: 'PENDING_APPROVAL',
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await db.collection('testApprovals').insertOne(newApproval as unknown as Document);
+  return newApproval;
+}
+
+export async function updateTestApprovalStatus(
+  tenantId: string,
+  id: string,
+  status: TestApproval['status']
+): Promise<TestApproval | undefined> {
+  const db = await getDb(tenantId);
+  const updatedAt = new Date().toISOString();
+  const set: Record<string, unknown> = { status, updatedAt };
+  if (status === 'APPROVED') set.approvedAt = updatedAt;
+
+  const result = await db.collection('testApprovals').findOneAndUpdate(
+    { id },
+    { $set: set },
+    { returnDocument: 'after' }
+  );
+
+  if (!result) return undefined;
+  const { _id, ...rest } = result;
+  void _id;
+  return rest as unknown as TestApproval;
+}
+
+export async function deleteTestApproval(tenantId: string, id: string): Promise<boolean> {
+  const db = await getDb(tenantId);
+  const result = await db.collection('testApprovals').deleteOne({ id });
   return result.deletedCount === 1;
 }

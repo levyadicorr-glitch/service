@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest, SpecificModel, ChinaOrder, Technician } from '@/lib/db';
+import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest, SpecificModel, ChinaOrder, Technician, TestApproval } from '@/lib/db';
 import { ServiceFormConfig, normalizeServiceFormConfig, BUILTIN_FIELD_META, FormField, CustomFieldType } from '@/lib/serviceFormConfig';
 import { AiBotConfig, normalizeAiBotConfig, AI_BOT_LIMITS } from '@/lib/aiBotConfig';
 import ServiceRequestForm from '@/components/ServiceRequestForm';
 import CustomerSelectCombobox from '@/components/CustomerSelectCombobox';
+import ModelSelectCombobox from '@/components/ModelSelectCombobox';
 import { buildWhatsAppMessage, formatRequestNumber, formatDate } from '@/lib/format';
 import {
   Search, Filter, Plus, Calendar, CheckCircle2, AlertCircle, Clock,
@@ -24,6 +25,7 @@ interface AdminDashboardProps {
   initialOrders: Order[];
   initialAgents?: Agent[];
   initialChinaOrders?: ChinaOrder[];
+  initialTestApprovals?: TestApproval[];
   initialTechnicians?: Technician[];
   initialFactories?: string[];
   initialDeviceModels?: string[];
@@ -37,6 +39,11 @@ interface AdminDashboardProps {
   adminWhatsappPhone3?: string;
   quoteNotificationPhones?: string;
   chinaOrderNotificationPhones?: string;
+  testApprovalPrice?: number;
+  testApprovalPhone1?: string;
+  testApprovalPhone2?: string;
+  testApprovalPhone3?: string;
+  testApprovalPhone4?: string;
   greenApiInstanceId?: string;
   /** Derived on the server; the token itself never crosses to the client. */
   greenApiTokenConfigured?: boolean;
@@ -47,7 +54,7 @@ interface AdminDashboardProps {
   aiKeyConfigured?: boolean;
 }
 
-export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialChinaOrders = [], initialTechnicians = [], initialFactories = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', chinaOrderNotificationPhones = '', greenApiInstanceId = '', greenApiTokenConfigured = false, logoUrl = '', serviceFormConfig, aiBotConfig, aiKeyConfigured = false }: AdminDashboardProps) {
+export default function AdminDashboard({ initialRequests, customers: initialCustomers, drivers: initialDrivers, initialPartRequests, initialOrders, initialAgents = [], initialChinaOrders = [], initialTestApprovals = [], initialTechnicians = [], initialFactories = [], initialDeviceModels = ['קורקינט', 'אופניים'], initialModels = [], tenantId, businessName, whatsappTemplate, partsRequestPhone = '', adminWhatsappPhone = '', adminWhatsappPhone2 = '', adminWhatsappPhone3 = '', quoteNotificationPhones = '', chinaOrderNotificationPhones = '', testApprovalPrice = 150, testApprovalPhone1 = '', testApprovalPhone2 = '', testApprovalPhone3 = '', testApprovalPhone4 = '', greenApiInstanceId = '', greenApiTokenConfigured = false, logoUrl = '', serviceFormConfig, aiBotConfig, aiKeyConfigured = false }: AdminDashboardProps) {
   const [customersList, setCustomersList] = useState<Customer[]>(initialCustomers);
   const [driversList, setDriversList] = useState<Driver[]>(initialDrivers);
   const [agentsList, setAgentsList] = useState<Agent[]>(initialAgents);
@@ -55,9 +62,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [partRequestsList, setPartRequestsList] = useState<PartRequest[]>(initialPartRequests);
   const [ordersList, setOrdersList] = useState<Order[]>(initialOrders);
   const [chinaOrdersList, setChinaOrdersList] = useState<ChinaOrder[]>(initialChinaOrders);
+  const [testApprovalsList, setTestApprovalsList] = useState<TestApproval[]>(initialTestApprovals);
   const [techniciansList, setTechniciansList] = useState<Technician[]>(initialTechnicians);
   const [factories, setFactories] = useState<string[]>(initialFactories);
-  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'agents' | 'partRequests' | 'orders' | 'chinaOrders' | 'dispatch' | 'formBuilder' | 'aiBot'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'customers' | 'drivers' | 'agents' | 'partRequests' | 'orders' | 'chinaOrders' | 'testApprovals' | 'dispatch' | 'formBuilder' | 'aiBot'>('requests');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const REGIONS: { key: 'CENTER' | 'NORTH' | 'SOUTH' | 'JERUSALEM'; label: string }[] = [
@@ -85,6 +93,11 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [currentAdminWhatsappPhone3, setCurrentAdminWhatsappPhone3] = useState(adminWhatsappPhone3);
   const [currentQuoteNotificationPhones, setCurrentQuoteNotificationPhones] = useState(quoteNotificationPhones);
   const [currentChinaOrderNotificationPhones, setCurrentChinaOrderNotificationPhones] = useState(chinaOrderNotificationPhones);
+  const [currentTestApprovalPrice, setCurrentTestApprovalPrice] = useState(testApprovalPrice);
+  const [currentTestApprovalPhone1, setCurrentTestApprovalPhone1] = useState(testApprovalPhone1);
+  const [currentTestApprovalPhone2, setCurrentTestApprovalPhone2] = useState(testApprovalPhone2);
+  const [currentTestApprovalPhone3, setCurrentTestApprovalPhone3] = useState(testApprovalPhone3);
+  const [currentTestApprovalPhone4, setCurrentTestApprovalPhone4] = useState(testApprovalPhone4);
   const [currentGreenApiInstanceId, setCurrentGreenApiInstanceId] = useState(greenApiInstanceId);
   const [currentLogoUrl, setCurrentLogoUrl] = useState(logoUrl);
   const [currentServiceFormConfig, setCurrentServiceFormConfig] = useState<ServiceFormConfig>(() => normalizeServiceFormConfig(serviceFormConfig));
@@ -101,6 +114,11 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   const [settingsAdminWhatsappPhone3, setSettingsAdminWhatsappPhone3] = useState(adminWhatsappPhone3);
   const [settingsQuoteNotificationPhones, setSettingsQuoteNotificationPhones] = useState(quoteNotificationPhones);
   const [settingsChinaOrderNotificationPhones, setSettingsChinaOrderNotificationPhones] = useState(chinaOrderNotificationPhones);
+  const [settingsTestApprovalPrice, setSettingsTestApprovalPrice] = useState(String(testApprovalPrice));
+  const [settingsTestApprovalPhone1, setSettingsTestApprovalPhone1] = useState(testApprovalPhone1);
+  const [settingsTestApprovalPhone2, setSettingsTestApprovalPhone2] = useState(testApprovalPhone2);
+  const [settingsTestApprovalPhone3, setSettingsTestApprovalPhone3] = useState(testApprovalPhone3);
+  const [settingsTestApprovalPhone4, setSettingsTestApprovalPhone4] = useState(testApprovalPhone4);
   const [settingsGreenApiInstanceId, setSettingsGreenApiInstanceId] = useState(greenApiInstanceId);
   const [settingsGreenApiToken, setSettingsGreenApiToken] = useState('');
   const [connectionTestResult, setConnectionTestResult] = useState<'idle' | 'checking' | 'connected' | 'disconnected' | 'error'>('idle');
@@ -127,6 +145,11 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     setSettingsAdminWhatsappPhone3(currentAdminWhatsappPhone3);
     setSettingsQuoteNotificationPhones(currentQuoteNotificationPhones);
     setSettingsChinaOrderNotificationPhones(currentChinaOrderNotificationPhones);
+    setSettingsTestApprovalPrice(String(currentTestApprovalPrice));
+    setSettingsTestApprovalPhone1(currentTestApprovalPhone1);
+    setSettingsTestApprovalPhone2(currentTestApprovalPhone2);
+    setSettingsTestApprovalPhone3(currentTestApprovalPhone3);
+    setSettingsTestApprovalPhone4(currentTestApprovalPhone4);
     setSettingsGreenApiInstanceId(currentGreenApiInstanceId);
     setSettingsGreenApiToken('');
     setConnectionTestResult('idle');
@@ -416,6 +439,11 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       formData.append('adminWhatsappPhone3', settingsAdminWhatsappPhone3.trim());
       formData.append('quoteNotificationPhones', settingsQuoteNotificationPhones.trim());
       formData.append('chinaOrderNotificationPhones', settingsChinaOrderNotificationPhones.trim());
+      formData.append('testApprovalPrice', settingsTestApprovalPrice.trim());
+      formData.append('testApprovalPhone1', settingsTestApprovalPhone1.trim());
+      formData.append('testApprovalPhone2', settingsTestApprovalPhone2.trim());
+      formData.append('testApprovalPhone3', settingsTestApprovalPhone3.trim());
+      formData.append('testApprovalPhone4', settingsTestApprovalPhone4.trim());
       formData.append('greenApiInstanceId', settingsGreenApiInstanceId.trim());
       if (settingsGreenApiToken.trim()) {
         formData.append('greenApiToken', settingsGreenApiToken.trim());
@@ -450,6 +478,14 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       setCurrentAdminWhatsappPhone3(settingsAdminWhatsappPhone3);
       setCurrentQuoteNotificationPhones(settingsQuoteNotificationPhones);
       setCurrentChinaOrderNotificationPhones(settingsChinaOrderNotificationPhones);
+      const parsedTestApprovalPrice = Number(settingsTestApprovalPrice);
+      if (Number.isFinite(parsedTestApprovalPrice) && parsedTestApprovalPrice >= 0) {
+        setCurrentTestApprovalPrice(parsedTestApprovalPrice);
+      }
+      setCurrentTestApprovalPhone1(settingsTestApprovalPhone1);
+      setCurrentTestApprovalPhone2(settingsTestApprovalPhone2);
+      setCurrentTestApprovalPhone3(settingsTestApprovalPhone3);
+      setCurrentTestApprovalPhone4(settingsTestApprovalPhone4);
       setCurrentGreenApiInstanceId(settingsGreenApiInstanceId);
       if (removeLogoFlag) {
         setCurrentLogoUrl('');
@@ -769,6 +805,147 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       alert(err instanceof Error ? err.message : 'שגיאה במחיקת ההזמנה');
     }
   };
+
+  // ---------------- Test/Inspection Approval Requests State & Handlers ----------------
+  const TEST_APPROVAL_STATUSES: { key: TestApproval['status']; label: string; bg: string; text: string; border: string }[] = [
+    { key: 'PENDING_APPROVAL', label: 'ממתין לאישור', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100' },
+    { key: 'APPROVED', label: 'מאושר ✅', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100' },
+  ];
+
+  const [testApprovalSearch, setTestApprovalSearch] = useState('');
+  const [testApprovalStatusFilter, setTestApprovalStatusFilter] = useState<string>('ALL');
+
+  const [isAddTestApprovalModalOpen, setIsAddTestApprovalModalOpen] = useState(false);
+  const [newTestApprovalCustomerId, setNewTestApprovalCustomerId] = useState('');
+  const [newTestApprovalToolDescription, setNewTestApprovalToolDescription] = useState('');
+  const [newTestApprovalModel, setNewTestApprovalModel] = useState('');
+  const [newTestApprovalPhotoFile, setNewTestApprovalPhotoFile] = useState<File | null>(null);
+  const [newTestApprovalPhotoPreview, setNewTestApprovalPhotoPreview] = useState<string | null>(null);
+  const [testApprovalSelectedRequestSearch, setTestApprovalSelectedRequestSearch] = useState('');
+  const [isTestApprovalRequestDropdownOpen, setIsTestApprovalRequestDropdownOpen] = useState(false);
+  const [newTestApprovalPriceInput, setNewTestApprovalPriceInput] = useState(String(currentTestApprovalPrice));
+  const [selectedZoomImage, setSelectedZoomImage] = useState<string | null>(null);
+  const testApprovalFileInputRef = useRef<HTMLInputElement>(null);
+  const testApprovalCameraInputRef = useRef<HTMLInputElement>(null);
+  const [isSavingTestApproval, setIsSavingTestApproval] = useState(false);
+  const [updatingTestApprovalId, setUpdatingTestApprovalId] = useState<string | null>(null);
+  const [deletingTestApprovalId, setDeletingTestApprovalId] = useState<string | null>(null);
+  const [copiedTestApprovalId, setCopiedTestApprovalId] = useState<string | null>(null);
+
+  const resetTestApprovalForm = () => {
+    setNewTestApprovalCustomerId('');
+    setNewTestApprovalToolDescription('');
+    setNewTestApprovalModel('');
+    setNewTestApprovalPhotoFile(null);
+    setNewTestApprovalPhotoPreview(null);
+    setTestApprovalSelectedRequestSearch('');
+    setIsTestApprovalRequestDropdownOpen(false);
+    setNewTestApprovalPriceInput(String(currentTestApprovalPrice));
+  };
+
+  const handleTestApprovalPhotoSelect = (file: File | null) => {
+    if (!file) return;
+    setNewTestApprovalPhotoFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setNewTestApprovalPhotoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleCreateTestApproval = async () => {
+    if (!newTestApprovalCustomerId) {
+      alert('יש לבחור לקוח');
+      return;
+    }
+    const price = Number(newTestApprovalPriceInput);
+    if (!Number.isFinite(price) || price < 0) {
+      alert('מחיר לא תקין');
+      return;
+    }
+    setIsSavingTestApproval(true);
+    try {
+      const res = await fetch(`/api/${tenantId}/test-approvals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: newTestApprovalCustomerId,
+          toolDescription: newTestApprovalToolDescription.trim(),
+          price,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה ביצירת בקשת אישור בדיקה');
+
+      setTestApprovalsList(prev => [data.approval, ...prev]);
+      resetTestApprovalForm();
+      setIsAddTestApprovalModalOpen(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה ביצירת בקשת אישור בדיקה');
+    } finally {
+      setIsSavingTestApproval(false);
+    }
+  };
+
+  // Manual override — admin marks approved directly (e.g. the customer agreed
+  // verbally) without waiting for the automatic WhatsApp-reply path.
+  const handleMarkTestApprovalApproved = async (id: string) => {
+    setUpdatingTestApprovalId(id);
+    try {
+      const res = await fetch(`/api/${tenantId}/test-approvals/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'APPROVED' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'שגיאה בעדכון הסטטוס');
+      setTestApprovalsList(prev => prev.map(ta => (ta.id === id ? data.approval : ta)));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה בעדכון הסטטוס');
+    } finally {
+      setUpdatingTestApprovalId(null);
+    }
+  };
+
+  const handleDeleteTestApproval = async (id: string) => {
+    if (!confirm('האם למחוק בקשת אישור בדיקה זו?')) return;
+    setDeletingTestApprovalId(id);
+    try {
+      const res = await fetch(`/api/${tenantId}/test-approvals/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'שגיאה במחיקת הבקשה');
+      }
+      setTestApprovalsList(prev => prev.filter(ta => ta.id !== id));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'שגיאה במחיקת הבקשה');
+    } finally {
+      setDeletingTestApprovalId(null);
+    }
+  };
+
+  // The prepared Hebrew message the admin sends manually from the business
+  // WhatsApp number connected to Green API — only then can the "מאשר" reply
+  // be picked up automatically by the webhook.
+  const buildTestApprovalMessage = (ta: TestApproval) =>
+    `שלום ${ta.customerName}, ${currentBusinessName} מבקש/ת את אישורך לביצוע בדיקה${ta.toolDescription ? ` ל-${ta.toolDescription}` : ''} בעלות ${ta.price} ₪.\n\nכדי לאשר, השב/י "מאשר" להודעה זו. 🙏`;
+
+  const testApprovalWaMeUrl = (ta: TestApproval) => {
+    const intlPhone = ta.customerPhone.startsWith('0') ? '972' + ta.customerPhone.slice(1) : ta.customerPhone;
+    return `https://wa.me/${intlPhone}?text=${encodeURIComponent(buildTestApprovalMessage(ta))}`;
+  };
+
+  const copyTestApprovalMessage = (ta: TestApproval) => {
+    navigator.clipboard.writeText(buildTestApprovalMessage(ta));
+    setCopiedTestApprovalId(ta.id);
+    setTimeout(() => setCopiedTestApprovalId(null), 2000);
+  };
+
+  const filteredTestApprovals = testApprovalsList.filter(ta => {
+    const matchesSearch = !testApprovalSearch.trim()
+      || ta.customerName.toLowerCase().includes(testApprovalSearch.trim().toLowerCase())
+      || (ta.toolDescription || '').toLowerCase().includes(testApprovalSearch.trim().toLowerCase());
+    const matchesStatus = testApprovalStatusFilter === 'ALL' || ta.status === testApprovalStatusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   // ---------------- Technicians State & Handlers ----------------
   const [isAddTechnicianModalOpen, setIsAddTechnicianModalOpen] = useState(false);
@@ -1144,10 +1321,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     const customerName = `${req.customer?.firstName || ''} ${req.customer?.lastName || ''}`.toLowerCase();
     const storeName = (req.storeName || '').toLowerCase();
     const searchLower = requestSearch.toLowerCase();
-    
+
     const matchesSearch = customerName.includes(searchLower) || storeName.includes(searchLower);
     const matchesStatus = requestStatusFilter === 'ALL' || req.status === requestStatusFilter;
-    
+
     return matchesSearch && matchesStatus;
   });
 
@@ -1220,13 +1397,13 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       });
 
       if (!res.ok) throw new Error('Failed to update status');
-      
+
       const data = await res.json();
-      
+
       // Update local state
       const updatedRequests = requests.map(r => r.id === reqId ? { ...r, status: newStatus } : r);
       setRequests(updatedRequests as ServiceRequest[]);
-      
+
       if (selectedRequest && selectedRequest.id === reqId) {
         setSelectedRequest({ ...selectedRequest, status: newStatus } as ServiceRequest);
       }
@@ -1241,7 +1418,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     if (!confirm('האם אתה בטוח שברצונך למחוק קריאה זו לחלוטין? הפעולה בלתי הפיכה והקישור ללקוח יפסיק לעבוד.')) {
       return;
     }
-    
+
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/${tenantId}/requests/${reqId}`, {
@@ -1249,7 +1426,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       });
 
       if (!res.ok) throw new Error('Failed to delete request');
-      
+
       setRequests(prev => prev.filter(r => r.id !== reqId));
       setSelectedRequest(null);
     } catch (err) {
@@ -1310,11 +1487,11 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
   // Delete customer
   const handleDeleteCustomer = async (customerId: string) => {
     if (!window.confirm('האם אתה בטוח שברצונך למחוק לקוח זה? שים לב: כל קריאות השירות המשויכות אליו יימחקו גם כן!')) return;
-    
+
     try {
       const res = await fetch(`/api/${tenantId}/customers/${customerId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('שגיאה במחיקת הלקוח');
-      
+
       setCustomersList(prev => prev.filter(c => c.id !== customerId));
       // Also clean up local requests state
       setRequests(prev => prev.filter(r => r.customerId !== customerId));
@@ -1535,7 +1712,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
       if (!res.ok) throw new Error(data.error || 'Failed to send quote');
 
       setPartRequestsList(prev => prev.map(r => r.id === pr.id ? { ...r, quotePrice: price, quoteStatus: 'PENDING_APPROVAL', quoteSentAt: new Date().toISOString() } : r));
-      
+
       if (data.whatsappSent) {
         alert('הצעת המחיר נשלחה ללקוח ב-WhatsApp! 🚀');
       } else {
@@ -1738,6 +1915,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
     { key: 'partRequests', label: 'בקשות חלקים', icon: Package },
     { key: 'orders', label: 'הזמנת סחורה', icon: ShoppingCart },
     { key: 'chinaOrders', label: 'הזמנות חלקים בסין', icon: Boxes },
+    { key: 'testApprovals', label: 'אישורי בדיקה', icon: FlaskConical },
     { key: 'dispatch', label: 'לוח שילוח', icon: Route },
     { key: 'formBuilder', label: 'עיצוב הטופס', icon: SlidersHorizontal },
     { key: 'aiBot', label: 'בוט AI שירות לקוחות', icon: Bot },
@@ -1798,9 +1976,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
           role="dialog"
           aria-modal="true"
           aria-label="תפריט ניווט"
-          className={`md:hidden fixed inset-y-0 right-0 z-50 w-72 flex flex-col bg-white/95 backdrop-blur-xl border-l border-gray-200/50 px-4 py-6 overflow-y-auto shadow-2xl transition-transform duration-300 motion-reduce:transition-none ${
-            isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full'
-          }`}
+          className={`md:hidden fixed inset-y-0 right-0 z-50 w-72 flex flex-col bg-white/95 backdrop-blur-xl border-l border-gray-200/50 px-4 py-6 overflow-y-auto shadow-2xl transition-transform duration-300 motion-reduce:transition-none ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full'
+            }`}
         >
           <div className="flex items-center justify-between gap-3 mb-8 px-1">
             <div className="flex items-center gap-3 min-w-0">
@@ -1832,8 +2009,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   onClick={() => handleNavSelect(item.key)}
                   className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
                     activeTab === item.key
-                      ? (item.key === 'chinaOrders' ? 'bg-red-600 text-white shadow-md' : 'bg-gray-900 text-white shadow-md')
-                      : (item.key === 'chinaOrders' ? 'text-red-600 hover:bg-red-50 font-black' : 'text-gray-600 hover:bg-gray-100')
+                      ? (item.key === 'chinaOrders' ? 'bg-red-600 text-white shadow-md font-black' : item.key === 'testApprovals' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 font-black' : 'bg-gray-900 text-white shadow-md')
+                      : (item.key === 'chinaOrders' ? 'text-red-600 hover:bg-red-50 font-black' : item.key === 'testApprovals' ? 'text-purple-700 bg-purple-50/90 border border-purple-200/80 font-black hover:bg-purple-100' : 'text-gray-600 hover:bg-gray-100')
                   }`}
                 >
                   <ItemIcon className="w-4 h-4" />
@@ -1876,8 +2053,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   onClick={() => setActiveTab(item.key)}
                   className={`w-full px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all cursor-pointer ${
                     activeTab === item.key
-                      ? (item.key === 'chinaOrders' ? 'bg-red-600 text-white shadow-md' : 'bg-gray-900 text-white shadow-md')
-                      : (item.key === 'chinaOrders' ? 'text-red-600 hover:bg-red-50 font-black' : 'text-gray-600 hover:bg-gray-100')
+                      ? (item.key === 'chinaOrders' ? 'bg-red-600 text-white shadow-md font-black' : item.key === 'testApprovals' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 font-black' : 'bg-gray-900 text-white shadow-md')
+                      : (item.key === 'chinaOrders' ? 'text-red-600 hover:bg-red-50 font-black' : item.key === 'testApprovals' ? 'text-purple-700 bg-purple-50/90 border border-purple-200/80 font-black hover:bg-purple-100' : 'text-gray-600 hover:bg-gray-100')
                   }`}
                 >
                   <ItemIcon className="w-4 h-4" />
@@ -1900,2220 +2077,2323 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
         {/* Content Pane */}
         <div className="flex-1 min-w-0">
-      <main className="w-full px-4 md:px-8 lg:px-12 pt-6 md:pt-10">
-        {activeTab === 'requests' && (
-          <div className="space-y-10">
-            {/* Stats Cards Section */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-              {/* Total Card */}
-              <div className="bg-white/75 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.01] hover:bg-white flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-gray-400 text-xs font-bold block">סה&quot;כ קריאות</span>
-                  <span className="block text-3xl font-black text-gray-900 font-mono tracking-tight">{stats.total}</span>
-                </div>
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
-                  <FileText className="w-6 h-6" />
-                </div>
-              </div>
-
-              {/* Status Cards */}
-              {statuses.map(st => {
-                let count = 0;
-                let IconComponent = Clock;
-                let colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
-
-                if (st.key === 'NEW') {
-                  count = stats.new;
-                  IconComponent = Clock;
-                  colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
-                }
-                if (st.key === 'WAITING_FOR_PICKUP') {
-                  count = stats.waitingPickup;
-                  IconComponent = AlertCircle;
-                  colorClass = 'text-amber-600 bg-amber-50 border-amber-100';
-                }
-                if (st.key === 'PICKED_UP_BY_DRIVER') {
-                  count = stats.pickedUp;
-                  IconComponent = CheckCircle2;
-                  colorClass = 'text-purple-600 bg-purple-50 border-purple-100';
-                }
-
-                return (
-                  <div key={st.key} className="bg-white/75 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.01] hover:bg-white flex items-center justify-between">
+          <main className="w-full px-4 md:px-8 lg:px-12 pt-6 md:pt-10">
+            {activeTab === 'requests' && (
+              <div className="space-y-10">
+                {/* Stats Cards Section */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+                  {/* Total Card */}
+                  <div className="bg-white/75 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.01] hover:bg-white flex items-center justify-between">
                     <div className="space-y-1">
-                      <span className="text-gray-400 text-xs font-bold block">{st.label}</span>
-                      <span className="block text-3xl font-black text-gray-900 font-mono tracking-tight">{count}</span>
+                      <span className="text-gray-400 text-xs font-bold block">סה&quot;כ קריאות</span>
+                      <span className="block text-3xl font-black text-gray-900 font-mono tracking-tight">{stats.total}</span>
                     </div>
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${colorClass}`}>
-                      <IconComponent className="w-6 h-6" />
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                      <FileText className="w-6 h-6" />
                     </div>
                   </div>
-                );
-              })}
-            </div>
 
-            {/* Filter and Search Bar */}
-            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col lg:flex-row gap-4 items-center justify-between">
-              <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto items-stretch sm:items-center">
-                <div className="relative w-full sm:w-80">
-                  <input
-                    type="text"
-                    placeholder="חיפוש לפי שם לקוח או חנות..."
-                    value={requestSearch}
-                    onChange={(e) => setRequestSearch(e.target.value)}
-                    className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
-                  />
-                  <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" />
+                  {/* Status Cards */}
+                  {statuses.map(st => {
+                    let count = 0;
+                    let IconComponent = Clock;
+                    let colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
+
+                    if (st.key === 'NEW') {
+                      count = stats.new;
+                      IconComponent = Clock;
+                      colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
+                    }
+                    if (st.key === 'WAITING_FOR_PICKUP') {
+                      count = stats.waitingPickup;
+                      IconComponent = AlertCircle;
+                      colorClass = 'text-amber-600 bg-amber-50 border-amber-100';
+                    }
+                    if (st.key === 'PICKED_UP_BY_DRIVER') {
+                      count = stats.pickedUp;
+                      IconComponent = CheckCircle2;
+                      colorClass = 'text-purple-600 bg-purple-50 border-purple-100';
+                    }
+
+                    return (
+                      <div key={st.key} className="bg-white/75 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:scale-[1.01] hover:bg-white flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-gray-400 text-xs font-bold block">{st.label}</span>
+                          <span className="block text-3xl font-black text-gray-900 font-mono tracking-tight">{count}</span>
+                        </div>
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${colorClass}`}>
+                          <IconComponent className="w-6 h-6" />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                
-                <button
-                  onClick={() => refreshRequests(true)}
-                  disabled={isAdminRefreshing}
-                  className="p-3 bg-white/80 border border-gray-250/50 hover:bg-gray-100 rounded-xl text-gray-500 hover:text-gray-700 active:scale-95 transition-all shadow-sm cursor-pointer flex items-center justify-center"
-                  title="רענן קריאות"
-                >
-                  <RotateCw className={`w-4 h-4 ${isAdminRefreshing ? 'animate-spin text-blue-600' : ''}`} />
-                </button>
 
-                <button
-                  onClick={() => {
-                    setIsCreateModalOpen(true);
-                    setCreateSearch('');
-                    setSelectedCustomerForCreate(null);
-                    setAdminSelectedDriverId('');
-                  }}
-                  className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  פתח קריאה חדשה
-                </button>
-              </div>
+                {/* Filter and Search Bar */}
+                <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col lg:flex-row gap-4 items-center justify-between">
+                  <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto items-stretch sm:items-center">
+                    <div className="relative w-full sm:w-80">
+                      <input
+                        type="text"
+                        placeholder="חיפוש לפי שם לקוח או חנות..."
+                        value={requestSearch}
+                        onChange={(e) => setRequestSearch(e.target.value)}
+                        className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                      />
+                      <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" />
+                    </div>
 
-              <div className="flex flex-wrap gap-1.5 w-full lg:w-auto">
-                <button
-                  onClick={() => setRequestStatusFilter('ALL')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${
-                    requestStatusFilter === 'ALL'
-                      ? 'bg-gray-900 border-gray-900 text-white shadow-sm'
-                      : 'bg-white/60 border-gray-200 text-gray-600 hover:bg-white hover:text-gray-900 shadow-sm shadow-black/5'
-                  }`}
-                >
-                  הכל
-                </button>
-                {statuses.map(st => (
-                  <button
-                    key={st.key}
-                    onClick={() => setRequestStatusFilter(st.key)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${
-                      requestStatusFilter === st.key
+                    <button
+                      onClick={() => refreshRequests(true)}
+                      disabled={isAdminRefreshing}
+                      className="p-3 bg-white/80 border border-gray-250/50 hover:bg-gray-100 rounded-xl text-gray-500 hover:text-gray-700 active:scale-95 transition-all shadow-sm cursor-pointer flex items-center justify-center"
+                      title="רענן קריאות"
+                    >
+                      <RotateCw className={`w-4 h-4 ${isAdminRefreshing ? 'animate-spin text-blue-600' : ''}`} />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsCreateModalOpen(true);
+                        setCreateSearch('');
+                        setSelectedCustomerForCreate(null);
+                        setAdminSelectedDriverId('');
+                      }}
+                      className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      פתח קריאה חדשה
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 w-full lg:w-auto">
+                    <button
+                      onClick={() => setRequestStatusFilter('ALL')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${requestStatusFilter === 'ALL'
                         ? 'bg-gray-900 border-gray-900 text-white shadow-sm'
                         : 'bg-white/60 border-gray-200 text-gray-600 hover:bg-white hover:text-gray-900 shadow-sm shadow-black/5'
-                    }`}
-                  >
-                    {st.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+                        }`}
+                    >
+                      הכל
+                    </button>
+                    {statuses.map(st => (
+                      <button
+                        key={st.key}
+                        onClick={() => setRequestStatusFilter(st.key)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${requestStatusFilter === st.key
+                          ? 'bg-gray-900 border-gray-900 text-white shadow-sm'
+                          : 'bg-white/60 border-gray-200 text-gray-600 hover:bg-white hover:text-gray-900 shadow-sm shadow-black/5'
+                          }`}
+                      >
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            {/* Requests Table */}
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50 whitespace-nowrap">
-                      <th className="p-5">מספר קריאה</th>
-                      <th className="p-5">שם הלקוח</th>
-                      <th className="p-5">שם החנות</th>
-                      <th className="p-5">טלפון</th>
-                      <th className="p-5">אחריות</th>
-                      <th className="p-5">תאריך פתיחה</th>
-                      <th className="p-5">סטטוס</th>
-                      <th className="p-5">נהג</th>
-                      <th className="p-5 text-center">פעולות</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200/40">
-                    {filteredRequests.length > 0 ? (
-                      filteredRequests.map((req) => {
-                        const statusObj = statuses.find(s => s.key === req.status) || statuses[0];
-                        return (
-                          <tr key={req.id} className="hover:bg-gray-50/30 transition-colors whitespace-nowrap">
-                            <td className="p-5 text-gray-400 font-mono text-sm font-semibold">
-                              {formatRequestNumber(tenantId, req.requestNumber)}
-                            </td>
-                            <td className="p-5 font-bold text-gray-800 text-right">
-                              <div className="flex items-center gap-1.5 justify-start flex-wrap">
-                                <span>{req.customer?.firstName} {req.customer?.lastName}</span>
-                                {req.agentName && (
-                                  <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                                    👔 סוכן: {req.agentName}
-                                  </span>
-                                )}
-                                {req.repairLevel === 'RIDE_ONLY' && (
-                                  <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded text-[9px] font-bold">נסיעה 🛴</span>
-                                )}
-                                {req.repairLevel === 'SAFE_RIDE' && (
-                                  <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded text-[9px] font-bold">בטוח 🛑</span>
-                                )}
-                                {req.repairLevel === 'LIKE_NEW' && (
-                                  <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded text-[9px] font-bold">כמו חדש ✨</span>
-                                )}
-                              </div>
-                              {req.issueDescription && (
-                                <div className="text-[10px] text-blue-600 font-normal truncate max-w-[150px] mt-0.5 inline-block" title={req.issueDescription}>
-                                  תקלה: {req.issueDescription}
-                                </div>
-                              )}
-                            </td>
-                            <td className="p-5 text-gray-600">{req.storeName}</td>
-                            <td className="p-5 text-gray-500 font-mono text-sm">{req.customer?.phone || '-'}</td>
-                            <td className="p-5">
-                              {req.hasWarranty ? (
-                                <span className="px-2.5 py-0.5 bg-green-50 text-green-700 rounded-md text-xs font-bold border border-green-100">כן</span>
-                              ) : (
-                                <span className="px-2.5 py-0.5 bg-gray-50 text-gray-500 rounded-md text-xs font-bold border border-gray-100">לא</span>
-                              )}
-                            </td>
-                            <td className="p-5 text-gray-400 text-sm font-mono">
-                              {formatDate(req.createdAt)}
-                            </td>
-                            {/* Premium Native Select Status Switcher */}
-                            <td className="p-5">
-                              <select
-                                value={req.status}
-                                onChange={(e) => handleStatusChange(req.id, e.target.value)}
-                                disabled={isUpdatingStatus}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
-                                style={{
-                                  WebkitAppearance: 'none',
-                                  MozAppearance: 'none',
-                                  appearance: 'none',
-                                  paddingLeft: '1.5rem',
-                                  paddingRight: '0.75rem',
-                                  backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-                                  backgroundPosition: 'left 0.4rem center',
-                                  backgroundSize: '1rem',
-                                  backgroundRepeat: 'no-repeat'
-                                }}
-                              >
-                                {statuses.map(st => (
-                                  <option key={st.key} value={st.key} className="bg-white text-gray-800 font-semibold">
-                                    {st.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            {/* Driver Assignment Select */}
-                            <td className="p-5">
-                              {driversList.length === 0 ? (
-                                <span className="text-gray-300 text-xs font-bold">-</span>
-                              ) : (
-                                <select
-                                  value={req.driverId || ''}
-                                  onChange={(e) => handleDriverChange(req.id, e.target.value || null)}
-                                  disabled={updatingDriverRequestId === req.id}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
-                                    !req.driverId && multiDriver
-                                      ? 'bg-red-50 text-red-600 border-red-200 font-black animate-pulse'
-                                      : req.driverId
-                                        ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100'
-                                        : 'bg-gray-50 text-gray-500 border-gray-200'
-                                  }`}
-                                  style={{
-                                    WebkitAppearance: 'none',
-                                    MozAppearance: 'none',
-                                    appearance: 'none',
-                                    paddingLeft: '1.5rem',
-                                    paddingRight: '0.75rem',
-                                    backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-                                    backgroundPosition: 'left 0.4rem center',
-                                    backgroundSize: '1rem',
-                                    backgroundRepeat: 'no-repeat'
-                                  }}
-                                >
-                                  <option value="" className="bg-white text-gray-800 font-semibold">
-                                    {multiDriver ? 'שייך נהג!' : 'ללא נהג'}
-                                  </option>
-                                  {driversList.map(d => (
-                                    <option key={d.id} value={d.id} className="bg-white text-gray-800 font-semibold">
-                                      {d.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </td>
-                            <td className="p-5 flex items-center justify-end gap-1.5">
-                              {req.customer?.phone && (
-                                <a
-                                  href={`https://wa.me/${req.customer.phone.startsWith('0') ? '972' + req.customer.phone.slice(1) : req.customer.phone}?text=${encodeURIComponent(
-                                    buildWhatsAppMessage(currentWhatsappTemplate, `${baseUrl}/${tenantId}/request/${req.customer.id}`, currentBusinessName)
-                                  )}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
-                                  title="שליחת קישור בווטסאפ"
-                                >
-                                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                                    <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
-                                  </svg>
-                                </a>
-                              )}
-                              {req.customer?.address && (
-                                <a
-                                  href={`https://waze.com/ul?q=${encodeURIComponent(req.customer.address)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.95] border border-cyan-100/50 cursor-pointer"
-                                  title="ניווט ב-Waze"
-                                >
-                                  <Navigation className="w-4 h-4" />
-                                </a>
-                              )}
-                              {req.status !== 'COMPLETED' && (
-                                <button
-                                  onClick={() => handleStatusChange(req.id, 'COMPLETED')}
-                                  disabled={isUpdatingStatus}
-                                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
-                                  title="סמן כטיפול הסתיים"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleDeleteRequest(req.id)}
-                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
-                                title="מחק קריאה"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => openRequestDetails(req)}
-                                className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer"
-                              >
-                                פרטים
-                              </button>
+                {/* Requests Table */}
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50 whitespace-nowrap">
+                          <th className="p-5">מספר קריאה</th>
+                          <th className="p-5">שם הלקוח</th>
+                          <th className="p-5">שם החנות</th>
+                          <th className="p-5">טלפון</th>
+                          <th className="p-5">אחריות</th>
+                          <th className="p-5">תאריך פתיחה</th>
+                          <th className="p-5">סטטוס</th>
+                          <th className="p-5">נהג</th>
+                          <th className="p-5 text-center">פעולות</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200/40">
+                        {filteredRequests.length > 0 ? (
+                          filteredRequests.map((req) => {
+                            const statusObj = statuses.find(s => s.key === req.status) || statuses[0];
+                            return (
+                              <tr key={req.id} className="hover:bg-gray-50/30 transition-colors whitespace-nowrap">
+                                <td className="p-5 text-gray-400 font-mono text-sm font-semibold">
+                                  {formatRequestNumber(tenantId, req.requestNumber)}
+                                </td>
+                                <td className="p-5 font-bold text-gray-800 text-right">
+                                  <div className="flex items-center gap-1.5 justify-start flex-wrap">
+                                    <span>{req.customer?.firstName} {req.customer?.lastName}</span>
+                                    {req.agentName && (
+                                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                                        👔 סוכן: {req.agentName}
+                                      </span>
+                                    )}
+                                    {req.repairLevel === 'RIDE_ONLY' && (
+                                      <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded text-[9px] font-bold">נסיעה 🛴</span>
+                                    )}
+                                    {req.repairLevel === 'SAFE_RIDE' && (
+                                      <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded text-[9px] font-bold">בטוח 🛑</span>
+                                    )}
+                                    {req.repairLevel === 'LIKE_NEW' && (
+                                      <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded text-[9px] font-bold">כמו חדש ✨</span>
+                                    )}
+                                  </div>
+                                  {req.issueDescription && (
+                                    <div className="text-[10px] text-blue-600 font-normal truncate max-w-[150px] mt-0.5 inline-block" title={req.issueDescription}>
+                                      תקלה: {req.issueDescription}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-5 text-gray-600">{req.storeName}</td>
+                                <td className="p-5 text-gray-500 font-mono text-sm">{req.customer?.phone || '-'}</td>
+                                <td className="p-5">
+                                  {req.hasWarranty ? (
+                                    <span className="px-2.5 py-0.5 bg-green-50 text-green-700 rounded-md text-xs font-bold border border-green-100">כן</span>
+                                  ) : (
+                                    <span className="px-2.5 py-0.5 bg-gray-50 text-gray-500 rounded-md text-xs font-bold border border-gray-100">לא</span>
+                                  )}
+                                </td>
+                                <td className="p-5 text-gray-400 text-sm font-mono">
+                                  {formatDate(req.createdAt)}
+                                </td>
+                                {/* Premium Native Select Status Switcher */}
+                                <td className="p-5">
+                                  <select
+                                    value={req.status}
+                                    onChange={(e) => handleStatusChange(req.id, e.target.value)}
+                                    disabled={isUpdatingStatus}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                                    style={{
+                                      WebkitAppearance: 'none',
+                                      MozAppearance: 'none',
+                                      appearance: 'none',
+                                      paddingLeft: '1.5rem',
+                                      paddingRight: '0.75rem',
+                                      backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                                      backgroundPosition: 'left 0.4rem center',
+                                      backgroundSize: '1rem',
+                                      backgroundRepeat: 'no-repeat'
+                                    }}
+                                  >
+                                    {statuses.map(st => (
+                                      <option key={st.key} value={st.key} className="bg-white text-gray-800 font-semibold">
+                                        {st.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                {/* Driver Assignment Select */}
+                                <td className="p-5">
+                                  {driversList.length === 0 ? (
+                                    <span className="text-gray-300 text-xs font-bold">-</span>
+                                  ) : (
+                                    <select
+                                      value={req.driverId || ''}
+                                      onChange={(e) => handleDriverChange(req.id, e.target.value || null)}
+                                      disabled={updatingDriverRequestId === req.id}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${!req.driverId && multiDriver
+                                        ? 'bg-red-50 text-red-600 border-red-200 font-black animate-pulse'
+                                        : req.driverId
+                                          ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100'
+                                          : 'bg-gray-50 text-gray-500 border-gray-200'
+                                        }`}
+                                      style={{
+                                        WebkitAppearance: 'none',
+                                        MozAppearance: 'none',
+                                        appearance: 'none',
+                                        paddingLeft: '1.5rem',
+                                        paddingRight: '0.75rem',
+                                        backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                                        backgroundPosition: 'left 0.4rem center',
+                                        backgroundSize: '1rem',
+                                        backgroundRepeat: 'no-repeat'
+                                      }}
+                                    >
+                                      <option value="" className="bg-white text-gray-800 font-semibold">
+                                        {multiDriver ? 'שייך נהג!' : 'ללא נהג'}
+                                      </option>
+                                      {driversList.map(d => (
+                                        <option key={d.id} value={d.id} className="bg-white text-gray-800 font-semibold">
+                                          {d.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </td>
+                                <td className="p-5 flex items-center justify-end gap-1.5">
+                                  {req.customer?.phone && (
+                                    <a
+                                      href={`https://wa.me/${req.customer.phone.startsWith('0') ? '972' + req.customer.phone.slice(1) : req.customer.phone}?text=${encodeURIComponent(
+                                        buildWhatsAppMessage(currentWhatsappTemplate, `${baseUrl}/${tenantId}/request/${req.customer.id}`, currentBusinessName)
+                                      )}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                                      title="שליחת קישור בווטסאפ"
+                                    >
+                                      <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                                        <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z" />
+                                      </svg>
+                                    </a>
+                                  )}
+                                  {req.customer?.address && (
+                                    <a
+                                      href={`https://waze.com/ul?q=${encodeURIComponent(req.customer.address)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.95] border border-cyan-100/50 cursor-pointer"
+                                      title="ניווט ב-Waze"
+                                    >
+                                      <Navigation className="w-4 h-4" />
+                                    </a>
+                                  )}
+                                  {req.status !== 'COMPLETED' && (
+                                    <button
+                                      onClick={() => handleStatusChange(req.id, 'COMPLETED')}
+                                      disabled={isUpdatingStatus}
+                                      className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                                      title="סמן כטיפול הסתיים"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleDeleteRequest(req.id)}
+                                    className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                                    title="מחק קריאה"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => openRequestDetails(req)}
+                                    className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer"
+                                  >
+                                    פרטים
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={9} className="p-10 text-center text-gray-400 text-sm">
+                              לא נמצאו קריאות שירות מתאימות.
                             </td>
                           </tr>
-                        );
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={9} className="p-10 text-center text-gray-400 text-sm">
-                          לא נמצאו קריאות שירות מתאימות.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-        {activeTab === 'customers' && (
-          <div className="space-y-6">
-            {/* Customer Search */}
-            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
-                <div className="relative w-full sm:w-80">
-                  <input
-                    type="text"
-                    placeholder="חיפוש לקוח לפי שם או טלפון..."
-                    value={customerSearch}
-                    onChange={(e) => setCustomerSearch(e.target.value)}
-                    className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
-                  />
-                  <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" />
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <select
-                  value={customerRegionFilter}
-                  onChange={(e) => setCustomerRegionFilter(e.target.value)}
-                  className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
-                >
-                  <option value="ALL">כל האזורים</option>
-                  {REGIONS.map(r => (
-                    <option key={r.key} value={r.key}>{r.label}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => setIsAddCustomerModalOpen(true)}
-                  className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  הוסף לקוח חדש
-                </button>
-                <button
-                  onClick={copyCustomerLoginUrl}
-                  className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] cursor-pointer border shadow-sm ${
-                    copiedCustomerLoginUrl
-                      ? 'bg-emerald-600 text-white border-emerald-600'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                  }`}
-                  title="העתק קישור לדף הכניסה של הלקוחות"
-                >
-                  <Copy className="w-4 h-4" />
-                  {copiedCustomerLoginUrl ? 'קישור הכניסה הועתק!' : 'העתק קישור כניסה ללקוחות'}
-                </button>
-                <button
-                  onClick={copyAgentPartRequestUrl}
-                  className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] cursor-pointer border shadow-sm ${
-                    copiedAgentPartUrl
-                      ? 'bg-emerald-600 text-white border-emerald-600'
-                      : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                  }`}
-                  title="העתק קישור סוכן לבקשת חלק"
-                >
-                  <Package className="w-4 h-4" />
-                  {copiedAgentPartUrl ? 'קישור סוכן לבקשת חלק הועתק!' : 'העתק קישור סוכן לבקשת חלק'}
-                </button>
               </div>
-              <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20">נמצאו {filteredCustomers.length} לקוחות</span>
-            </div>
+            )}
+            {activeTab === 'customers' && (
+              <div className="space-y-6">
+                {/* Customer Search */}
+                <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+                  <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+                    <div className="relative w-full sm:w-80">
+                      <input
+                        type="text"
+                        placeholder="חיפוש לקוח לפי שם או טלפון..."
+                        value={customerSearch}
+                        onChange={(e) => setCustomerSearch(e.target.value)}
+                        className="w-full pl-4 pr-11 py-3 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                      />
+                      <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3.5" />
+                    </div>
+                    <select
+                      value={customerRegionFilter}
+                      onChange={(e) => setCustomerRegionFilter(e.target.value)}
+                      className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <option value="ALL">כל האזורים</option>
+                      {REGIONS.map(r => (
+                        <option key={r.key} value={r.key}>{r.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setIsAddCustomerModalOpen(true)}
+                      className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      הוסף לקוח חדש
+                    </button>
+                    <button
+                      onClick={copyCustomerLoginUrl}
+                      className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] cursor-pointer border shadow-sm ${copiedCustomerLoginUrl
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                        }`}
+                      title="העתק קישור לדף הכניסה של הלקוחות"
+                    >
+                      <Copy className="w-4 h-4" />
+                      {copiedCustomerLoginUrl ? 'קישור הכניסה הועתק!' : 'העתק קישור כניסה ללקוחות'}
+                    </button>
+                    <button
+                      onClick={copyAgentPartRequestUrl}
+                      className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] cursor-pointer border shadow-sm ${copiedAgentPartUrl
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                        }`}
+                      title="העתק קישור סוכן לבקשת חלק"
+                    >
+                      <Package className="w-4 h-4" />
+                      {copiedAgentPartUrl ? 'קישור סוכן לבקשת חלק הועתק!' : 'העתק קישור סוכן לבקשת חלק'}
+                    </button>
+                  </div>
+                  <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20">נמצאו {filteredCustomers.length} לקוחות</span>
+                </div>
 
-            {/* Customer List Table */}
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50">
-                      <th className="p-5">שם הלקוח</th>
-                      <th className="p-5">טלפון</th>
-                      <th className="p-5">כתובת</th>
-                      <th className="p-5">אזור</th>
-                      <th className="p-5 text-center">קישור לטופס ופעולות</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200/40">
-                    {filteredCustomers.length > 0 ? (
-                      filteredCustomers.slice(0, 100).map((cust) => (
-                        <tr key={cust.id} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="p-5 font-bold text-gray-800">
-                            <div className="flex items-center gap-2">
-                              <span>{cust.firstName} {cust.lastName}</span>
-                              {cust.approved === false && (
-                                <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md border border-amber-200">
-                                  ממתין לאישור
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-5 text-gray-600 font-mono text-sm">{cust.phone || '-'}</td>
-                          <td className="p-5 text-gray-500 text-sm">{cust.address || 'לא צוינה כתובת'}</td>
-                          <td className="p-5">
-                            <select
-                              value={cust.region || ''}
-                              onChange={(e) => handleUpdateCustomerRegion(cust.id, e.target.value)}
-                              disabled={updatingRegionCustomerId === cust.id}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
-                                cust.region ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
-                              }`}
-                            >
-                              <option value="">ללא אזור</option>
-                              {REGIONS.map(r => (
-                                <option key={r.key} value={r.key}>{r.label}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="p-5 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* Approve Customer Button */}
-                              {cust.approved === false && (
-                                <button
-                                  onClick={() => handleApproveCustomer(cust.id)}
-                                  disabled={approvingCustomerId === cust.id}
-                                  className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98] border border-emerald-100/50 cursor-pointer disabled:opacity-50"
-                                  title="אשר גישת לקוח לפורטל"
-                                >
-                                  {approvingCustomerId === cust.id ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                {/* Customer List Table */}
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50/50 text-gray-400 font-bold text-xs uppercase tracking-wider border-b border-gray-200/50">
+                          <th className="p-5">שם הלקוח</th>
+                          <th className="p-5">טלפון</th>
+                          <th className="p-5">כתובת</th>
+                          <th className="p-5">אזור</th>
+                          <th className="p-5 text-center">קישור לטופס ופעולות</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200/40">
+                        {filteredCustomers.length > 0 ? (
+                          filteredCustomers.slice(0, 100).map((cust) => (
+                            <tr key={cust.id} className="hover:bg-gray-50/50 transition-colors">
+                              <td className="p-5 font-bold text-gray-800">
+                                <div className="flex items-center gap-2">
+                                  <span>{cust.firstName} {cust.lastName}</span>
+                                  {cust.approved === false && (
+                                    <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md border border-amber-200">
+                                      ממתין לאישור
+                                    </span>
                                   )}
-                                  אשר לקוח
-                                </button>
-                              )}
+                                </div>
+                              </td>
+                              <td className="p-5 text-gray-600 font-mono text-sm">{cust.phone || '-'}</td>
+                              <td className="p-5 text-gray-500 text-sm">{cust.address || 'לא צוינה כתובת'}</td>
+                              <td className="p-5">
+                                <select
+                                  value={cust.region || ''}
+                                  onChange={(e) => handleUpdateCustomerRegion(cust.id, e.target.value)}
+                                  disabled={updatingRegionCustomerId === cust.id}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${cust.region ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
+                                    }`}
+                                >
+                                  <option value="">ללא אזור</option>
+                                  {REGIONS.map(r => (
+                                    <option key={r.key} value={r.key}>{r.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="p-5 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {/* Approve Customer Button */}
+                                  {cust.approved === false && (
+                                    <button
+                                      onClick={() => handleApproveCustomer(cust.id)}
+                                      disabled={approvingCustomerId === cust.id}
+                                      className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98] border border-emerald-100/50 cursor-pointer disabled:opacity-50"
+                                      title="אשר גישת לקוח לפורטל"
+                                    >
+                                      {approvingCustomerId === cust.id ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                      )}
+                                      אשר לקוח
+                                    </button>
+                                  )}
 
-                              {/* Edit Customer Button */}
-                              <button
-                                onClick={() => openCustomerCard(cust)}
-                                className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-gray-200/70 cursor-pointer"
-                                title="עריכת פרטי לקוח"
-                                aria-label="עריכת פרטי לקוח"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </button>
+                                  {/* Edit Customer Button */}
+                                  <button
+                                    onClick={() => openCustomerCard(cust)}
+                                    className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-gray-200/70 cursor-pointer"
+                                    title="עריכת פרטי לקוח"
+                                    aria-label="עריכת פרטי לקוח"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
 
-                              {/* Copy Link Button */}
-                              <button
-                                onClick={() => copyCustomerUrl(cust.id)}
-                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer ${
-                                  copiedCustomerId === cust.id
-                                    ? 'bg-green-500 border-green-500 text-white shadow-green-500/10'
-                                    : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                  {/* Copy Link Button */}
+                                  <button
+                                    onClick={() => copyCustomerUrl(cust.id)}
+                                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer ${copiedCustomerId === cust.id
+                                      ? 'bg-green-500 border-green-500 text-white shadow-green-500/10'
+                                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                      }`}
+                                  >
+                                    <Copy className="w-3.5 h-3.5 inline-block mr-1" />
+                                    {copiedCustomerId === cust.id ? 'הועתק!' : 'העתק קישור'}
+                                  </button>
+
+                                  {/* WhatsApp Share Button */}
+                                  {cust.phone && (
+                                    <a
+                                      href={`https://wa.me/${cust.phone.startsWith('0') ? '972' + cust.phone.slice(1) : cust.phone}?text=${encodeURIComponent(
+                                        `שלום ${cust.firstName} ${cust.lastName},\nלהלן קישור לפורטל השירות שלך ב-${businessName}:\n${baseUrl}/${tenantId}/portal/${cust.id}`
+                                      )}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                                      title="שלח בוואטסאפ"
+                                    >
+                                      <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                                        <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z" />
+                                      </svg>
+                                    </a>
+                                  )}
+
+                                  {/* QR Code Printable Flyer Button */}
+                                  <button
+                                    onClick={() => setSelectedCustomerForQr(cust)}
+                                    className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-purple-100/50 cursor-pointer"
+                                    title="הדפסת פלייר QR לחנות"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m0 11v1m0-6h.01M12 12h.01M16 8h.01M16 12h.01M8 8h.01M8 12h.01M4 4h4v4H4V4zm0 12h4v4H4v-4zm12-12h4v4h-4V4zM4 9h5M4 15h5M15 9h5" />
+                                    </svg>
+                                  </button>
+
+                                  {/* Waze Navigation Button */}
+                                  {cust.address && (
+                                    <a
+                                      href={`https://waze.com/ul?q=${encodeURIComponent(cust.address)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.95] border border-cyan-100/50 cursor-pointer"
+                                      title="ניווט ב-Waze"
+                                    >
+                                      <Navigation className="w-4 h-4" />
+                                    </a>
+                                  )}
+
+                                  {/* Portal Button */}
+                                  <a
+                                    href={`/${tenantId}/portal/${cust.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
+                                    title="כניסה לפורטל הלקוח"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    פורטל
+                                  </a>
+
+                                  {/* WhatsApp Portal Link Share */}
+                                  {cust.phone && (
+                                    <a
+                                      href={`https://wa.me/${cust.phone.replace(/\D/g, '').startsWith('0') ? '972' + cust.phone.replace(/\D/g, '').slice(1) : cust.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                                        `שלום ${cust.firstName},\nזהו הקישור האישי שלך לפורטל קריאות השירות ב-${currentBusinessName}:\n${baseUrl}/${tenantId}/portal/${cust.id}`
+                                      )}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-emerald-100/50 cursor-pointer"
+                                      title="שלח קישור אישי ב-WhatsApp"
+                                    >
+                                      <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                                        <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z" />
+                                      </svg>
+                                    </a>
+                                  )}
+
+                                  {/* Copy Customer Portal Link */}
+                                  <button
+                                    onClick={() => copyCustomerPortalUrl(cust)}
+                                    className={`p-2 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border cursor-pointer ${copiedPortalCustId === cust.id
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100/50'
+                                      }`}
+                                    title="העתק קישור לפורטל הלקוח"
+                                  >
+                                    <Copy className="w-4 h-4" />
+                                  </button>
+
+                                  {/* Delete Customer Button */}
+                                  <button
+                                    onClick={() => handleDeleteCustomer(cust.id)}
+                                    className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                                    title="מחק לקוח"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="p-10 text-center text-gray-400 text-sm">
+                              לא נמצאו לקוחות.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {filteredCustomers.length > 100 && (
+                    <div className="p-4 bg-gray-50 border-t text-center text-gray-400 text-xs font-semibold">
+                      מציג את 100 הלקוחות הראשונים. השתמש בחיפוש לסינון מהיר.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'drivers' && (
+              <div className="space-y-6">
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                  <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                    <Truck className="w-4 h-4 text-blue-600" />
+                    נהגים
+                  </h3>
+                  <p className="text-[10px] text-gray-400 leading-relaxed">
+                    לכל נהג נוצר קישור אישי וסודי לפאנל הנהג שלו, שבו יופיעו רק הקריאות המשויכות אליו.
+                    אם קיים נהג אחד בלבד — כל קריאה חדשה תשויך אליו אוטומטית. אם יש יותר מנהג אחד — יש לשייך נהג לכל קריאה מטבלת הקריאות.
+                  </p>
+
+                  {/* Existing Drivers List */}
+                  {driversList.length > 0 && (
+                    <div className="space-y-2">
+                      {driversList.map(d => (
+                        <div key={d.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <strong className="text-sm text-gray-800 font-bold block truncate">{d.name}</strong>
+                            {d.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{d.phone}</span>}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {/* Copy personal link */}
+                            <button
+                              type="button"
+                              onClick={() => copyDriverUrl(d.id)}
+                              className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer ${copiedDriverId === d.id
+                                ? 'bg-green-500 border-green-500 text-white'
+                                : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
                                 }`}
-                              >
-                                <Copy className="w-3.5 h-3.5 inline-block mr-1" />
-                                {copiedCustomerId === cust.id ? 'הועתק!' : 'העתק קישור'}
-                              </button>
-                              
-                              {/* WhatsApp Share Button */}
-                              {cust.phone && (
-                                <a
-                                  href={`https://wa.me/${cust.phone.startsWith('0') ? '972' + cust.phone.slice(1) : cust.phone}?text=${encodeURIComponent(
-                                    `שלום ${cust.firstName} ${cust.lastName},\nלהלן קישור לפורטל השירות שלך ב-${businessName}:\n${baseUrl}/${tenantId}/portal/${cust.id}`
-                                  )}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
-                                  title="שלח בוואטסאפ"
-                                >
-                                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                                    <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
-                                  </svg>
-                                </a>
-                              )}
- 
-                              {/* QR Code Printable Flyer Button */}
-                              <button
-                                onClick={() => setSelectedCustomerForQr(cust)}
-                                className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-purple-100/50 cursor-pointer"
-                                title="הדפסת פלייר QR לחנות"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m0 11v1m0-6h.01M12 12h.01M16 8h.01M16 12h.01M8 8h.01M8 12h.01M4 4h4v4H4V4zm0 12h4v4H4v-4zm12-12h4v4h-4V4zM4 9h5M4 15h5M15 9h5" />
-                                </svg>
-                              </button>
- 
-                              {/* Waze Navigation Button */}
-                              {cust.address && (
-                                <a
-                                  href={`https://waze.com/ul?q=${encodeURIComponent(cust.address)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.95] border border-cyan-100/50 cursor-pointer"
-                                  title="ניווט ב-Waze"
-                                >
-                                  <Navigation className="w-4 h-4" />
-                                </a>
-                              )}
- 
-                              {/* Portal Button */}
+                              title="העתק קישור אישי לפאנל הנהג"
+                            >
+                              <Copy className="w-3 h-3 inline-block ml-1" />
+                              {copiedDriverId === d.id ? 'הועתק!' : 'העתק קישור'}
+                            </button>
+
+                            {/* WhatsApp share */}
+                            {d.phone && (
                               <a
-                                href={`/${tenantId}/portal/${cust.id}`}
+                                href={`https://wa.me/${d.phone.startsWith('0') ? '972' + d.phone.slice(1) : d.phone}?text=${encodeURIComponent(
+                                  `שלום ${d.name},\nזהו הקישור האישי שלך לפאנל הנהג של ${currentBusinessName}:\n${baseUrl}/${tenantId}/driver/${d.id}`
+                                )}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
-                                title="כניסה לפורטל הלקוח"
+                                className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                                title="שלח קישור אישי בוואטסאפ"
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                פורטל
+                                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                  <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z" />
+                                </svg>
                               </a>
-
-                              {/* WhatsApp Portal Link Share */}
-                              {cust.phone && (
-                                <a
-                                  href={`https://wa.me/${cust.phone.replace(/\D/g, '').startsWith('0') ? '972' + cust.phone.replace(/\D/g, '').slice(1) : cust.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                                    `שלום ${cust.firstName},\nזהו הקישור האישי שלך לפורטל קריאות השירות ב-${currentBusinessName}:\n${baseUrl}/${tenantId}/portal/${cust.id}`
-                                  )}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-emerald-100/50 cursor-pointer"
-                                  title="שלח קישור אישי ב-WhatsApp"
-                                >
-                                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                                    <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
-                                  </svg>
-                                </a>
-                              )}
-
-                              {/* Copy Customer Portal Link */}
-                              <button
-                                onClick={() => copyCustomerPortalUrl(cust)}
-                                className={`p-2 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border cursor-pointer ${
-                                  copiedPortalCustId === cust.id
-                                    ? 'bg-emerald-600 text-white border-emerald-600'
-                                    : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100/50'
-                                }`}
-                                title="העתק קישור לפורטל הלקוח"
-                              >
-                                <Copy className="w-4 h-4" />
-                              </button>
-                              
-                              {/* Delete Customer Button */}
-                              <button
-                                onClick={() => handleDeleteCustomer(cust.id)}
-                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
-                                title="מחק לקוח"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="p-10 text-center text-gray-400 text-sm">
-                          לא נמצאו לקוחות.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {filteredCustomers.length > 100 && (
-                <div className="p-4 bg-gray-50 border-t text-center text-gray-400 text-xs font-semibold">
-                  מציג את 100 הלקוחות הראשונים. השתמש בחיפוש לסינון מהיר.
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'drivers' && (
-          <div className="space-y-6">
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
-              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                <Truck className="w-4 h-4 text-blue-600" />
-                נהגים
-              </h3>
-              <p className="text-[10px] text-gray-400 leading-relaxed">
-                לכל נהג נוצר קישור אישי וסודי לפאנל הנהג שלו, שבו יופיעו רק הקריאות המשויכות אליו.
-                אם קיים נהג אחד בלבד — כל קריאה חדשה תשויך אליו אוטומטית. אם יש יותר מנהג אחד — יש לשייך נהג לכל קריאה מטבלת הקריאות.
-              </p>
-
-              {/* Existing Drivers List */}
-              {driversList.length > 0 && (
-                <div className="space-y-2">
-                  {driversList.map(d => (
-                    <div key={d.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <strong className="text-sm text-gray-800 font-bold block truncate">{d.name}</strong>
-                        {d.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{d.phone}</span>}
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        {/* Copy personal link */}
-                        <button
-                          type="button"
-                          onClick={() => copyDriverUrl(d.id)}
-                          className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border border-blue-100/50 cursor-pointer ${
-                            copiedDriverId === d.id
-                              ? 'bg-green-500 border-green-500 text-white'
-                              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                          }`}
-                          title="העתק קישור אישי לפאנל הנהג"
-                        >
-                          <Copy className="w-3 h-3 inline-block ml-1" />
-                          {copiedDriverId === d.id ? 'הועתק!' : 'העתק קישור'}
-                        </button>
-
-                        {/* WhatsApp share */}
-                        {d.phone && (
-                          <a
-                            href={`https://wa.me/${d.phone.startsWith('0') ? '972' + d.phone.slice(1) : d.phone}?text=${encodeURIComponent(
-                              `שלום ${d.name},\nזהו הקישור האישי שלך לפאנל הנהג של ${currentBusinessName}:\n${baseUrl}/${tenantId}/driver/${d.id}`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
-                            title="שלח קישור אישי בוואטסאפ"
-                          >
-                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
-                            </svg>
-                          </a>
-                        )}
-
-                        {/* Open panel */}
-                        <a
-                          href={`/${tenantId}/driver/${d.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
-                          title="פתח את פאנל הנהג"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </a>
-
-                        {/* Delete driver */}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDriver(d.id)}
-                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
-                          title="מחק נהג"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Add Driver Form */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  placeholder="שם הנהג *"
-                  value={newDriverName}
-                  onChange={(e) => setNewDriverName(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
-                />
-                <input
-                  type="tel"
-                  placeholder="טלפון (אופציונלי)"
-                  value={newDriverPhone}
-                  onChange={(e) => setNewDriverPhone(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
-                  dir="ltr"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddDriver}
-                  disabled={isSavingDriver}
-                  className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
-                >
-                  {isSavingDriver ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="w-3.5 h-3.5" />
-                  )}
-                  הוסף נהג
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'agents' && (
-          <div className="space-y-6">
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                    <Briefcase className="w-4 h-4 text-blue-600" />
-                    סוכני מכירות במערכת ({agentsList.length})
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    סוכני מכירות יכולים לפתוח קריאות שירות, הזמנות סחורה ובקשות חלקים מפורטל ייעודי מאובטח.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAddAgentModalOpen(true)}
-                  className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  הוסף סוכן מכירות
-                </button>
-              </div>
-
-              {agentsList.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
-                  <Briefcase className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm font-bold">אין סוכני מכירות מוגדרים במערכת</p>
-                  <p className="text-gray-400 text-xs mt-1">לחץ על "הוסף סוכן מכירות" כדי ליצור סוכן חדש ולקבל עבורו קישור לפורטל.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {agentsList.map((agent) => (
-                    <div
-                      key={agent.id}
-                      className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm space-y-4 hover:shadow-md transition-all"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
-                            💼
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-gray-900 text-sm">{agent.name}</h4>
-                            <p className="text-xs text-gray-500" dir="ltr">{agent.phone}</p>
-                            {(agent.passwordPlain || agent.password) && (
-                              <p className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 inline-block mt-1">
-                                🔑 סיסמה: {agent.passwordPlain || agent.password}
-                              </p>
                             )}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteAgent(agent.id)}
-                          disabled={deletingAgentId === agent.id}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                          title="מחק סוכן"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
 
-                      <div className="pt-3 border-t border-gray-100 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => copyAgentPortalUrl(agent.token)}
-                          className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          {copiedAgentToken === agent.token ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-green-600" />
-                              <span className="text-green-600">הועתק!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-gray-500" />
-                              <span>העתק קישור לפורטל</span>
-                            </>
-                          )}
-                        </button>
-
-                        {agent.phone && (
-                          <a
-                            href={`https://wa.me/${agent.phone.startsWith('0') ? '972' + agent.phone.slice(1) : agent.phone}?text=${encodeURIComponent(
-                              `שלום ${agent.name},\nזהו הקישור האישי שלך לפורטל סוכן המכירות של ${currentBusinessName}:\n${baseUrl}/${tenantId}/agent/${agent.token}`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200/50 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
-                            title="שלח קישור לפורטל ב-WhatsApp"
-                          >
-                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
-                            </svg>
-                          </a>
-                        )}
-
-                        <a
-                          href={`/${tenantId}/agent/${agent.token}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
-                          title="פתח פורטל"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </a>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'partRequests' && (
-          <div className="space-y-6">
-            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="relative w-full md:w-96">
-                <input
-                  type="text"
-                  placeholder="חיפוש לפי לקוח, טלפון או תיאור החלק..."
-                  value={partRequestSearch}
-                  onChange={(e) => setPartRequestSearch(e.target.value)}
-                  className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
-                />
-                <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
-              </div>
-              <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">
-                נמצאו {filteredPartRequests.length} בקשות
-              </span>
-            </div>
-
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
-              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                <Package className="w-4 h-4 text-[#0F9E1D]" />
-                בקשות חלקים
-              </h3>
-              <p className="text-[10px] text-gray-400 leading-relaxed">
-                בקשות חלק שנשלחו על ידי לקוחות דרך הפורטל האישי שלהם, כולל תמונת החלק המבוקש.
-              </p>
-
-              {filteredPartRequests.length === 0 ? (
-                <div className="p-10 text-center text-gray-400 text-sm">
-                  {partRequestsList.length === 0 ? 'עדיין לא נשלחו בקשות חלקים.' : 'לא נמצאו בקשות חלקים תואמות לחיפוש.'}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredPartRequests.map(pr => (
-                    <div key={pr.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center gap-3">
-                      <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
-                        {/* Thumbnail loads on demand from the image endpoint (lazy),
-                            so part-request photos never bloat the page payload. */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/api/${tenantId}/parts-requests/${pr.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
-                          <span>{pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}` : 'לקוח לא ידוע'}</span>
-                          {pr.agentName && (
-                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                              👔 סוכן: {pr.agentName}
-                            </span>
-                          )}
-                        </strong>
-                        {pr.customer?.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{pr.customer.phone}</span>}
-                        <span className="text-xs text-gray-600 block mt-1 truncate">{pr.description}</span>
-                        <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(pr.createdAt)}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <Link
-                          href={`/${tenantId}/part/${pr.id}`}
-                          target="_blank"
-                          className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-gray-200 cursor-pointer"
-                          title="צפה בפרטי הבקשה והתמונה"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </Link>
-                        {pr.customer?.phone && (
-                          <a
-                            href={`https://wa.me/${pr.customer.phone.startsWith('0') ? '972' + pr.customer.phone.slice(1) : pr.customer.phone}?text=${encodeURIComponent(`שלום ${pr.customer.firstName}, קיבלנו את בקשת החלק שלך: "${pr.description}". אשמח לסייע בהמשך ההזמנה!`)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
-                            title="פתח שיחת WhatsApp עם הלקוח"
-                          >
-                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.37 5.378 0 12.003 0a11.94 11.94 0 0 1 8.484 3.513 11.94 11.94 0 0 1 3.51 8.49c-.003 6.63-5.378 12-12.003 12-1.996-.001-3.957-.502-5.709-1.455L0 24zm6.59-14.859c-.12-.2-.24-.2-.35-.2-.11 0-.24-.03-.36-.03-.13 0-.34.05-.52.25-.18.2-.68.66-.68 1.6s.69 1.86.78 2.06c.1.13 1.36 2.07 3.29 2.91.46.2.82.32 1.1.41.47.15.89.13 1.22.08.38-.06 1.15-.47 1.31-.93.16-.46.16-.86.11-.93-.05-.08-.18-.13-.38-.23-.19-.1-.1.38-.1.74-.11.16-.36.23-.74.13-.38-.11-1.42-.52-2.71-1.68-.96-.86-1.61-1.92-1.8-2.25-.19-.33-.02-.51.15-.68.15-.15.33-.36.5-.54.17-.18.23-.3.33-.5.1-.2.05-.38-.03-.48z" />
-                            </svg>
-                          </a>
-                        )}
-                        {/* Quote System */}
-                        <div className="flex items-center gap-2">
-                          {pr.quoteStatus === 'APPROVED' && (
-                            <span className="px-3 py-2 rounded-xl text-[10px] font-black bg-green-100 text-green-700 border border-green-200 shadow-sm flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              הצעה אושרה ({pr.quotePrice}₪)
-                            </span>
-                          )}
-                          {pr.quoteStatus === 'PENDING_APPROVAL' && (
-                            <span className="px-3 py-2 rounded-xl text-[10px] font-black bg-yellow-100 text-yellow-700 border border-yellow-200 shadow-sm flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5" />
-                              ממתין לאישור הלקוח
-                            </span>
-                          )}
-                          {(pr.quoteStatus === 'NONE' || !pr.quoteStatus) && (
-                            <>
-                              {activeQuoteId === pr.id ? (
-                                <div className="flex items-center gap-1 bg-white border border-blue-200 p-1 rounded-xl shadow-sm">
-                                  <input 
-                                    type="number" 
-                                    value={activeQuotePrice} 
-                                    onChange={(e) => setActiveQuotePrice(e.target.value)}
-                                    placeholder="מחיר..."
-                                    className="w-20 px-2 py-1 text-xs border-none focus:ring-0"
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      if (activeQuotePrice && !isNaN(Number(activeQuotePrice))) {
-                                        handleSendQuote(pr, Number(activeQuotePrice));
-                                        setActiveQuoteId(null);
-                                        setActiveQuotePrice('');
-                                      }
-                                    }}
-                                    className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg"
-                                  >
-                                    <Send className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setActiveQuoteId(null);
-                                      setActiveQuotePrice('');
-                                    }}
-                                    className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveQuoteId(pr.id);
-                                    setActiveQuotePrice('');
-                                  }}
-                                  className="px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer flex items-center gap-1 bg-blue-50 hover:bg-blue-100 border-blue-200/60 text-blue-600"
-                                  title="צור הצעת מחיר לחלק"
-                                >
-                                  <FileText className="w-3.5 h-3.5" />
-                                  <span>הצעת מחיר</span>
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleMarkPartReadyForDispatch(pr)}
-                          className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer flex items-center gap-1 ${
-                            pr.status === 'READY_FOR_DISPATCH'
-                              ? 'bg-purple-100 border-purple-200 text-purple-700 font-black'
-                              : 'bg-purple-50 hover:bg-purple-100 border-purple-200/60 text-purple-600'
-                          }`}
-                          title="עדכן שהחלק מוכן לשילוח ושלח התראה ללקוח בוואטסאפ"
-                        >
-                          <Truck className="w-3.5 h-3.5" />
-                          <span>{pr.status === 'READY_FOR_DISPATCH' ? 'נשלחה התרעה (מוכן)' : 'מוכן לשילוח'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleTogglePartRequestStatus(pr.id, pr.status)}
-                          className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer ${
-                            pr.status === 'FULFILLED'
-                              ? 'bg-green-50 border-green-100/50 text-green-600 hover:bg-green-100'
-                              : 'bg-blue-50 border-blue-100/50 text-blue-600 hover:bg-blue-100'
-                          }`}
-                        >
-                          {pr.status === 'FULFILLED' ? 'טופל' : pr.status === 'READY_FOR_DISPATCH' ? 'מוכן לשילוח' : 'חדש'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeletePartRequest(pr.id)}
-                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
-                          title="מחק בקשה"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'orders' && (
-          <div className="space-y-6">
-            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
-                <div className="relative w-full sm:w-72">
-                  <input
-                    type="text"
-                    placeholder="חיפוש הזמנה לפי לקוח או סוג מכשיר..."
-                    value={orderSearch}
-                    onChange={(e) => setOrderSearch(e.target.value)}
-                    className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
-                  />
-                  <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
-                </div>
-                <select
-                  value={orderRegionFilter}
-                  onChange={(e) => setOrderRegionFilter(e.target.value)}
-                  className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
-                >
-                  <option value="ALL">כל האזורים</option>
-                  {REGIONS.map(r => (
-                    <option key={r.key} value={r.key}>{r.label}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setIsAddOrderModalOpen(true)}
-                  className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  הזמנה חדשה
-                </button>
-              </div>
-              <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">נמצאו {filteredOrders.length} הזמנות</span>
-            </div>
-
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
-              {filteredOrders.length === 0 ? (
-                <div className="p-10 text-center text-gray-400 text-sm">
-                  {ordersList.length === 0 ? 'עדיין לא נוצרו הזמנות.' : 'לא נמצאו הזמנות תואמות לחיפוש.'}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredOrders.map(order => (
-                    <div key={order.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
-                        <ShoppingCart className="w-5 h-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
-                          <span>{order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'לקוח לא ידוע'}</span>
-                          {order.agentName && (
-                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                              👔 סוכן: {order.agentName}
-                            </span>
-                          )}
-                        </strong>
-                        <span className="text-xs text-gray-600 block mt-1 truncate">
-                          {order.deviceType} {order.model ? `- ${order.model}` : ''} × {order.quantity} — ₪{order.unitPrice.toLocaleString('he-IL')} ליחידה
-                        </span>
-                        <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(order.createdAt)}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
-                        <span className="px-3 py-2 rounded-xl text-[10px] font-bold bg-green-50 border border-green-100/50 text-green-600 font-mono">
-                          ₪{order.totalPrice.toLocaleString('he-IL')}
-                        </span>
-
-                        {/* Customer Region */}
-                        {order.customer && (
-                          <select
-                            value={order.customer.region || ''}
-                            onChange={(e) => handleUpdateCustomerRegion(order.customerId, e.target.value)}
-                            disabled={updatingRegionCustomerId === order.customerId}
-                            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
-                              order.customer.region ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
-                            }`}
-                          >
-                            <option value="">ללא אזור</option>
-                            {REGIONS.map(r => (
-                              <option key={r.key} value={r.key}>{r.label}</option>
-                            ))}
-                          </select>
-                        )}
-
-                        {/* Driver Assignment */}
-                        {driversList.length > 0 && (
-                          <select
-                            value={order.driverId || ''}
-                            onChange={(e) => handleOrderDriverChange(order.id, e.target.value || null)}
-                            disabled={updatingDriverOrderId === order.id}
-                            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${
-                              order.driverId ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
-                            }`}
-                          >
-                            <option value="">ללא נהג</option>
-                            {driversList.map(d => (
-                              <option key={d.id} value={d.id}>{d.name}</option>
-                            ))}
-                          </select>
-                        )}
-
-                        {/* Status */}
-                        {(() => {
-                          const statusObj = ORDER_STATUSES.find(s => s.key === order.status) || ORDER_STATUSES[0];
-                          return (
-                            <select
-                              value={order.status}
-                              onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED')}
-                              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                            {/* Open panel */}
+                            <a
+                              href={`/${tenantId}/driver/${d.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-all flex items-center justify-center shadow-sm active:scale-[0.98] border border-indigo-100/50 cursor-pointer"
+                              title="פתח את פאנל הנהג"
                             >
-                              {ORDER_STATUSES.map(st => (
-                                <option key={st.key} value={st.key}>{st.label}</option>
-                              ))}
-                            </select>
-                          );
-                        })()}
-                        {order.customer?.phone && (
-                          <a
-                            href={`https://wa.me/${order.customer.phone.startsWith('0') ? '972' + order.customer.phone.slice(1) : order.customer.phone}?text=${encodeURIComponent(`שלום ${order.customer.firstName}, לגבי הזמנה #${order.orderNumber} ב-${businessName}`)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
-                            title="פתח שיחת WhatsApp עם הלקוח"
-                          >
-                            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.37 5.378 0 12.003 0a11.94 11.94 0 0 1 8.484 3.513 11.94 11.94 0 0 1 3.51 8.49c-.003 6.63-5.378 12-12.003 12-1.996-.001-3.957-.502-5.709-1.455L0 24zm6.59-14.859c-.12-.2-.24-.2-.35-.2-.11 0-.24-.03-.36-.03-.13 0-.34.05-.52.25-.18.2-.68.66-.68 1.6s.69 1.86.78 2.06c.1.13 1.36 2.07 3.29 2.91.46.2.82.32 1.1.41.47.15.89.13 1.22.08.38-.06 1.15-.47 1.31-.93.16-.46.16-.86.11-.93-.05-.08-.18-.13-.38-.23-.19-.1-.1.38-.1.74-.11.16-.36.23-.74.13-.38-.11-1.42-.52-2.71-1.68-.96-.86-1.61-1.92-1.8-2.25-.19-.33-.02-.51.15-.68.15-.15.33-.36.5-.54.17-.18.23-.3.33-.5.1-.2.05-.38-.03-.48z" />
-                            </svg>
-                          </a>
-                        )}
+                              <Eye className="w-3.5 h-3.5" />
+                            </a>
 
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteOrder(order.id)}
-                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
-                          title="מחק הזמנה"
-                          aria-label="מחק הזמנה"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'chinaOrders' && (
-          <div className="space-y-6">
-            {/* Pending technician submissions awaiting approval */}
-            {pendingChinaOrders.length > 0 && (
-              <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-amber-200/70 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
-                <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  בקשות טכנאים ממתינות לאישור ({pendingChinaOrders.length})
-                </h3>
-                <div className="space-y-2">
-                  {pendingChinaOrders.map(o => (
-                    <div key={o.id} className="p-3 bg-amber-50/60 border border-amber-100 rounded-2xl flex items-center gap-3">
-                      <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/api/${tenantId}/china-orders/${o.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
-                          <span>{o.partName}</span>
-                          {o.technicianName && (
-                            <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200/60 rounded-full text-[10px] font-bold flex items-center gap-1">
-                              🔧 טכנאי: {o.technicianName}
-                            </span>
-                          )}
-                        </strong>
-                        <span className="text-xs text-gray-600 block mt-1 truncate">
-                          כמות: {o.quantity}{o.factory ? ` · מפעל: ${o.factory}` : ''}
-                        </span>
-                        <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(o.createdAt)}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleApproveChinaOrder(o.id)}
-                          disabled={updatingChinaOrderId === o.id}
-                          className="px-3 py-2 rounded-xl text-[10px] font-bold bg-green-50 hover:bg-green-100 text-green-600 border border-green-100/50 transition-all cursor-pointer flex items-center gap-1"
-                        >
-                          <Check className="w-3.5 h-3.5" /> אשר
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteChinaOrder(o.id)}
-                          className="px-3 py-2 rounded-xl text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-100/50 transition-all cursor-pointer flex items-center gap-1"
-                        >
-                          <X className="w-3.5 h-3.5" /> דחה
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Orders toolbar */}
-            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
-                <div className="relative w-full sm:w-72">
-                  <input
-                    type="text"
-                    placeholder="חיפוש לפי שם חלק או מפעל..."
-                    value={chinaOrderSearch}
-                    onChange={(e) => setChinaOrderSearch(e.target.value)}
-                    className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-red-500/10 focus:border-red-500 text-gray-800 transition-all duration-200 text-sm font-medium"
-                  />
-                  <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
-                </div>
-                <select
-                  value={chinaStatusFilter}
-                  onChange={(e) => setChinaStatusFilter(e.target.value)}
-                  className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-red-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
-                >
-                  <option value="ALL">כל הסטטוסים</option>
-                  {CHINA_ORDER_STATUSES.map(s => (
-                    <option key={s.key} value={s.key}>{s.label}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => { resetChinaOrderForm(); setIsAddChinaOrderModalOpen(true); }}
-                  className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  הזמנה חדשה
-                </button>
-              </div>
-              <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">נמצאו {filteredChinaOrders.length} הזמנות</span>
-            </div>
-
-            {/* Orders table */}
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
-              {filteredChinaOrders.length === 0 ? (
-                <div className="p-10 text-center text-gray-400 text-sm">
-                  {activeChinaOrders.length === 0 ? 'עדיין לא נוצרו הזמנות חלקים מסין.' : 'לא נמצאו הזמנות תואמות לחיפוש.'}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredChinaOrders.map(o => {
-                    const statusObj = CHINA_ORDER_STATUSES.find(s => s.key === o.status) || CHINA_ORDER_STATUSES[0];
-                    return (
-                      <div key={o.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center gap-3">
-                        <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
-                          {/* Thumbnail loads on demand from the image endpoint (lazy). */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={`/api/${tenantId}/china-orders/${o.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
-                            <span>{o.partName}</span>
-                            {o.source === 'technician' && o.technicianName && (
-                              <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200/60 rounded-full text-[10px] font-bold flex items-center gap-1">
-                                🔧 {o.technicianName}
-                              </span>
-                            )}
-                          </strong>
-                          <span className="text-xs text-gray-600 block mt-1 truncate">
-                            כמות: {o.quantity}{o.factory ? ` · מפעל: ${o.factory}` : ''}
-                          </span>
-                          <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(o.createdAt)}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
-                          <select
-                            value={o.status}
-                            onChange={(e) => handleChinaOrderStatusChange(o.id, e.target.value as ChinaOrder['status'])}
-                            disabled={updatingChinaOrderId === o.id}
-                            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
-                          >
-                            {CHINA_ORDER_STATUSES.map(st => (
-                              <option key={st.key} value={st.key}>{st.label}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteChinaOrder(o.id)}
-                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
-                            title="מחק הזמנה"
-                            aria-label="מחק הזמנה"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Technicians management */}
-            <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-red-600" />
-                    טכנאים ({techniciansList.length})
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    לכל טכנאי קישור אישי מאובטח בסיסמה להעלאת בקשות חלקים מסין. הבקשות ממתינות לאישורך.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAddTechnicianModalOpen(true)}
-                  className="px-4 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md shadow-red-500/10 transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  הוסף טכנאי
-                </button>
-              </div>
-
-              {techniciansList.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
-                  <Wrench className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm font-bold">אין טכנאים מוגדרים במערכת</p>
-                  <p className="text-gray-400 text-xs mt-1">לחץ על "הוסף טכנאי" כדי ליצור טכנאי חדש ולקבל עבורו קישור אישי.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {techniciansList.map((tech) => (
-                    <div key={tech.id} className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm space-y-4 hover:shadow-md transition-all">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red-600 font-bold text-sm">
-                            🔧
+                            {/* Delete driver */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDriver(d.id)}
+                              className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                              title="מחק נהג"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                          <div>
-                            <h4 className="font-bold text-gray-900 text-sm">{tech.name}</h4>
-                            <p className="text-xs text-gray-500" dir="ltr">{tech.phone}</p>
-                            {(tech.passwordPlain || tech.password) && (
-                              <p className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100 inline-block mt-1">
-                                🔑 סיסמה: {tech.passwordPlain || tech.password}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTechnician(tech.id)}
-                          disabled={deletingTechnicianId === tech.id}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                          title="מחק טכנאי"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <div className="pt-3 border-t border-gray-100 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => copyTechnicianPortalUrl(tech.token)}
-                          className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          {copiedTechnicianToken === tech.token ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-green-600" />
-                              <span className="text-green-600">הועתק!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-gray-500" />
-                              <span>העתק קישור אישי</span>
-                            </>
-                          )}
-                        </button>
-
-                        {tech.phone && (
-                          <a
-                            href={`https://wa.me/${tech.phone.startsWith('0') ? '972' + tech.phone.slice(1) : tech.phone}?text=${encodeURIComponent(
-                              `שלום ${tech.name},\nזהו הקישור האישי שלך להעלאת בקשות חלקים מסין ב-${currentBusinessName}:\n${baseUrl}/${tenantId}/technician/${tech.token}\n\nהסיסמה שלך: ${tech.passwordPlain || tech.password || ''}`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200/50 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
-                            title="שלח קישור אישי ב-WhatsApp"
-                          >
-                            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z"/>
-                            </svg>
-                          </a>
-                        )}
-
-                        <a
-                          href={`/${tenantId}/technician/${tech.token}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
-                          title="פתח פורטל טכנאי"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </a>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'dispatch' && (
-          <div className="space-y-6">
-            <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
-              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                <Route className="w-4 h-4 text-blue-600" />
-                לוח שילוח
-              </h3>
-              <p className="text-[10px] text-gray-400 leading-relaxed mt-1">
-                כל הקריאות וההזמנות הפתוחות, מקובצות לפי אזור ואז לפי נהג — כדי לראות בבוקר לאן לשלוח כל נהג.
-              </p>
-            </div>
-
-            {dispatchGroups.length === 0 ? (
-              <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-10 text-center text-gray-400 text-sm">
-                אין קריאות או הזמנות פתוחות כרגע.
-              </div>
-            ) : (
-              dispatchGroups.map(group => (
-                <div key={group.region.key} className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
-                  <h4 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-cyan-600" />
-                    {group.region.label}
-                  </h4>
-
-                  {group.driverKeys.map(driverKey => {
-                    const driver = driverKey === 'unassigned' ? null : driversList.find(d => d.id === driverKey);
-                    const driverRequests = group.requestsByDriver.get(driverKey) || [];
-                    const driverOrders = group.ordersByDriver.get(driverKey) || [];
-                    return (
-                      <div key={driverKey} className="p-3 bg-gray-50/60 border border-gray-100 rounded-2xl space-y-2">
-                        <span className={`text-xs font-black flex items-center gap-1.5 ${driver ? 'text-cyan-700' : 'text-red-500'}`}>
-                          <Truck className="w-3.5 h-3.5" />
-                          {driver ? driver.name : 'לא משויך לנהג'}
-                        </span>
-
-                        {driverRequests.map(req => {
-                          const statusObj = statuses.find(s => s.key === req.status) || statuses[0];
-                          return (
-                            <div key={`req-${req.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
-                              <span className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0" title="קריאת שירות">
-                                <FileText className="w-4 h-4 text-blue-600" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-blue-50 text-blue-600 border border-blue-100 flex-shrink-0">קריאת שירות</span>
-                                  <strong className="text-xs text-gray-800 font-bold truncate">
-                                    {req.customer ? `${req.customer.firstName} ${req.customer.lastName}` : 'לקוח לא ידוע'}
-                                  </strong>
-                                </div>
-                                <span className="text-[10px] text-gray-500 block truncate">{req.customer?.address || 'ללא כתובת'}{req.customer?.phone ? ` · ${req.customer.phone}` : ''}</span>
-                              </div>
-                              <select
-                                value={req.status}
-                                onChange={(e) => handleStatusChange(req.id, e.target.value)}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0 ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
-                              >
-                                {statuses.map(st => (
-                                  <option key={st.key} value={st.key}>{st.label}</option>
-                                ))}
-                              </select>
-                              {driversList.length > 0 && (
-                                <select
-                                  value={req.driverId || ''}
-                                  onChange={(e) => handleDriverChange(req.id, e.target.value || null)}
-                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer bg-gray-50 text-gray-500 border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0"
-                                >
-                                  <option value="">ללא נהג</option>
-                                  {driversList.map(d => (
-                                    <option key={d.id} value={d.id}>{d.name}</option>
-                                  ))}
-                                </select>
-                              )}
-                            </div>
-                          );
-                        })}
-
-                        {driverOrders.map(order => {
-                          const statusObj = ORDER_STATUSES.find(s => s.key === order.status) || ORDER_STATUSES[0];
-                          return (
-                            <div key={`order-${order.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
-                              <span className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0" title="הזמנת סחורה">
-                                <ShoppingCart className="w-4 h-4 text-indigo-600" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-indigo-50 text-indigo-600 border border-indigo-100 flex-shrink-0">הזמנת סחורה</span>
-                                  <strong className="text-xs text-gray-800 font-bold truncate">
-                                    {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'לקוח לא ידוע'}
-                                  </strong>
-                                </div>
-                                <span className="text-[10px] text-gray-500 block truncate">
-                                  {order.deviceType} {order.model ? `- ${order.model}` : ''} × {order.quantity} · {order.customer?.address || 'ללא כתובת'}
-                                </span>
-                              </div>
-                              <select
-                                value={order.status}
-                                onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED')}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0 ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
-                              >
-                                {ORDER_STATUSES.map(st => (
-                                  <option key={st.key} value={st.key}>{st.label}</option>
-                                ))}
-                              </select>
-                              {driversList.length > 0 && (
-                                <select
-                                  value={order.driverId || ''}
-                                  onChange={(e) => handleOrderDriverChange(order.id, e.target.value || null)}
-                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer bg-gray-50 text-gray-500 border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0"
-                                >
-                                  <option value="">ללא נהג</option>
-                                  {driversList.map(d => (
-                                    <option key={d.id} value={d.id}>{d.name}</option>
-                                  ))}
-                                </select>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-
-                  {group.parts.length > 0 && (
-                    <div className="p-3 bg-green-50/40 border border-green-100/50 rounded-2xl space-y-2">
-                      <span className="text-xs font-black text-green-700 flex items-center gap-1.5">
-                        <Package className="w-3.5 h-3.5" />
-                        בקשות חלקים ({group.parts.length}) — ללא שיוך נהג
-                      </span>
-                      {group.parts.map(pr => (
-                        <div key={`part-${pr.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
-                          <span className="w-8 h-8 rounded-lg bg-green-50 border border-green-100 flex items-center justify-center flex-shrink-0" title="חלקים">
-                            <Package className="w-4 h-4 text-green-600" />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-green-50 text-green-600 border border-green-100 flex-shrink-0">חלקים</span>
-                              <strong className="text-xs text-gray-800 font-bold truncate">
-                                {pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}` : 'לקוח לא ידוע'}
-                              </strong>
-                            </div>
-                            <span className="text-[10px] text-gray-500 block truncate">{pr.description}{pr.customer?.address ? ` · ${pr.customer.address}` : ''}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePartRequestStatus(pr.id, pr.status)}
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 border border-blue-100/50 text-blue-600 hover:bg-blue-100 transition-all flex-shrink-0 cursor-pointer"
-                          >
-                            חדש
-                          </button>
                         </div>
                       ))}
                     </div>
                   )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
 
-        {activeTab === 'formBuilder' && (
-          <div className="space-y-6 pb-10">
-            {/* Header + save bar */}
-            <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                  <SlidersHorizontal className="w-5 h-5 text-blue-600" />
-                  עיצוב טופס קריאת שירות
-                </h3>
-                <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-xl">
-                  בחר/י אילו שדות יופיעו בטופס שהלקוח ממלא, מה חובה, ערוך/י כותרות, סדר/י מחדש והוסף/י שדות משלך. השינויים חלים על הפורטל, הטופס הציבורי ופתיחת קריאה מהאדמין.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {formConfigSaved && (
-                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1"><Check className="w-4 h-4" /> נשמר!</span>
-                )}
-                {formConfigError && (
-                  <span className="text-xs font-bold text-red-600 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> {formConfigError}</span>
-                )}
-                <button
-                  type="button"
-                  onClick={resetFormConfig}
-                  disabled={!formConfigDirty || isSavingFormConfig}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  איפוס
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveFormConfig}
-                  disabled={!formConfigDirty || isSavingFormConfig}
-                  className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
-                >
-                  {isSavingFormConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  {isSavingFormConfig ? 'שומר...' : 'שמור שינויים'}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-              {/* ===== Editor column ===== */}
-              <div className="space-y-4">
-                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-black text-gray-900">שדות הטופס</h4>
-                    <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-2 py-1 rounded-lg">
-                      {settingsServiceFormConfig.fields.filter(f => f.enabled).length}/{settingsServiceFormConfig.fields.length} מוצגים
-                    </span>
-                  </div>
-
-                  {settingsServiceFormConfig.fields.map((f, index) => (
-                    <div key={f.id} className={`p-3 rounded-2xl border transition-all ${f.enabled ? 'bg-slate-50/70 border-slate-150' : 'bg-gray-50/50 border-gray-100 opacity-60'}`}>
-                      <div className="flex items-center gap-2">
-                        <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                        <div className="flex flex-col gap-0.5">
-                          <button type="button" onClick={() => moveFormField(index, -1)} disabled={index === 0}
-                            className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer" title="הזז למעלה">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
-                          </button>
-                          <button type="button" onClick={() => moveFormField(index, 1)} disabled={index === settingsServiceFormConfig.fields.length - 1}
-                            className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer" title="הזז למטה">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                          </button>
-                        </div>
-
-                        <input
-                          type="text"
-                          value={f.label}
-                          onChange={(e) => updateFormField(f.id, { label: e.target.value })}
-                          className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-800 text-xs font-bold"
-                        />
-
-                        {!f.builtin && (
-                          <span className="text-[9px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap flex-shrink-0">{customTypeLabel(f.type as CustomFieldType)}</span>
-                        )}
-                        {!f.builtin && (
-                          <button type="button" onClick={() => removeCustomField(f.id)} className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer flex-shrink-0" title="מחק שדה">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 mt-2.5 pr-10">
-                        <button type="button" onClick={() => updateFormField(f.id, { enabled: !f.enabled })}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${f.enabled ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-400 border-transparent'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${f.enabled ? 'bg-blue-500' : 'bg-gray-400'}`} />
-                          {f.enabled ? 'מוצג' : 'מוסתר'}
-                        </button>
-                        {fieldHasRequiredToggle(f) && (
-                          <button type="button" disabled={!f.enabled} onClick={() => updateFormField(f.id, { required: !f.required })}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${!f.enabled ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-transparent' : f.required ? 'bg-amber-50 text-amber-700 border-amber-200 cursor-pointer' : 'bg-gray-100 text-gray-500 border-transparent cursor-pointer'}`}>
-                            {f.required ? 'חובה' : 'רשות'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Add custom + inspection fee */}
-                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
-                  <div className="space-y-2">
-                    <span className="text-xs font-black text-gray-900 block">הוספת שדה חדש</span>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {(['text', 'textarea', 'tel'] as CustomFieldType[]).map((t) => (
-                        <button key={t} type="button" onClick={() => addCustomField(t)}
-                          className="px-3 py-2 bg-white border border-dashed border-blue-300 text-blue-600 rounded-xl text-[11px] font-bold hover:bg-blue-50 transition-all flex items-center gap-1 cursor-pointer">
-                          <Plus className="w-3 h-3" /> {customTypeLabel(t)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="space-y-1.5 pt-3 border-t border-gray-100">
-                    <label className="block text-gray-700 text-xs font-black">סכום דמי בדיקה (₪)</label>
+                  {/* Add Driver Form */}
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
-                      type="number"
-                      min={0}
-                      value={settingsServiceFormConfig.inspectionFeeAmount}
-                      onChange={(e) => setSettingsServiceFormConfig(prev => ({ ...prev, inspectionFeeAmount: Math.max(0, Math.round(Number(e.target.value) || 0)) }))}
-                      className="w-40 px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                      type="text"
+                      placeholder="שם הנהג *"
+                      value={newDriverName}
+                      onChange={(e) => setNewDriverName(e.target.value)}
+                      className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="טלפון (אופציונלי)"
+                      value={newDriverPhone}
+                      onChange={(e) => setNewDriverPhone(e.target.value)}
+                      className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-xs transition-all"
                       dir="ltr"
                     />
-                    <p className="text-[10px] text-gray-400">הסכום שמופיע בהסכמת דמי הבדיקה בטופס.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* ===== Live preview column ===== */}
-              <div className="lg:sticky lg:top-6">
-                <div className="bg-gradient-to-b from-slate-200/60 to-slate-100/40 rounded-[2rem] border border-slate-200/70 p-4 shadow-inner">
-                  <div className="flex items-center gap-2 mb-3 px-1 text-slate-500 text-xs font-bold">
-                    <Smartphone className="w-4 h-4" />
-                    תצוגה מקדימה — כפי שהלקוח רואה
-                  </div>
-                  <div className="bg-white rounded-3xl shadow-xl border border-slate-200 max-h-[72vh] overflow-y-auto p-5" dir="rtl">
-                    <ServiceRequestForm
-                      config={settingsServiceFormConfig}
-                      customer={{ id: 'preview', excelId: 0, firstName: 'לקוח', lastName: 'לדוגמה' }}
-                      tenantId={tenantId}
-                      context="preview"
-                      readOnly
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'aiBot' && (
-          <div className="space-y-6 pb-10">
-            {/* ===== 1. Header + save bar ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                  <Bot className="w-5 h-5 text-blue-600" />
-                  בוט AI שירות לקוחות
-                </h3>
-                <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-xl">
-                  הבוט עונה ללקוחות בוואטסאפ על סטטוס קריאות, מאשר הצעות מחיר, עונה על שאלות מבסיס הידע שתכתוב/י, ומעביר לנציג אנושי כשהוא לא בטוח.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {aiConfigSaved && (
-                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1"><Check className="w-4 h-4" /> נשמר!</span>
-                )}
-                {aiConfigError && (
-                  <span className="text-xs font-bold text-red-600 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> {aiConfigError}</span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setAiConfig(currentAiConfig)}
-                  disabled={!aiConfigDirty || isSavingAiConfig}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  איפוס
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveAiConfig}
-                  disabled={!aiConfigDirty || isSavingAiConfig}
-                  className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
-                >
-                  {isSavingAiConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  {isSavingAiConfig ? 'שומר...' : 'שמור שינויים'}
-                </button>
-              </div>
-            </div>
-
-            {/* ===== 2. Status strip ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border ${aiKeyConfigured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  {aiKeyConfigured ? 'מפתח AI בשרת: מוגדר' : 'מפתח AI בשרת: חסר'}
-                </span>
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border ${currentAiConfig.enabled ? (currentAiConfig.testMode ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200') : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                  <Power className="w-3.5 h-3.5" />
-                  מצב: {currentAiConfig.enabled ? (currentAiConfig.testMode ? 'בדיקה' : 'פעיל') : 'כבוי'}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleProbeAi}
-                  disabled={isProbingAi || !aiKeyConfigured}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {isProbingAi ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
-                  בדיקת חיבור למודל
-                </button>
-                {aiProbe && (
-                  <span className={`text-[11px] font-bold ${aiProbe.connected ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {aiProbe.connected ? `מחובר · ${aiProbe.latencyMs}ms` : `נכשל: ${aiProbe.error || 'לא מחובר'}`}
-                  </span>
-                )}
-              </div>
-
-              {!aiKeyConfigured && (
-                <div className="mt-3 p-3 rounded-2xl bg-red-50/70 border border-red-100 text-[11px] text-red-700 leading-relaxed">
-                  <b>המפתח לא מוגדר בשרת.</b> יש להגדיר משתנה סביבה בשם <code className="font-mono bg-white/70 px-1 rounded" dir="ltr">GEMINI_API_KEY</code> (מפתח חינמי מ-Google AI Studio) ב-<code className="font-mono bg-white/70 px-1 rounded" dir="ltr">.env.local</code> ובהגדרות הפריסה. עד אז הבוט לא יפעל — ואישורי הצעות מחיר ימשיכו לעבוד כרגיל לפי מילות מפתח.
-                </div>
-              )}
-            </div>
-
-            {/* ===== 3. Master switches ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
-              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><Power className="w-4 h-4 text-emerald-600" /> הפעלה</h4>
-
-              <label className="flex items-start gap-3 p-3 rounded-2xl border border-gray-100 bg-gray-50/60 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={aiConfig.enabled}
-                  onChange={e => updateAiConfig('enabled', e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer"
-                />
-                <span>
-                  <span className="text-xs font-black text-gray-800">הפעלת הבוט</span>
-                  <span className="block text-[11px] text-gray-400 mt-0.5 leading-relaxed">
-                    כשכבוי, אישורי הצעות מחיר ממשיכים לעבוד כרגיל לפי מילות מפתח.
-                  </span>
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 p-3 rounded-2xl border border-amber-100 bg-amber-50/50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={aiConfig.testMode}
-                  onChange={e => updateAiConfig('testMode', e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-amber-600 cursor-pointer"
-                />
-                <span>
-                  <span className="text-xs font-black text-amber-800 flex items-center gap-1.5"><FlaskConical className="w-3.5 h-3.5" /> מצב בדיקה</span>
-                  <span className="block text-[11px] text-amber-700/80 mt-0.5 leading-relaxed">
-                    הבוט מנתח ועונה, אך התשובה נשמרת ביומן בלבד ולא נשלחת ללקוח. אישורי הצעות מחיר אינם מבוצעים.
-                  </span>
-                </span>
-              </label>
-            </div>
-
-            {/* ===== 4. Persona ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
-              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><Sparkles className="w-4 h-4 text-indigo-600" /> אישיות וסגנון</h4>
-
-              <div className="flex flex-wrap gap-2">
-                {PERSONA_PRESETS.map(p => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() => updateAiConfig('persona', p.value)}
-                    className="px-3 py-1.5 rounded-xl text-[11px] font-bold border border-gray-200 bg-white text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition-all cursor-pointer"
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-gray-500 block mb-1">אישיות הבוט</label>
-                <textarea
-                  value={aiConfig.persona}
-                  onChange={e => updateAiConfig('persona', e.target.value)}
-                  maxLength={AI_BOT_LIMITS.persona}
-                  rows={4}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
-                />
-                <div className="text-[10px] text-gray-400 mt-1">{aiConfig.persona.length}/{AI_BOT_LIMITS.persona}</div>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-gray-500 block mb-1">משפט פתיחה (אופציונלי)</label>
-                <input
-                  type="text"
-                  value={aiConfig.greeting}
-                  onChange={e => updateAiConfig('greeting', e.target.value)}
-                  maxLength={AI_BOT_LIMITS.greeting}
-                  placeholder="היי! הגעת לשירות הלקוחות שלנו 🛴"
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                />
-              </div>
-            </div>
-
-            {/* ===== 5. Knowledge base ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
-              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><BookOpen className="w-4 h-4 text-blue-600" /> בסיס ידע</h4>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                כל מה שכתוב כאן הבוט יכול לענות עליו. מה שלא כתוב כאן — הוא יעביר לנציג. כדאי לכלול: שעות פעילות, אזורי שירות, זמני טיפול ממוצעים, מדיניות אחריות, ודמי בדיקה.
-              </p>
-              <textarea
-                value={aiConfig.knowledgeBase}
-                onChange={e => updateAiConfig('knowledgeBase', e.target.value)}
-                maxLength={AI_BOT_LIMITS.knowledgeBase}
-                rows={12}
-                placeholder={'שעות פעילות: א׳-ה׳ 09:00-18:00, ו׳ 09:00-13:00\nאזורי שירות: גוש דן, שרון והשפלה\nזמן טיפול ממוצע: 3-5 ימי עסקים\nאחריות: 3 חודשים על כל תיקון\nדמי בדיקה: 80 ₪, מתקזזים מול התיקון'}
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
-              />
-              <div className={`text-[10px] font-bold ${aiConfig.knowledgeBase.length > 5000 ? 'text-amber-600' : 'text-gray-400'}`}>
-                {aiConfig.knowledgeBase.length}/{AI_BOT_LIMITS.knowledgeBase}
-              </div>
-            </div>
-
-            {/* ===== 6. Quote approval ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
-              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" /> אישור הצעות מחיר</h4>
-
-              <label className="flex items-start gap-3 p-3 rounded-2xl border border-gray-100 bg-gray-50/60 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={aiConfig.allowQuoteApproval}
-                  onChange={e => updateAiConfig('allowQuoteApproval', e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer"
-                />
-                <span>
-                  <span className="text-xs font-black text-gray-800">הבוט רשאי לאשר הצעות מחיר</span>
-                  <span className="block text-[11px] text-gray-400 mt-0.5 leading-relaxed">
-                    האישור חל רק על הצעות פתוחות של הלקוח ששלח את ההודעה. דחיית הצעה לעולם אינה מבוצעת אוטומטית — היא תמיד עוברת לנציג.
-                  </span>
-                </span>
-              </label>
-
-              <div>
-                <label className="text-[11px] font-bold text-gray-500 block mb-2">
-                  רמת ודאות נדרשת לאישור: <span className="text-emerald-600 font-black">{Math.round(aiConfig.approvalConfidence * 100)}%</span>
-                </label>
-                <input
-                  type="range"
-                  min={0.5}
-                  max={1}
-                  step={0.05}
-                  value={aiConfig.approvalConfidence}
-                  onChange={e => updateAiConfig('approvalConfidence', parseFloat(e.target.value))}
-                  className="w-full accent-emerald-600 cursor-pointer"
-                />
-              </div>
-            </div>
-
-            {/* ===== 7. Escalation ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
-              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-600" /> העברה לנציג אנושי</h4>
-
-              <div>
-                <label className="text-[11px] font-bold text-gray-500 block mb-1">מספרי טלפון להתראה</label>
-                <input
-                  type="text"
-                  dir="ltr"
-                  value={aiConfig.escalationPhones}
-                  onChange={e => updateAiConfig('escalationPhones', e.target.value)}
-                  placeholder="0501234567, 0507654321"
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                />
-                <div className="text-[10px] text-gray-400 mt-1">ריק = שימוש ברשימת מספרי ההתראה הקיימת של העסק.</div>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-gray-500 block mb-1">ההודעה שהלקוח יקבל בהעברה לנציג</label>
-                <textarea
-                  value={aiConfig.escalationMessage}
-                  onChange={e => updateAiConfig('escalationMessage', e.target.value)}
-                  maxLength={AI_BOT_LIMITS.escalationMessage}
-                  rows={2}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 block mb-1">השתקת הבוט אחרי העברה (דקות)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={1440}
-                    value={aiConfig.handoffFreezeMinutes}
-                    onChange={e => updateAiConfig('handoffFreezeMinutes', parseInt(e.target.value || '0', 10))}
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                  />
-                  <div className="text-[10px] text-gray-400 mt-1">כדי שלקוח שביקש נציג לא ימשיך לקבל תשובות מהבוט.</div>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 block mb-2">
-                    ודאות מינימלית לשליחת תשובה: <span className="text-amber-600 font-black">{Math.round(aiConfig.replyConfidence * 100)}%</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={0.3}
-                    max={1}
-                    step={0.05}
-                    value={aiConfig.replyConfidence}
-                    onChange={e => updateAiConfig('replyConfidence', parseFloat(e.target.value))}
-                    className="w-full accent-amber-600 cursor-pointer"
-                  />
-                  <div className="text-[10px] text-gray-400 mt-1">מתחת לסף הזה הלקוח יקבל את הודעת ההעברה במקום את תשובת הבוט.</div>
-                </div>
-              </div>
-            </div>
-
-            {/* ===== 8. Limits ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
-              <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-gray-500" /> מגבלות יומיות</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 block mb-1">מקסימום תשובות ללקוח ליום</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={1000}
-                    value={aiConfig.maxRepliesPerCustomerPerDay}
-                    onChange={e => updateAiConfig('maxRepliesPerCustomerPerDay', parseInt(e.target.value || '0', 10))}
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 block mb-1">מקסימום תשובות לעסק ליום</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={10000}
-                    value={aiConfig.maxRepliesPerTenantPerDay}
-                    onChange={e => updateAiConfig('maxRepliesPerTenantPerDay', parseInt(e.target.value || '0', 10))}
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                  />
-                </div>
-              </div>
-              {aiLiveUsage && (
-                <div>
-                  <div className="flex items-center justify-between text-[11px] font-bold text-gray-500 mb-1">
-                    <span>נשלחו היום</span>
-                    <span className="text-gray-800">{aiLiveUsage.tenantCount} / {aiLiveUsage.maxPerTenantPerDay}</span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${aiLiveUsage.tenantCount >= aiLiveUsage.maxPerTenantPerDay ? 'bg-red-500' : 'bg-blue-500'}`}
-                      style={{ width: `${Math.min(100, aiLiveUsage.maxPerTenantPerDay > 0 ? (aiLiveUsage.tenantCount / aiLiveUsage.maxPerTenantPerDay) * 100 : 0)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <p className="text-[10px] text-gray-400 leading-relaxed">
-                כשמגבלה נחצית הבוט שותק — ההודעה לא נענית, ומסלול אישור הצעות המחיר לפי מילות מפתח ממשיך לעבוד כרגיל.
-              </p>
-            </div>
-
-            {/* ===== 9. Playground ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
-              <div>
-                <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><FlaskConical className="w-4 h-4 text-purple-600" /> מגרש בדיקות</h4>
-                <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
-                  בדיקה יבשה מול ההגדרות <b>השמורות</b>. לעולם לא נשלחת הודעה ולעולם לא מאושרת הצעה — רק מוצג מה היה קורה.
-                </p>
-              </div>
-
-              <CustomerSelectCombobox
-                customers={customersList}
-                selectedCustomerId={aiTestCustomerId}
-                onSelectCustomer={(c) => {
-                  setAiTestCustomerId(c?.id || '');
-                  setAiTestPhone(c?.phone || '');
-                }}
-                label="בחר/י לקוח לבדיקה (אופציונלי)"
-              />
-
-              <div>
-                <label className="text-[11px] font-bold text-gray-500 block mb-1">טלפון הפונה</label>
-                <input
-                  type="text"
-                  dir="ltr"
-                  value={aiTestPhone}
-                  onChange={e => setAiTestPhone(e.target.value)}
-                  placeholder="0509611808"
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                />
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2">
-                <textarea
-                  value={aiTestMessage}
-                  onChange={e => setAiTestMessage(e.target.value)}
-                  rows={2}
-                  placeholder="מה קורה עם הקורקינט שלי?"
-                  className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
-                />
-                <button
-                  type="button"
-                  onClick={handleRunAiTest}
-                  disabled={isRunningAiTest || !aiTestMessage.trim() || !aiKeyConfigured}
-                  className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 flex-shrink-0"
-                >
-                  {isRunningAiTest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  הרץ בדיקה
-                </button>
-              </div>
-
-              {aiTestLog.length > 0 && (
-                <div className="space-y-3 pt-2">
-                  {aiTestLog.map(entry => (
-                    <div key={entry.id} className="space-y-2">
-                      <div className="flex justify-end">
-                        <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tr-sm bg-gray-100 text-gray-800 text-xs leading-relaxed whitespace-pre-wrap">
-                          {entry.message}
-                        </div>
-                      </div>
-
-                      {entry.error && (
-                        <div className="flex justify-start">
-                          <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tl-sm bg-red-50 border border-red-100 text-red-700 text-xs">
-                            {entry.error}
-                          </div>
-                        </div>
+                    <button
+                      type="button"
+                      onClick={handleAddDriver}
+                      disabled={isSavingDriver}
+                      className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingDriver ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="w-3.5 h-3.5" />
                       )}
+                      הוסף נהג
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
-                      {entry.result && (
-                        <div className="flex flex-col items-start gap-1.5">
-                          <div className={`max-w-[85%] px-3 py-2 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap ${entry.result.degraded ? 'bg-red-50 border border-red-100 text-red-700' : entry.result.escalate ? 'bg-amber-50 border border-amber-100 text-amber-900' : 'bg-emerald-50 border border-emerald-100 text-emerald-900'}`}>
-                            {entry.result.degraded
-                              ? `הבוט לא הגיב (${entry.result.errorKind || 'שגיאה'}) — במצב אמיתי המערכת הייתה נופלת חזרה למסלול מילות המפתח. ${entry.result.error || ''}`
-                              : entry.result.reply}
+            {activeTab === 'agents' && (
+              <div className="space-y-6">
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                        <Briefcase className="w-4 h-4 text-blue-600" />
+                        סוכני מכירות במערכת ({agentsList.length})
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        סוכני מכירות יכולים לפתוח קריאות שירות, הזמנות סחורה ובקשות חלקים מפורטל ייעודי מאובטח.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddAgentModalOpen(true)}
+                      className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md shadow-blue-500/10 transition-all active:scale-[0.98] cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      הוסף סוכן מכירות
+                    </button>
+                  </div>
+
+                  {agentsList.length === 0 ? (
+                    <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                      <Briefcase className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500 text-sm font-bold">אין סוכני מכירות מוגדרים במערכת</p>
+                      <p className="text-gray-400 text-xs mt-1">לחץ על "הוסף סוכן מכירות" כדי ליצור סוכן חדש ולקבל עבורו קישור לפורטל.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {agentsList.map((agent) => (
+                        <div
+                          key={agent.id}
+                          className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm space-y-4 hover:shadow-md transition-all"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
+                                💼
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-gray-900 text-sm">{agent.name}</h4>
+                                <p className="text-xs text-gray-500" dir="ltr">{agent.phone}</p>
+                                {(agent.passwordPlain || agent.password) && (
+                                  <p className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 inline-block mt-1">
+                                    🔑 סיסמה: {agent.passwordPlain || agent.password}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAgent(agent.id)}
+                              disabled={deletingAgentId === agent.id}
+                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                              title="מחק סוכן"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
 
-                          {!entry.result.degraded && (
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">כוונה: {entry.result.intent}</span>
-                              <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">ודאות: {Math.round((entry.result.confidence || 0) * 100)}%</span>
-                              <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">{entry.result.latencyMs}ms</span>
-                              {entry.result.usage && (
-                                <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">{entry.result.usage.totalTokens} טוקנים</span>
+                          <div className="pt-3 border-t border-gray-100 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => copyAgentPortalUrl(agent.token)}
+                              className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              {copiedAgentToken === agent.token ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-green-600" />
+                                  <span className="text-green-600">הועתק!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5 text-gray-500" />
+                                  <span>העתק קישור לפורטל</span>
+                                </>
                               )}
-                              {entry.result.escalate && (
-                                <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-bold">הועבר לנציג: {entry.result.escalationReason}</span>
-                              )}
-                              {(entry.result.wouldApprove?.requestNumbers.length || 0) > 0 && (
-                                <span className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                                  היה מאשר: {entry.result.wouldApprove?.requestNumbers.map(n => formatRequestNumber(tenantId, n)).join(', ')}
+                            </button>
+
+                            {agent.phone && (
+                              <a
+                                href={`https://wa.me/${agent.phone.startsWith('0') ? '972' + agent.phone.slice(1) : agent.phone}?text=${encodeURIComponent(
+                                  `שלום ${agent.name},\nזהו הקישור האישי שלך לפורטל סוכן המכירות של ${currentBusinessName}:\n${baseUrl}/${tenantId}/agent/${agent.token}`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200/50 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                                title="שלח קישור לפורטל ב-WhatsApp"
+                              >
+                                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                                  <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z" />
+                                </svg>
+                              </a>
+                            )}
+
+                            <a
+                              href={`/${tenantId}/agent/${agent.token}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-100 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                              title="פתח פורטל"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'partRequests' && (
+              <div className="space-y-6">
+                <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+                  <div className="relative w-full md:w-96">
+                    <input
+                      type="text"
+                      placeholder="חיפוש לפי לקוח, טלפון או תיאור החלק..."
+                      value={partRequestSearch}
+                      onChange={(e) => setPartRequestSearch(e.target.value)}
+                      className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                    />
+                    <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
+                  </div>
+                  <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">
+                    נמצאו {filteredPartRequests.length} בקשות
+                  </span>
+                </div>
+
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                  <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                    <Package className="w-4 h-4 text-[#0F9E1D]" />
+                    בקשות חלקים
+                  </h3>
+                  <p className="text-[10px] text-gray-400 leading-relaxed">
+                    בקשות חלק שנשלחו על ידי לקוחות דרך הפורטל האישי שלהם, כולל תמונת החלק המבוקש.
+                  </p>
+
+                  {filteredPartRequests.length === 0 ? (
+                    <div className="p-10 text-center text-gray-400 text-sm">
+                      {partRequestsList.length === 0 ? 'עדיין לא נשלחו בקשות חלקים.' : 'לא נמצאו בקשות חלקים תואמות לחיפוש.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredPartRequests.map(pr => (
+                        <div key={pr.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center gap-3">
+                          <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
+                            {/* Thumbnail loads on demand from the image endpoint (lazy),
+                            so part-request photos never bloat the page payload. */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={`/api/${tenantId}/parts-requests/${pr.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                              <span>{pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}` : 'לקוח לא ידוע'}</span>
+                              {pr.agentName && (
+                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                                  👔 סוכן: {pr.agentName}
                                 </span>
                               )}
+                            </strong>
+                            {pr.customer?.phone && <span className="text-[10px] text-gray-400 font-mono block" dir="ltr">{pr.customer.phone}</span>}
+                            <span className="text-xs text-gray-600 block mt-1 truncate">{pr.description}</span>
+                            <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(pr.createdAt)}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <Link
+                              href={`/${tenantId}/part/${pr.id}`}
+                              target="_blank"
+                              className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-gray-200 cursor-pointer"
+                              title="צפה בפרטי הבקשה והתמונה"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                            {pr.customer?.phone && (
+                              <a
+                                href={`https://wa.me/${pr.customer.phone.startsWith('0') ? '972' + pr.customer.phone.slice(1) : pr.customer.phone}?text=${encodeURIComponent(`שלום ${pr.customer.firstName}, קיבלנו את בקשת החלק שלך: "${pr.description}". אשמח לסייע בהמשך ההזמנה!`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                                title="פתח שיחת WhatsApp עם הלקוח"
+                              >
+                                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.37 5.378 0 12.003 0a11.94 11.94 0 0 1 8.484 3.513 11.94 11.94 0 0 1 3.51 8.49c-.003 6.63-5.378 12-12.003 12-1.996-.001-3.957-.502-5.709-1.455L0 24zm6.59-14.859c-.12-.2-.24-.2-.35-.2-.11 0-.24-.03-.36-.03-.13 0-.34.05-.52.25-.18.2-.68.66-.68 1.6s.69 1.86.78 2.06c.1.13 1.36 2.07 3.29 2.91.46.2.82.32 1.1.41.47.15.89.13 1.22.08.38-.06 1.15-.47 1.31-.93.16-.46.16-.86.11-.93-.05-.08-.18-.13-.38-.23-.19-.1-.1.38-.1.74-.11.16-.36.23-.74.13-.38-.11-1.42-.52-2.71-1.68-.96-.86-1.61-1.92-1.8-2.25-.19-.33-.02-.51.15-.68.15-.15.33-.36.5-.54.17-.18.23-.3.33-.5.1-.2.05-.38-.03-.48z" />
+                                </svg>
+                              </a>
+                            )}
+                            {/* Quote System */}
+                            <div className="flex items-center gap-2">
+                              {pr.quoteStatus === 'APPROVED' && (
+                                <span className="px-3 py-2 rounded-xl text-[10px] font-black bg-green-100 text-green-700 border border-green-200 shadow-sm flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  הצעה אושרה ({pr.quotePrice}₪)
+                                </span>
+                              )}
+                              {pr.quoteStatus === 'PENDING_APPROVAL' && (
+                                <span className="px-3 py-2 rounded-xl text-[10px] font-black bg-yellow-100 text-yellow-700 border border-yellow-200 shadow-sm flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  ממתין לאישור הלקוח
+                                </span>
+                              )}
+                              {(pr.quoteStatus === 'NONE' || !pr.quoteStatus) && (
+                                <>
+                                  {activeQuoteId === pr.id ? (
+                                    <div className="flex items-center gap-1 bg-white border border-blue-200 p-1 rounded-xl shadow-sm">
+                                      <input
+                                        type="number"
+                                        value={activeQuotePrice}
+                                        onChange={(e) => setActiveQuotePrice(e.target.value)}
+                                        placeholder="מחיר..."
+                                        className="w-20 px-2 py-1 text-xs border-none focus:ring-0"
+                                      />
+                                      <button
+                                        onClick={() => {
+                                          if (activeQuotePrice && !isNaN(Number(activeQuotePrice))) {
+                                            handleSendQuote(pr, Number(activeQuotePrice));
+                                            setActiveQuoteId(null);
+                                            setActiveQuotePrice('');
+                                          }
+                                        }}
+                                        className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg"
+                                      >
+                                        <Send className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setActiveQuoteId(null);
+                                          setActiveQuotePrice('');
+                                        }}
+                                        className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveQuoteId(pr.id);
+                                        setActiveQuotePrice('');
+                                      }}
+                                      className="px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer flex items-center gap-1 bg-blue-50 hover:bg-blue-100 border-blue-200/60 text-blue-600"
+                                      title="צור הצעת מחיר לחלק"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>הצעת מחיר</span>
+                                    </button>
+                                  )}
+                                </>
+                              )}
                             </div>
-                          )}
 
-                          {entry.result.contextBlock && (
-                            <details className="w-full">
-                              <summary className="text-[10px] font-bold text-gray-400 cursor-pointer hover:text-gray-600">
-                                הצג את בלוק ההקשר המדויק שנשלח למודל
-                              </summary>
-                              <pre className="mt-1.5 p-3 rounded-xl bg-slate-900 text-slate-200 text-[10px] leading-relaxed overflow-x-auto whitespace-pre-wrap font-mono">
-                                {entry.result.contextBlock}
-                              </pre>
-                            </details>
-                          )}
+                            <button
+                              type="button"
+                              onClick={() => handleMarkPartReadyForDispatch(pr)}
+                              className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer flex items-center gap-1 ${pr.status === 'READY_FOR_DISPATCH'
+                                ? 'bg-purple-100 border-purple-200 text-purple-700 font-black'
+                                : 'bg-purple-50 hover:bg-purple-100 border-purple-200/60 text-purple-600'
+                                }`}
+                              title="עדכן שהחלק מוכן לשילוח ושלח התראה ללקוח בוואטסאפ"
+                            >
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>{pr.status === 'READY_FOR_DISPATCH' ? 'נשלחה התרעה (מוכן)' : 'מוכן לשילוח'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePartRequestStatus(pr.id, pr.status)}
+                              className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all shadow-sm active:scale-[0.98] border cursor-pointer ${pr.status === 'FULFILLED'
+                                ? 'bg-green-50 border-green-100/50 text-green-600 hover:bg-green-100'
+                                : 'bg-blue-50 border-blue-100/50 text-blue-600 hover:bg-blue-100'
+                                }`}
+                            >
+                              {pr.status === 'FULFILLED' ? 'טופל' : pr.status === 'READY_FOR_DISPATCH' ? 'מוכן לשילוח' : 'חדש'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePartRequest(pr.id)}
+                              className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                              title="מחק בקשה"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'orders' && (
+              <div className="space-y-6">
+                <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+                  <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+                    <div className="relative w-full sm:w-72">
+                      <input
+                        type="text"
+                        placeholder="חיפוש הזמנה לפי לקוח או סוג מכשיר..."
+                        value={orderSearch}
+                        onChange={(e) => setOrderSearch(e.target.value)}
+                        className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                      />
+                      <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
+                    </div>
+                    <select
+                      value={orderRegionFilter}
+                      onChange={(e) => setOrderRegionFilter(e.target.value)}
+                      className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <option value="ALL">כל האזורים</option>
+                      {REGIONS.map(r => (
+                        <option key={r.key} value={r.key}>{r.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddOrderModalOpen(true)}
+                      className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      הזמנה חדשה
+                    </button>
+                  </div>
+                  <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">נמצאו {filteredOrders.length} הזמנות</span>
+                </div>
+
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                  {filteredOrders.length === 0 ? (
+                    <div className="p-10 text-center text-gray-400 text-sm">
+                      {ordersList.length === 0 ? 'עדיין לא נוצרו הזמנות.' : 'לא נמצאו הזמנות תואמות לחיפוש.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredOrders.map(order => (
+                        <div key={order.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3">
+                          <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
+                            <ShoppingCart className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                              <span>{order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'לקוח לא ידוע'}</span>
+                              {order.agentName && (
+                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                                  👔 סוכן: {order.agentName}
+                                </span>
+                              )}
+                            </strong>
+                            <span className="text-xs text-gray-600 block mt-1 truncate">
+                              {order.deviceType} {order.model ? `- ${order.model}` : ''} × {order.quantity} — ₪{order.unitPrice.toLocaleString('he-IL')} ליחידה
+                            </span>
+                            <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(order.createdAt)}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                            <span className="px-3 py-2 rounded-xl text-[10px] font-bold bg-green-50 border border-green-100/50 text-green-600 font-mono">
+                              ₪{order.totalPrice.toLocaleString('he-IL')}
+                            </span>
+
+                            {/* Customer Region */}
+                            {order.customer && (
+                              <select
+                                value={order.customer.region || ''}
+                                onChange={(e) => handleUpdateCustomerRegion(order.customerId, e.target.value)}
+                                disabled={updatingRegionCustomerId === order.customerId}
+                                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${order.customer.region ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
+                                  }`}
+                              >
+                                <option value="">ללא אזור</option>
+                                {REGIONS.map(r => (
+                                  <option key={r.key} value={r.key}>{r.label}</option>
+                                ))}
+                              </select>
+                            )}
+
+                            {/* Driver Assignment */}
+                            {driversList.length > 0 && (
+                              <select
+                                value={order.driverId || ''}
+                                onChange={(e) => handleOrderDriverChange(order.id, e.target.value || null)}
+                                disabled={updatingDriverOrderId === order.id}
+                                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${order.driverId ? 'bg-cyan-50/70 text-cyan-700 border-cyan-100' : 'bg-gray-50 text-gray-500 border-gray-200'
+                                  }`}
+                              >
+                                <option value="">ללא נהג</option>
+                                {driversList.map(d => (
+                                  <option key={d.id} value={d.id}>{d.name}</option>
+                                ))}
+                              </select>
+                            )}
+
+                            {/* Status */}
+                            {(() => {
+                              const statusObj = ORDER_STATUSES.find(s => s.key === order.status) || ORDER_STATUSES[0];
+                              return (
+                                <select
+                                  value={order.status}
+                                  onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED')}
+                                  className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                                >
+                                  {ORDER_STATUSES.map(st => (
+                                    <option key={st.key} value={st.key}>{st.label}</option>
+                                  ))}
+                                </select>
+                              );
+                            })()}
+                            {order.customer?.phone && (
+                              <a
+                                href={`https://wa.me/${order.customer.phone.startsWith('0') ? '972' + order.customer.phone.slice(1) : order.customer.phone}?text=${encodeURIComponent(`שלום ${order.customer.firstName}, לגבי הזמנה #${order.orderNumber} ב-${businessName}`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-green-100/50 cursor-pointer"
+                                title="פתח שיחת WhatsApp עם הלקוח"
+                              >
+                                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.003 5.37 5.378 0 12.003 0a11.94 11.94 0 0 1 8.484 3.513 11.94 11.94 0 0 1 3.51 8.49c-.003 6.63-5.378 12-12.003 12-1.996-.001-3.957-.502-5.709-1.455L0 24zm6.59-14.859c-.12-.2-.24-.2-.35-.2-.11 0-.24-.03-.36-.03-.13 0-.34.05-.52.25-.18.2-.68.66-.68 1.6s.69 1.86.78 2.06c.1.13 1.36 2.07 3.29 2.91.46.2.82.32 1.1.41.47.15.89.13 1.22.08.38-.06 1.15-.47 1.31-.93.16-.46.16-.86.11-.93-.05-.08-.18-.13-.38-.23-.19-.1-.1.38-.1.74-.11.16-.36.23-.74.13-.38-.11-1.42-.52-2.71-1.68-.96-.86-1.61-1.92-1.8-2.25-.19-.33-.02-.51.15-.68.15-.15.33-.36.5-.54.17-.18.23-.3.33-.5.1-.2.05-.38-.03-.48z" />
+                                </svg>
+                              </a>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteOrder(order.id)}
+                              className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                              title="מחק הזמנה"
+                              aria-label="מחק הזמנה"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'chinaOrders' && (
+              <div className="space-y-6">
+                {/* Pending technician submissions awaiting approval */}
+                {pendingChinaOrders.length > 0 && (
+                  <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-amber-200/70 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                    <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      בקשות טכנאים ממתינות לאישור ({pendingChinaOrders.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {pendingChinaOrders.map(o => (
+                        <div key={o.id} className="p-3 bg-amber-50/60 border border-amber-100 rounded-2xl flex items-center gap-3">
+                          <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={`/api/${tenantId}/china-orders/${o.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                              <span>{o.partName}</span>
+                              {o.technicianName && (
+                                <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200/60 rounded-full text-[10px] font-bold flex items-center gap-1">
+                                  🔧 טכנאי: {o.technicianName}
+                                </span>
+                              )}
+                            </strong>
+                            <span className="text-xs text-gray-600 block mt-1 truncate">
+                              כמות: {o.quantity}{o.factory ? ` · מפעל: ${o.factory}` : ''}
+                            </span>
+                            <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(o.createdAt)}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleApproveChinaOrder(o.id)}
+                              disabled={updatingChinaOrderId === o.id}
+                              className="px-3 py-2 rounded-xl text-[10px] font-bold bg-green-50 hover:bg-green-100 text-green-600 border border-green-100/50 transition-all cursor-pointer flex items-center gap-1"
+                            >
+                              <Check className="w-3.5 h-3.5" /> אשר
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteChinaOrder(o.id)}
+                              className="px-3 py-2 rounded-xl text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-100/50 transition-all cursor-pointer flex items-center gap-1"
+                            >
+                              <X className="w-3.5 h-3.5" /> דחה
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Orders toolbar */}
+                <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+                  <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+                    <div className="relative w-full sm:w-72">
+                      <input
+                        type="text"
+                        placeholder="חיפוש לפי שם חלק או מפעל..."
+                        value={chinaOrderSearch}
+                        onChange={(e) => setChinaOrderSearch(e.target.value)}
+                        className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-red-500/10 focus:border-red-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                      />
+                      <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
+                    </div>
+                    <select
+                      value={chinaStatusFilter}
+                      onChange={(e) => setChinaStatusFilter(e.target.value)}
+                      className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-red-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <option value="ALL">כל הסטטוסים</option>
+                      {CHINA_ORDER_STATUSES.map(s => (
+                        <option key={s.key} value={s.key}>{s.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { resetChinaOrderForm(); setIsAddChinaOrderModalOpen(true); }}
+                      className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      הזמנה חדשה
+                    </button>
+                  </div>
+                  <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">נמצאו {filteredChinaOrders.length} הזמנות</span>
+                </div>
+
+                {/* Orders table */}
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                  {filteredChinaOrders.length === 0 ? (
+                    <div className="p-10 text-center text-gray-400 text-sm">
+                      {activeChinaOrders.length === 0 ? 'עדיין לא נוצרו הזמנות חלקים מסין.' : 'לא נמצאו הזמנות תואמות לחיפוש.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredChinaOrders.map(o => {
+                        const statusObj = CHINA_ORDER_STATUSES.find(s => s.key === o.status) || CHINA_ORDER_STATUSES[0];
+                        return (
+                          <div key={o.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex items-center gap-3">
+                            <div className="w-14 h-14 rounded-xl overflow-hidden border bg-white flex-shrink-0">
+                              {/* Thumbnail loads on demand from the image endpoint (lazy). */}
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={`/api/${tenantId}/china-orders/${o.id}/image`} alt="תמונת חלק" loading="lazy" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                                <span>{o.partName}</span>
+                                {o.source === 'technician' && o.technicianName && (
+                                  <span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200/60 rounded-full text-[10px] font-bold flex items-center gap-1">
+                                    🔧 {o.technicianName}
+                                  </span>
+                                )}
+                              </strong>
+                              <span className="text-xs text-gray-600 block mt-1 truncate">
+                                כמות: {o.quantity}{o.factory ? ` · מפעל: ${o.factory}` : ''}
+                              </span>
+                              <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(o.createdAt)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                              <select
+                                value={o.status}
+                                onChange={(e) => handleChinaOrderStatusChange(o.id, e.target.value as ChinaOrder['status'])}
+                                disabled={updatingChinaOrderId === o.id}
+                                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/20 transition-all ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                              >
+                                {CHINA_ORDER_STATUSES.map(st => (
+                                  <option key={st.key} value={st.key}>{st.label}</option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteChinaOrder(o.id)}
+                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                                title="מחק הזמנה"
+                                aria-label="מחק הזמנה"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Technicians management */}
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                        <Wrench className="w-4 h-4 text-red-600" />
+                        טכנאים ({techniciansList.length})
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        לכל טכנאי קישור אישי מאובטח בסיסמה להעלאת בקשות חלקים מסין. הבקשות ממתינות לאישורך.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddTechnicianModalOpen(true)}
+                      className="px-4 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md shadow-red-500/10 transition-all active:scale-[0.98] cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      הוסף טכנאי
+                    </button>
+                  </div>
+
+                  {techniciansList.length === 0 ? (
+                    <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+                      <Wrench className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500 text-sm font-bold">אין טכנאים מוגדרים במערכת</p>
+                      <p className="text-gray-400 text-xs mt-1">לחץ על "הוסף טכנאי" כדי ליצור טכנאי חדש ולקבל עבורו קישור אישי.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {techniciansList.map((tech) => (
+                        <div key={tech.id} className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm space-y-4 hover:shadow-md transition-all">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red-600 font-bold text-sm">
+                                🔧
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-gray-900 text-sm">{tech.name}</h4>
+                                <p className="text-xs text-gray-500" dir="ltr">{tech.phone}</p>
+                                {(tech.passwordPlain || tech.password) && (
+                                  <p className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100 inline-block mt-1">
+                                    🔑 סיסמה: {tech.passwordPlain || tech.password}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTechnician(tech.id)}
+                              disabled={deletingTechnicianId === tech.id}
+                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                              title="מחק טכנאי"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="pt-3 border-t border-gray-100 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => copyTechnicianPortalUrl(tech.token)}
+                              className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              {copiedTechnicianToken === tech.token ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-green-600" />
+                                  <span className="text-green-600">הועתק!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5 text-gray-500" />
+                                  <span>העתק קישור אישי</span>
+                                </>
+                              )}
+                            </button>
+
+                            {tech.phone && (
+                              <a
+                                href={`https://wa.me/${tech.phone.startsWith('0') ? '972' + tech.phone.slice(1) : tech.phone}?text=${encodeURIComponent(
+                                  `שלום ${tech.name},\nזהו הקישור האישי שלך להעלאת בקשות חלקים מסין ב-${currentBusinessName}:\n${baseUrl}/${tenantId}/technician/${tech.token}\n\nהסיסמה שלך: ${tech.passwordPlain || tech.password || ''}`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 bg-green-50 hover:bg-green-100 text-green-600 border border-green-200/50 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                                title="שלח קישור אישי ב-WhatsApp"
+                              >
+                                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                                  <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.33 4.982L2 22l5.164-1.355a9.96 9.96 0 004.843 1.258h.005c5.507 0 9.99-4.478 9.99-9.984 0-2.667-1.04-5.172-2.927-7.058C17.188 3.037 14.686 2 12.012 2zm6.002 14.129c-.247.697-1.2 1.286-1.65 1.343-.45.056-.89.102-2.93-.733-2.61-1.066-4.29-3.72-4.42-3.896-.13-.176-1.05-1.394-1.05-2.66 0-1.266.66-1.89.89-2.137.23-.247.5-.31.67-.31.17 0 .34.01.49.017.16.006.37-.063.58.448.22.54.74 1.808.81 1.948.07.14.12.3.02.49-.09.19-.14.31-.29.48-.14.17-.3.38-.43.51-.15.15-.3.31-.13.6.17.29.75 1.235 1.61 2.002.73.655 1.34.858 1.63.987.29.128.46.108.63-.092.17-.2.74-.858.94-1.152.2-.294.4-.247.67-.147.27.1.1.27.81 1.152.07.14.07.29.02.49v-.004z" />
+                                </svg>
+                              </a>
+                            )}
+
+                            <a
+                              href={`/${tenantId}/technician/${tech.token}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                              title="פתח פורטל טכנאי"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'testApprovals' && (
+              <div className="space-y-6">
+                {/* Toolbar */}
+                <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col md:flex-row gap-4 items-center justify-between">
+                  <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
+                    <div className="relative w-full sm:w-72">
+                      <input
+                        type="text"
+                        placeholder="חיפוש לפי שם לקוח או כלי..."
+                        value={testApprovalSearch}
+                        onChange={(e) => setTestApprovalSearch(e.target.value)}
+                        className="w-full pl-4 pr-11 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 text-gray-800 transition-all duration-200 text-sm font-medium"
+                      />
+                      <Search className="w-5 h-5 text-gray-400 absolute right-4 top-3" />
+                    </div>
+                    <select
+                      value={testApprovalStatusFilter}
+                      onChange={(e) => setTestApprovalStatusFilter(e.target.value)}
+                      className="px-4 py-3 sm:py-2.5 rounded-xl border border-gray-200 bg-gray-50/40 focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-gray-700 text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <option value="ALL">כל הסטטוסים</option>
+                      {TEST_APPROVAL_STATUSES.map(s => (
+                        <option key={s.key} value={s.key}>{s.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { resetTestApprovalForm(); setIsAddTestApprovalModalOpen(true); }}
+                      className="px-5 py-3 sm:py-2.5 bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-700 hover:to-fuchsia-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-500/10 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      בקשה חדשה
+                    </button>
+                  </div>
+                  <span className="text-gray-400 text-xs font-bold bg-gray-100/80 px-3 py-1.5 rounded-xl border border-gray-200/20 whitespace-nowrap">נמצאו {filteredTestApprovals.length} בקשות</span>
+                </div>
+
+                <div className="bg-amber-50/60 border border-amber-100 rounded-2xl p-4 text-xs text-amber-800 leading-relaxed flex items-start gap-2">
+                  <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    יש לשלוח את ההודעה <b>ידנית</b> מהוואטסאפ העסקי המחובר ל-Green API בהגדרות (לא מנייד אישי) — אחרת תשובת &quot;מאשר&quot; של הלקוח לא תיקלט אוטומטית.
+                  </span>
+                </div>
+
+                {/* List */}
+                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                  {filteredTestApprovals.length === 0 ? (
+                    <div className="p-10 text-center text-gray-400 text-sm">
+                      {testApprovalsList.length === 0 ? 'עדיין לא נוצרו בקשות אישור בדיקה.' : 'לא נמצאו בקשות תואמות לחיפוש.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredTestApprovals.map(ta => {
+                        const statusObj = TEST_APPROVAL_STATUSES.find(s => s.key === ta.status) || TEST_APPROVAL_STATUSES[0];
+                        return (
+                          <div key={ta.id} className="p-3 bg-gray-50/70 border border-gray-100 rounded-2xl flex flex-col md:flex-row md:items-center gap-3">
+                            <div className="min-w-0 flex-1">
+                              <strong className="text-sm text-gray-800 font-bold flex items-center gap-1.5 truncate">
+                                <span>{ta.customerName}</span>
+                                <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200/60 rounded-full text-[10px] font-bold">
+                                  {formatRequestNumber(tenantId, ta.requestNumber)}
+                                </span>
+                              </strong>
+                              <span className="text-xs text-gray-600 block mt-1 truncate">
+                                {ta.toolDescription || 'כלי לא צוין'} · {ta.price} ₪ · {ta.customerPhone}
+                              </span>
+                              <span className="text-[10px] text-gray-400 block mt-0.5">{formatDate(ta.createdAt)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                              <span className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}>
+                                {statusObj.label}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => copyTestApprovalMessage(ta)}
+                                className="px-3 py-2 rounded-xl text-[10px] font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200/60 transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <Copy className="w-3.5 h-3.5" /> {copiedTestApprovalId === ta.id ? 'הועתק!' : 'העתק הודעה'}
+                              </button>
+                              <a
+                                href={testApprovalWaMeUrl(ta)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 rounded-xl text-[10px] font-bold bg-green-50 hover:bg-green-100 text-green-700 border border-green-200/60 transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <Send className="w-3.5 h-3.5" /> פתח ב-WhatsApp
+                              </a>
+                              {ta.status !== 'APPROVED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkTestApprovalApproved(ta.id)}
+                                  disabled={updatingTestApprovalId === ta.id}
+                                  className="px-3 py-2 rounded-xl text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-100/50 transition-all cursor-pointer flex items-center gap-1"
+                                >
+                                  <Check className="w-3.5 h-3.5" /> סמן כמאושר
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTestApproval(ta.id)}
+                                disabled={deletingTestApprovalId === ta.id}
+                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all shadow-sm active:scale-[0.98] border border-red-100/50 cursor-pointer"
+                                title="מחק בקשה"
+                                aria-label="מחק בקשה"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'dispatch' && (
+              <div className="space-y-6">
+                <div className="bg-white/80 backdrop-blur-md p-4 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+                  <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                    <Route className="w-4 h-4 text-blue-600" />
+                    לוח שילוח
+                  </h3>
+                  <p className="text-[10px] text-gray-400 leading-relaxed mt-1">
+                    כל הקריאות וההזמנות הפתוחות, מקובצות לפי אזור ואז לפי נהג — כדי לראות בבוקר לאן לשלוח כל נהג.
+                  </p>
+                </div>
+
+                {dispatchGroups.length === 0 ? (
+                  <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-10 text-center text-gray-400 text-sm">
+                    אין קריאות או הזמנות פתוחות כרגע.
+                  </div>
+                ) : (
+                  dispatchGroups.map(group => (
+                    <div key={group.region.key} className="bg-white/80 backdrop-blur-md rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] p-6 space-y-4">
+                      <h4 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-cyan-600" />
+                        {group.region.label}
+                      </h4>
+
+                      {group.driverKeys.map(driverKey => {
+                        const driver = driverKey === 'unassigned' ? null : driversList.find(d => d.id === driverKey);
+                        const driverRequests = group.requestsByDriver.get(driverKey) || [];
+                        const driverOrders = group.ordersByDriver.get(driverKey) || [];
+                        return (
+                          <div key={driverKey} className="p-3 bg-gray-50/60 border border-gray-100 rounded-2xl space-y-2">
+                            <span className={`text-xs font-black flex items-center gap-1.5 ${driver ? 'text-cyan-700' : 'text-red-500'}`}>
+                              <Truck className="w-3.5 h-3.5" />
+                              {driver ? driver.name : 'לא משויך לנהג'}
+                            </span>
+
+                            {driverRequests.map(req => {
+                              const statusObj = statuses.find(s => s.key === req.status) || statuses[0];
+                              return (
+                                <div key={`req-${req.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
+                                  <span className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0" title="קריאת שירות">
+                                    <FileText className="w-4 h-4 text-blue-600" />
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-blue-50 text-blue-600 border border-blue-100 flex-shrink-0">קריאת שירות</span>
+                                      <strong className="text-xs text-gray-800 font-bold truncate">
+                                        {req.customer ? `${req.customer.firstName} ${req.customer.lastName}` : 'לקוח לא ידוע'}
+                                      </strong>
+                                    </div>
+                                    <span className="text-[10px] text-gray-500 block truncate">{req.customer?.address || 'ללא כתובת'}{req.customer?.phone ? ` · ${req.customer.phone}` : ''}</span>
+                                  </div>
+                                  <select
+                                    value={req.status}
+                                    onChange={(e) => handleStatusChange(req.id, e.target.value)}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0 ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                                  >
+                                    {statuses.map(st => (
+                                      <option key={st.key} value={st.key}>{st.label}</option>
+                                    ))}
+                                  </select>
+                                  {driversList.length > 0 && (
+                                    <select
+                                      value={req.driverId || ''}
+                                      onChange={(e) => handleDriverChange(req.id, e.target.value || null)}
+                                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer bg-gray-50 text-gray-500 border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0"
+                                    >
+                                      <option value="">ללא נהג</option>
+                                      {driversList.map(d => (
+                                        <option key={d.id} value={d.id}>{d.name}</option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                            {driverOrders.map(order => {
+                              const statusObj = ORDER_STATUSES.find(s => s.key === order.status) || ORDER_STATUSES[0];
+                              return (
+                                <div key={`order-${order.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
+                                  <span className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0" title="הזמנת סחורה">
+                                    <ShoppingCart className="w-4 h-4 text-indigo-600" />
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-indigo-50 text-indigo-600 border border-indigo-100 flex-shrink-0">הזמנת סחורה</span>
+                                      <strong className="text-xs text-gray-800 font-bold truncate">
+                                        {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'לקוח לא ידוע'}
+                                      </strong>
+                                    </div>
+                                    <span className="text-[10px] text-gray-500 block truncate">
+                                      {order.deviceType} {order.model ? `- ${order.model}` : ''} × {order.quantity} · {order.customer?.address || 'ללא כתובת'}
+                                    </span>
+                                  </div>
+                                  <select
+                                    value={order.status}
+                                    onChange={(e) => handleOrderStatusChange(order.id, e.target.value as 'PENDING' | 'READY_FOR_DISPATCH' | 'FULFILLED' | 'CANCELLED')}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0 ${statusObj.bg} ${statusObj.text} ${statusObj.border}`}
+                                  >
+                                    {ORDER_STATUSES.map(st => (
+                                      <option key={st.key} value={st.key}>{st.label}</option>
+                                    ))}
+                                  </select>
+                                  {driversList.length > 0 && (
+                                    <select
+                                      value={order.driverId || ''}
+                                      onChange={(e) => handleOrderDriverChange(order.id, e.target.value || null)}
+                                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer bg-gray-50 text-gray-500 border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all flex-shrink-0"
+                                    >
+                                      <option value="">ללא נהג</option>
+                                      {driversList.map(d => (
+                                        <option key={d.id} value={d.id}>{d.name}</option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+
+                      {group.parts.length > 0 && (
+                        <div className="p-3 bg-green-50/40 border border-green-100/50 rounded-2xl space-y-2">
+                          <span className="text-xs font-black text-green-700 flex items-center gap-1.5">
+                            <Package className="w-3.5 h-3.5" />
+                            בקשות חלקים ({group.parts.length}) — ללא שיוך נהג
+                          </span>
+                          {group.parts.map(pr => (
+                            <div key={`part-${pr.id}`} className="p-2.5 bg-white border border-gray-100 rounded-xl flex items-center gap-2.5">
+                              <span className="w-8 h-8 rounded-lg bg-green-50 border border-green-100 flex items-center justify-center flex-shrink-0" title="חלקים">
+                                <Package className="w-4 h-4 text-green-600" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-green-50 text-green-600 border border-green-100 flex-shrink-0">חלקים</span>
+                                  <strong className="text-xs text-gray-800 font-bold truncate">
+                                    {pr.customer ? `${pr.customer.firstName} ${pr.customer.lastName}` : 'לקוח לא ידוע'}
+                                  </strong>
+                                </div>
+                                <span className="text-[10px] text-gray-500 block truncate">{pr.description}{pr.customer?.address ? ` · ${pr.customer.address}` : ''}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleTogglePartRequestStatus(pr.id, pr.status)}
+                                className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 border border-blue-100/50 text-blue-600 hover:bg-blue-100 transition-all flex-shrink-0 cursor-pointer"
+                              >
+                                חדש
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* ===== 10. Recent conversations ===== */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-black text-gray-900 flex items-center gap-2">
-                  <MessagesSquare className="w-4 h-4 text-blue-600" /> שיחות אחרונות
-                </h4>
-                {isLoadingAiThreads && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+                  ))
+                )}
               </div>
+            )}
 
-              {aiThreads.length === 0 && !isLoadingAiThreads ? (
-                <p className="text-[11px] text-gray-400 py-6 text-center">אין עדיין שיחות מתועדות.</p>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-                  {/* Thread list */}
-                  <div className="space-y-1.5 max-h-[28rem] overflow-y-auto">
-                    {aiThreads.map(thread => (
+            {activeTab === 'formBuilder' && (
+              <div className="space-y-6 pb-10">
+                {/* Header + save bar */}
+                <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                      <SlidersHorizontal className="w-5 h-5 text-blue-600" />
+                      עיצוב טופס קריאת שירות
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-xl">
+                      בחר/י אילו שדות יופיעו בטופס שהלקוח ממלא, מה חובה, ערוך/י כותרות, סדר/י מחדש והוסף/י שדות משלך. השינויים חלים על הפורטל, הטופס הציבורי ופתיחת קריאה מהאדמין.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {formConfigSaved && (
+                      <span className="text-xs font-bold text-emerald-600 flex items-center gap-1"><Check className="w-4 h-4" /> נשמר!</span>
+                    )}
+                    {formConfigError && (
+                      <span className="text-xs font-bold text-red-600 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> {formConfigError}</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={resetFormConfig}
+                      disabled={!formConfigDirty || isSavingFormConfig}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      איפוס
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveFormConfig}
+                      disabled={!formConfigDirty || isSavingFormConfig}
+                      className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
+                    >
+                      {isSavingFormConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      {isSavingFormConfig ? 'שומר...' : 'שמור שינויים'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                  {/* ===== Editor column ===== */}
+                  <div className="space-y-4">
+                    <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-black text-gray-900">שדות הטופס</h4>
+                        <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-2 py-1 rounded-lg">
+                          {settingsServiceFormConfig.fields.filter(f => f.enabled).length}/{settingsServiceFormConfig.fields.length} מוצגים
+                        </span>
+                      </div>
+
+                      {settingsServiceFormConfig.fields.map((f, index) => (
+                        <div key={f.id} className={`p-3 rounded-2xl border transition-all ${f.enabled ? 'bg-slate-50/70 border-slate-150' : 'bg-gray-50/50 border-gray-100 opacity-60'}`}>
+                          <div className="flex items-center gap-2">
+                            <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                            <div className="flex flex-col gap-0.5">
+                              <button type="button" onClick={() => moveFormField(index, -1)} disabled={index === 0}
+                                className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer" title="הזז למעלה">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
+                              </button>
+                              <button type="button" onClick={() => moveFormField(index, 1)} disabled={index === settingsServiceFormConfig.fields.length - 1}
+                                className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer" title="הזז למטה">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                              </button>
+                            </div>
+
+                            <input
+                              type="text"
+                              value={f.label}
+                              onChange={(e) => updateFormField(f.id, { label: e.target.value })}
+                              className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-gray-800 text-xs font-bold"
+                            />
+
+                            {!f.builtin && (
+                              <span className="text-[9px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded-md whitespace-nowrap flex-shrink-0">{customTypeLabel(f.type as CustomFieldType)}</span>
+                            )}
+                            {!f.builtin && (
+                              <button type="button" onClick={() => removeCustomField(f.id)} className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer flex-shrink-0" title="מחק שדה">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 mt-2.5 pr-10">
+                            <button type="button" onClick={() => updateFormField(f.id, { enabled: !f.enabled })}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${f.enabled ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-400 border-transparent'}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${f.enabled ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                              {f.enabled ? 'מוצג' : 'מוסתר'}
+                            </button>
+                            {fieldHasRequiredToggle(f) && (
+                              <button type="button" disabled={!f.enabled} onClick={() => updateFormField(f.id, { required: !f.required })}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${!f.enabled ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-transparent' : f.required ? 'bg-amber-50 text-amber-700 border-amber-200 cursor-pointer' : 'bg-gray-100 text-gray-500 border-transparent cursor-pointer'}`}>
+                                {f.required ? 'חובה' : 'רשות'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add custom + inspection fee */}
+                    <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+                      <div className="space-y-2">
+                        <span className="text-xs font-black text-gray-900 block">הוספת שדה חדש</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {(['text', 'textarea', 'tel'] as CustomFieldType[]).map((t) => (
+                            <button key={t} type="button" onClick={() => addCustomField(t)}
+                              className="px-3 py-2 bg-white border border-dashed border-blue-300 text-blue-600 rounded-xl text-[11px] font-bold hover:bg-blue-50 transition-all flex items-center gap-1 cursor-pointer">
+                              <Plus className="w-3 h-3" /> {customTypeLabel(t)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1.5 pt-3 border-t border-gray-100">
+                        <label className="block text-gray-700 text-xs font-black">סכום דמי בדיקה (₪)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={settingsServiceFormConfig.inspectionFeeAmount}
+                          onChange={(e) => setSettingsServiceFormConfig(prev => ({ ...prev, inspectionFeeAmount: Math.max(0, Math.round(Number(e.target.value) || 0)) }))}
+                          className="w-40 px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all"
+                          dir="ltr"
+                        />
+                        <p className="text-[10px] text-gray-400">הסכום שמופיע בהסכמת דמי הבדיקה בטופס.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ===== Live preview column ===== */}
+                  <div className="lg:sticky lg:top-6">
+                    <div className="bg-gradient-to-b from-slate-200/60 to-slate-100/40 rounded-[2rem] border border-slate-200/70 p-4 shadow-inner">
+                      <div className="flex items-center gap-2 mb-3 px-1 text-slate-500 text-xs font-bold">
+                        <Smartphone className="w-4 h-4" />
+                        תצוגה מקדימה — כפי שהלקוח רואה
+                      </div>
+                      <div className="bg-white rounded-3xl shadow-xl border border-slate-200 max-h-[72vh] overflow-y-auto p-5" dir="rtl">
+                        <ServiceRequestForm
+                          config={settingsServiceFormConfig}
+                          customer={{ id: 'preview', excelId: 0, firstName: 'לקוח', lastName: 'לדוגמה' }}
+                          tenantId={tenantId}
+                          context="preview"
+                          readOnly
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'aiBot' && (
+              <div className="space-y-6 pb-10">
+                {/* ===== 1. Header + save bar ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                      <Bot className="w-5 h-5 text-blue-600" />
+                      בוט AI שירות לקוחות
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-xl">
+                      הבוט עונה ללקוחות בוואטסאפ על סטטוס קריאות, מאשר הצעות מחיר, עונה על שאלות מבסיס הידע שתכתוב/י, ומעביר לנציג אנושי כשהוא לא בטוח.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {aiConfigSaved && (
+                      <span className="text-xs font-bold text-emerald-600 flex items-center gap-1"><Check className="w-4 h-4" /> נשמר!</span>
+                    )}
+                    {aiConfigError && (
+                      <span className="text-xs font-bold text-red-600 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> {aiConfigError}</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setAiConfig(currentAiConfig)}
+                      disabled={!aiConfigDirty || isSavingAiConfig}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      איפוס
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveAiConfig}
+                      disabled={!aiConfigDirty || isSavingAiConfig}
+                      className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
+                    >
+                      {isSavingAiConfig ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      {isSavingAiConfig ? 'שומר...' : 'שמור שינויים'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* ===== 2. Status strip ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border ${aiKeyConfigured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      {aiKeyConfigured ? 'מפתח AI בשרת: מוגדר' : 'מפתח AI בשרת: חסר'}
+                    </span>
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border ${currentAiConfig.enabled ? (currentAiConfig.testMode ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200') : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                      <Power className="w-3.5 h-3.5" />
+                      מצב: {currentAiConfig.enabled ? (currentAiConfig.testMode ? 'בדיקה' : 'פעיל') : 'כבוי'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleProbeAi}
+                      disabled={isProbingAi || !aiKeyConfigured}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {isProbingAi ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+                      בדיקת חיבור למודל
+                    </button>
+                    {aiProbe && (
+                      <span className={`text-[11px] font-bold ${aiProbe.connected ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {aiProbe.connected ? `מחובר · ${aiProbe.latencyMs}ms` : `נכשל: ${aiProbe.error || 'לא מחובר'}`}
+                      </span>
+                    )}
+                  </div>
+
+                  {!aiKeyConfigured && (
+                    <div className="mt-3 p-3 rounded-2xl bg-red-50/70 border border-red-100 text-[11px] text-red-700 leading-relaxed">
+                      <b>המפתח לא מוגדר בשרת.</b> יש להגדיר משתנה סביבה בשם <code className="font-mono bg-white/70 px-1 rounded" dir="ltr">GEMINI_API_KEY</code> (מפתח חינמי מ-Google AI Studio) ב-<code className="font-mono bg-white/70 px-1 rounded" dir="ltr">.env.local</code> ובהגדרות הפריסה. עד אז הבוט לא יפעל — ואישורי הצעות מחיר ימשיכו לעבוד כרגיל לפי מילות מפתח.
+                    </div>
+                  )}
+                </div>
+
+                {/* ===== 3. Master switches ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+                  <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><Power className="w-4 h-4 text-emerald-600" /> הפעלה</h4>
+
+                  <label className="flex items-start gap-3 p-3 rounded-2xl border border-gray-100 bg-gray-50/60 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={aiConfig.enabled}
+                      onChange={e => updateAiConfig('enabled', e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer"
+                    />
+                    <span>
+                      <span className="text-xs font-black text-gray-800">הפעלת הבוט</span>
+                      <span className="block text-[11px] text-gray-400 mt-0.5 leading-relaxed">
+                        כשכבוי, אישורי הצעות מחיר ממשיכים לעבוד כרגיל לפי מילות מפתח.
+                      </span>
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-3 p-3 rounded-2xl border border-amber-100 bg-amber-50/50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={aiConfig.testMode}
+                      onChange={e => updateAiConfig('testMode', e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-amber-600 cursor-pointer"
+                    />
+                    <span>
+                      <span className="text-xs font-black text-amber-800 flex items-center gap-1.5"><FlaskConical className="w-3.5 h-3.5" /> מצב בדיקה</span>
+                      <span className="block text-[11px] text-amber-700/80 mt-0.5 leading-relaxed">
+                        הבוט מנתח ועונה, אך התשובה נשמרת ביומן בלבד ולא נשלחת ללקוח. אישורי הצעות מחיר אינם מבוצעים.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                {/* ===== 4. Persona ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+                  <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><Sparkles className="w-4 h-4 text-indigo-600" /> אישיות וסגנון</h4>
+
+                  <div className="flex flex-wrap gap-2">
+                    {PERSONA_PRESETS.map(p => (
                       <button
-                        key={thread.phone}
+                        key={p.label}
                         type="button"
-                        onClick={() => setAiSelectedPhone(thread.phone)}
-                        className={`w-full text-right p-3 rounded-2xl border transition-all cursor-pointer ${aiSelectedPhone === thread.phone ? 'bg-blue-50 border-blue-200' : 'bg-gray-50/60 border-gray-100 hover:bg-gray-100/60'}`}
+                        onClick={() => updateAiConfig('persona', p.value)}
+                        className="px-3 py-1.5 rounded-xl text-[11px] font-bold border border-gray-200 bg-white text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition-all cursor-pointer"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-black text-gray-800 truncate">
-                            {thread.customerName || thread.phone}
-                          </span>
-                          <span className="text-[10px] text-gray-400 flex-shrink-0" dir="ltr">
-                            {formatDate(thread.lastAt)}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-gray-400 font-mono mt-0.5" dir="ltr">{thread.phone}</div>
-                        <div className="text-[11px] text-gray-500 truncate mt-1">{thread.lastText || '—'}</div>
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          <span className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 text-[9px] font-bold">
-                            {thread.messageCount} הודעות
-                          </span>
-                          {thread.escalated && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[9px] font-bold">הועבר לנציג</span>
-                          )}
-                          {thread.testMode && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 text-[9px] font-bold">בדיקה</span>
-                          )}
-                        </div>
+                        {p.label}
                       </button>
                     ))}
                   </div>
 
-                  {/* Transcript */}
-                  <div className="lg:col-span-2 space-y-2 max-h-[28rem] overflow-y-auto p-1">
-                    {!aiSelectedPhone ? (
-                      <p className="text-[11px] text-gray-400 py-10 text-center">בחר/י שיחה מהרשימה כדי לראות את התמלול.</p>
-                    ) : aiMessages.length === 0 ? (
-                      <p className="text-[11px] text-gray-400 py-10 text-center">אין הודעות בשיחה זו.</p>
-                    ) : (
-                      aiMessages.map(msg => (
-                        <div key={msg.id} className={`flex ${msg.direction === 'IN' ? 'justify-end' : 'justify-start'}`}>
-                          <div
-                            className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
-                              msg.direction === 'IN'
-                                ? 'bg-gray-100 text-gray-800 rounded-tr-sm'
-                                : msg.degraded
-                                  ? 'bg-red-50 text-red-700 border border-red-100 rounded-tl-sm'
-                                  : 'bg-emerald-50 text-emerald-900 rounded-tl-sm'
-                            } ${msg.direction === 'OUT' && msg.delivered === false && !msg.degraded ? 'opacity-60 border border-dashed border-emerald-300' : ''}`}
-                          >
-                            {msg.degraded
-                              ? `הבוט לא הגיב (${msg.errorKind || 'שגיאה'}) — המערכת נפלה חזרה למסלול מילות המפתח.`
-                              : msg.text || '—'}
-                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5 opacity-70">
-                              <span className="text-[9px]" dir="ltr">{formatDate(msg.createdAt)}</span>
-                              {msg.intent && <span className="text-[9px] font-bold">· {msg.intent}</span>}
-                              {typeof msg.confidence === 'number' && (
-                                <span className="text-[9px] font-bold">· {Math.round(msg.confidence * 100)}%</span>
-                              )}
-                              {msg.direction === 'OUT' && msg.delivered === false && !msg.degraded && (
-                                <span className="text-[9px] font-bold">· לא נשלח ללקוח</span>
-                              )}
-                              {msg.source === 'FALLBACK_REGEX' && (
-                                <span className="text-[9px] font-bold">· מילות מפתח</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-500 block mb-1">אישיות הבוט</label>
+                    <textarea
+                      value={aiConfig.persona}
+                      onChange={e => updateAiConfig('persona', e.target.value)}
+                      maxLength={AI_BOT_LIMITS.persona}
+                      rows={4}
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
+                    />
+                    <div className="text-[10px] text-gray-400 mt-1">{aiConfig.persona.length}/{AI_BOT_LIMITS.persona}</div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-500 block mb-1">משפט פתיחה (אופציונלי)</label>
+                    <input
+                      type="text"
+                      value={aiConfig.greeting}
+                      onChange={e => updateAiConfig('greeting', e.target.value)}
+                      maxLength={AI_BOT_LIMITS.greeting}
+                      placeholder="היי! הגעת לשירות הלקוחות שלנו 🛴"
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    />
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
+
+                {/* ===== 5. Knowledge base ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+                  <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><BookOpen className="w-4 h-4 text-blue-600" /> בסיס ידע</h4>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    כל מה שכתוב כאן הבוט יכול לענות עליו. מה שלא כתוב כאן — הוא יעביר לנציג. כדאי לכלול: שעות פעילות, אזורי שירות, זמני טיפול ממוצעים, מדיניות אחריות, ודמי בדיקה.
+                  </p>
+                  <textarea
+                    value={aiConfig.knowledgeBase}
+                    onChange={e => updateAiConfig('knowledgeBase', e.target.value)}
+                    maxLength={AI_BOT_LIMITS.knowledgeBase}
+                    rows={12}
+                    placeholder={'שעות פעילות: א׳-ה׳ 09:00-18:00, ו׳ 09:00-13:00\nאזורי שירות: גוש דן, שרון והשפלה\nזמן טיפול ממוצע: 3-5 ימי עסקים\nאחריות: 3 חודשים על כל תיקון\nדמי בדיקה: 80 ₪, מתקזזים מול התיקון'}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
+                  />
+                  <div className={`text-[10px] font-bold ${aiConfig.knowledgeBase.length > 5000 ? 'text-amber-600' : 'text-gray-400'}`}>
+                    {aiConfig.knowledgeBase.length}/{AI_BOT_LIMITS.knowledgeBase}
+                  </div>
+                </div>
+
+                {/* ===== 6. Quote approval ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+                  <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" /> אישור הצעות מחיר</h4>
+
+                  <label className="flex items-start gap-3 p-3 rounded-2xl border border-gray-100 bg-gray-50/60 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={aiConfig.allowQuoteApproval}
+                      onChange={e => updateAiConfig('allowQuoteApproval', e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer"
+                    />
+                    <span>
+                      <span className="text-xs font-black text-gray-800">הבוט רשאי לאשר הצעות מחיר</span>
+                      <span className="block text-[11px] text-gray-400 mt-0.5 leading-relaxed">
+                        האישור חל רק על הצעות פתוחות של הלקוח ששלח את ההודעה. דחיית הצעה לעולם אינה מבוצעת אוטומטית — היא תמיד עוברת לנציג.
+                      </span>
+                    </span>
+                  </label>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-500 block mb-2">
+                      רמת ודאות נדרשת לאישור: <span className="text-emerald-600 font-black">{Math.round(aiConfig.approvalConfidence * 100)}%</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={1}
+                      step={0.05}
+                      value={aiConfig.approvalConfidence}
+                      onChange={e => updateAiConfig('approvalConfidence', parseFloat(e.target.value))}
+                      className="w-full accent-emerald-600 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* ===== 7. Escalation ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+                  <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><ShieldAlert className="w-4 h-4 text-amber-600" /> העברה לנציג אנושי</h4>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-500 block mb-1">מספרי טלפון להתראה</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={aiConfig.escalationPhones}
+                      onChange={e => updateAiConfig('escalationPhones', e.target.value)}
+                      placeholder="0501234567, 0507654321"
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    />
+                    <div className="text-[10px] text-gray-400 mt-1">ריק = שימוש ברשימת מספרי ההתראה הקיימת של העסק.</div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-500 block mb-1">ההודעה שהלקוח יקבל בהעברה לנציג</label>
+                    <textarea
+                      value={aiConfig.escalationMessage}
+                      onChange={e => updateAiConfig('escalationMessage', e.target.value)}
+                      maxLength={AI_BOT_LIMITS.escalationMessage}
+                      rows={2}
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-500 block mb-1">השתקת הבוט אחרי העברה (דקות)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={aiConfig.handoffFreezeMinutes}
+                        onChange={e => updateAiConfig('handoffFreezeMinutes', parseInt(e.target.value || '0', 10))}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      />
+                      <div className="text-[10px] text-gray-400 mt-1">כדי שלקוח שביקש נציג לא ימשיך לקבל תשובות מהבוט.</div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-500 block mb-2">
+                        ודאות מינימלית לשליחת תשובה: <span className="text-amber-600 font-black">{Math.round(aiConfig.replyConfidence * 100)}%</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={0.3}
+                        max={1}
+                        step={0.05}
+                        value={aiConfig.replyConfidence}
+                        onChange={e => updateAiConfig('replyConfidence', parseFloat(e.target.value))}
+                        className="w-full accent-amber-600 cursor-pointer"
+                      />
+                      <div className="text-[10px] text-gray-400 mt-1">מתחת לסף הזה הלקוח יקבל את הודעת ההעברה במקום את תשובת הבוט.</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ===== 8. Limits ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-3">
+                  <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-gray-500" /> מגבלות יומיות</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-500 block mb-1">מקסימום תשובות ללקוח ליום</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={1000}
+                        value={aiConfig.maxRepliesPerCustomerPerDay}
+                        onChange={e => updateAiConfig('maxRepliesPerCustomerPerDay', parseInt(e.target.value || '0', 10))}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-500 block mb-1">מקסימום תשובות לעסק ליום</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10000}
+                        value={aiConfig.maxRepliesPerTenantPerDay}
+                        onChange={e => updateAiConfig('maxRepliesPerTenantPerDay', parseInt(e.target.value || '0', 10))}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      />
+                    </div>
+                  </div>
+                  {aiLiveUsage && (
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] font-bold text-gray-500 mb-1">
+                        <span>נשלחו היום</span>
+                        <span className="text-gray-800">{aiLiveUsage.tenantCount} / {aiLiveUsage.maxPerTenantPerDay}</span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${aiLiveUsage.tenantCount >= aiLiveUsage.maxPerTenantPerDay ? 'bg-red-500' : 'bg-blue-500'}`}
+                          style={{ width: `${Math.min(100, aiLiveUsage.maxPerTenantPerDay > 0 ? (aiLiveUsage.tenantCount / aiLiveUsage.maxPerTenantPerDay) * 100 : 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-gray-400 leading-relaxed">
+                    כשמגבלה נחצית הבוט שותק — ההודעה לא נענית, ומסלול אישור הצעות המחיר לפי מילות מפתח ממשיך לעבוד כרגיל.
+                  </p>
+                </div>
+
+                {/* ===== 9. Playground ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+                  <div>
+                    <h4 className="text-sm font-black text-gray-900 flex items-center gap-2"><FlaskConical className="w-4 h-4 text-purple-600" /> מגרש בדיקות</h4>
+                    <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                      בדיקה יבשה מול ההגדרות <b>השמורות</b>. לעולם לא נשלחת הודעה ולעולם לא מאושרת הצעה — רק מוצג מה היה קורה.
+                    </p>
+                  </div>
+
+                  <CustomerSelectCombobox
+                    customers={customersList}
+                    selectedCustomerId={aiTestCustomerId}
+                    onSelectCustomer={(c) => {
+                      setAiTestCustomerId(c?.id || '');
+                      setAiTestPhone(c?.phone || '');
+                    }}
+                    label="בחר/י לקוח לבדיקה (אופציונלי)"
+                  />
+
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-500 block mb-1">טלפון הפונה</label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={aiTestPhone}
+                      onChange={e => setAiTestPhone(e.target.value)}
+                      placeholder="0509611808"
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <textarea
+                      value={aiTestMessage}
+                      onChange={e => setAiTestMessage(e.target.value)}
+                      rows={2}
+                      placeholder="מה קורה עם הקורקינט שלי?"
+                      className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 leading-relaxed"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRunAiTest}
+                      disabled={isRunningAiTest || !aiTestMessage.trim() || !aiKeyConfigured}
+                      className="px-5 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-500/20 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 flex-shrink-0"
+                    >
+                      {isRunningAiTest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      הרץ בדיקה
+                    </button>
+                  </div>
+
+                  {aiTestLog.length > 0 && (
+                    <div className="space-y-3 pt-2">
+                      {aiTestLog.map(entry => (
+                        <div key={entry.id} className="space-y-2">
+                          <div className="flex justify-end">
+                            <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tr-sm bg-gray-100 text-gray-800 text-xs leading-relaxed whitespace-pre-wrap">
+                              {entry.message}
+                            </div>
+                          </div>
+
+                          {entry.error && (
+                            <div className="flex justify-start">
+                              <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tl-sm bg-red-50 border border-red-100 text-red-700 text-xs">
+                                {entry.error}
+                              </div>
+                            </div>
+                          )}
+
+                          {entry.result && (
+                            <div className="flex flex-col items-start gap-1.5">
+                              <div className={`max-w-[85%] px-3 py-2 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap ${entry.result.degraded ? 'bg-red-50 border border-red-100 text-red-700' : entry.result.escalate ? 'bg-amber-50 border border-amber-100 text-amber-900' : 'bg-emerald-50 border border-emerald-100 text-emerald-900'}`}>
+                                {entry.result.degraded
+                                  ? `הבוט לא הגיב (${entry.result.errorKind || 'שגיאה'}) — במצב אמיתי המערכת הייתה נופלת חזרה למסלול מילות המפתח. ${entry.result.error || ''}`
+                                  : entry.result.reply}
+                              </div>
+
+                              {!entry.result.degraded && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">כוונה: {entry.result.intent}</span>
+                                  <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">ודאות: {Math.round((entry.result.confidence || 0) * 100)}%</span>
+                                  <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">{entry.result.latencyMs}ms</span>
+                                  {entry.result.usage && (
+                                    <span className="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] font-bold">{entry.result.usage.totalTokens} טוקנים</span>
+                                  )}
+                                  {entry.result.escalate && (
+                                    <span className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-bold">הועבר לנציג: {entry.result.escalationReason}</span>
+                                  )}
+                                  {(entry.result.wouldApprove?.requestNumbers.length || 0) > 0 && (
+                                    <span className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 text-[10px] font-bold">
+                                      היה מאשר: {entry.result.wouldApprove?.requestNumbers.map(n => formatRequestNumber(tenantId, n)).join(', ')}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {entry.result.contextBlock && (
+                                <details className="w-full">
+                                  <summary className="text-[10px] font-bold text-gray-400 cursor-pointer hover:text-gray-600">
+                                    הצג את בלוק ההקשר המדויק שנשלח למודל
+                                  </summary>
+                                  <pre className="mt-1.5 p-3 rounded-xl bg-slate-900 text-slate-200 text-[10px] leading-relaxed overflow-x-auto whitespace-pre-wrap font-mono">
+                                    {entry.result.contextBlock}
+                                  </pre>
+                                </details>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* ===== 10. Recent conversations ===== */}
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.02)] space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-black text-gray-900 flex items-center gap-2">
+                      <MessagesSquare className="w-4 h-4 text-blue-600" /> שיחות אחרונות
+                    </h4>
+                    {isLoadingAiThreads && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+                  </div>
+
+                  {aiThreads.length === 0 && !isLoadingAiThreads ? (
+                    <p className="text-[11px] text-gray-400 py-6 text-center">אין עדיין שיחות מתועדות.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+                      {/* Thread list */}
+                      <div className="space-y-1.5 max-h-[28rem] overflow-y-auto">
+                        {aiThreads.map(thread => (
+                          <button
+                            key={thread.phone}
+                            type="button"
+                            onClick={() => setAiSelectedPhone(thread.phone)}
+                            className={`w-full text-right p-3 rounded-2xl border transition-all cursor-pointer ${aiSelectedPhone === thread.phone ? 'bg-blue-50 border-blue-200' : 'bg-gray-50/60 border-gray-100 hover:bg-gray-100/60'}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-black text-gray-800 truncate">
+                                {thread.customerName || thread.phone}
+                              </span>
+                              <span className="text-[10px] text-gray-400 flex-shrink-0" dir="ltr">
+                                {formatDate(thread.lastAt)}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-gray-400 font-mono mt-0.5" dir="ltr">{thread.phone}</div>
+                            <div className="text-[11px] text-gray-500 truncate mt-1">{thread.lastText || '—'}</div>
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              <span className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 text-[9px] font-bold">
+                                {thread.messageCount} הודעות
+                              </span>
+                              {thread.escalated && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[9px] font-bold">הועבר לנציג</span>
+                              )}
+                              {thread.testMode && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 text-[9px] font-bold">בדיקה</span>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Transcript */}
+                      <div className="lg:col-span-2 space-y-2 max-h-[28rem] overflow-y-auto p-1">
+                        {!aiSelectedPhone ? (
+                          <p className="text-[11px] text-gray-400 py-10 text-center">בחר/י שיחה מהרשימה כדי לראות את התמלול.</p>
+                        ) : aiMessages.length === 0 ? (
+                          <p className="text-[11px] text-gray-400 py-10 text-center">אין הודעות בשיחה זו.</p>
+                        ) : (
+                          aiMessages.map(msg => (
+                            <div key={msg.id} className={`flex ${msg.direction === 'IN' ? 'justify-end' : 'justify-start'}`}>
+                              <div
+                                className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${msg.direction === 'IN'
+                                  ? 'bg-gray-100 text-gray-800 rounded-tr-sm'
+                                  : msg.degraded
+                                    ? 'bg-red-50 text-red-700 border border-red-100 rounded-tl-sm'
+                                    : 'bg-emerald-50 text-emerald-900 rounded-tl-sm'
+                                  } ${msg.direction === 'OUT' && msg.delivered === false && !msg.degraded ? 'opacity-60 border border-dashed border-emerald-300' : ''}`}
+                              >
+                                {msg.degraded
+                                  ? `הבוט לא הגיב (${msg.errorKind || 'שגיאה'}) — המערכת נפלה חזרה למסלול מילות המפתח.`
+                                  : msg.text || '—'}
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5 opacity-70">
+                                  <span className="text-[9px]" dir="ltr">{formatDate(msg.createdAt)}</span>
+                                  {msg.intent && <span className="text-[9px] font-bold">· {msg.intent}</span>}
+                                  {typeof msg.confidence === 'number' && (
+                                    <span className="text-[9px] font-bold">· {Math.round(msg.confidence * 100)}%</span>
+                                  )}
+                                  {msg.direction === 'OUT' && msg.delivered === false && !msg.degraded && (
+                                    <span className="text-[9px] font-bold">· לא נשלח ללקוח</span>
+                                  )}
+                                  {msg.source === 'FALLBACK_REGEX' && (
+                                    <span className="text-[9px] font-bold">· מילות מפתח</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </main>
         </div>
       </div>
 
@@ -4168,13 +4448,12 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                       key={st.key}
                       onClick={() => handleStatusChange(selectedRequest.id, st.key)}
                       disabled={isUpdatingStatus}
-                      className={`px-4 py-3 sm:py-2.5 w-full sm:w-auto rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${
-                        selectedRequest.status === st.key
-                          ? st.key === 'COMPLETED'
-                            ? 'bg-green-600 border-green-600 text-white shadow-sm shadow-green-500/10'
-                            : 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-500/10'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 active:scale-[0.98]'
-                      }`}
+                      className={`px-4 py-3 sm:py-2.5 w-full sm:w-auto rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer ${selectedRequest.status === st.key
+                        ? st.key === 'COMPLETED'
+                          ? 'bg-green-600 border-green-600 text-white shadow-sm shadow-green-500/10'
+                          : 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-500/10'
+                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 active:scale-[0.98]'
+                        }`}
                     >
                       {st.label}
                     </button>
@@ -4252,7 +4531,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                   <span className="font-bold">אישור דמי בדיקה ({currentServiceFormConfig.inspectionFeeAmount} ש&quot;ח):</span>
                   <span className="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs font-black shadow-sm">מאושר</span>
                 </div>
-                
+
                 <button
                   onClick={() => handleDeleteRequest(selectedRequest.id)}
                   disabled={isDeleting}
@@ -4271,38 +4550,38 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
 
               {/* Images Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-right">
-                
-                 {/* Tool Photos (Supports up to 3 images) */}
-                 <div className="space-y-2">
-                   <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                     צילומי הכלי:
-                     {isLoadingRequestImages && !selectedRequest.toolImages && !selectedRequest.toolImage && (
-                       <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
-                     )}
-                   </h3>
-                   <div className="grid grid-cols-3 gap-2">
-                     {(selectedRequest.toolImages || (selectedRequest.toolImage ? [selectedRequest.toolImage] : [])).map((imgUrl, idx) => (
-                       <div key={idx} className="space-y-1">
-                         <div className="relative aspect-[4/3] rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center">
-                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                           <img 
-                             src={imgUrl} 
-                             alt={`Tool upload ${idx + 1}`} 
-                             className="max-w-full max-h-full object-contain hover:scale-105 transition-transform duration-300"
-                           />
-                         </div>
-                         <a 
-                           href={imgUrl} 
-                           target="_blank" 
-                           rel="noreferrer"
-                           className="inline-block text-[10px] text-blue-600 font-bold hover:underline"
-                         >
-                           תמונה {idx + 1} ↗
-                         </a>
-                       </div>
-                     ))}
-                   </div>
-                 </div>
+
+                {/* Tool Photos (Supports up to 3 images) */}
+                <div className="space-y-2">
+                  <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                    צילומי הכלי:
+                    {isLoadingRequestImages && !selectedRequest.toolImages && !selectedRequest.toolImage && (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+                    )}
+                  </h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(selectedRequest.toolImages || (selectedRequest.toolImage ? [selectedRequest.toolImage] : [])).map((imgUrl, idx) => (
+                      <div key={idx} className="space-y-1">
+                        <div className="relative aspect-[4/3] rounded-xl overflow-hidden border bg-gray-50 flex items-center justify-center">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={imgUrl}
+                            alt={`Tool upload ${idx + 1}`}
+                            className="max-w-full max-h-full object-contain hover:scale-105 transition-transform duration-300"
+                          />
+                        </div>
+                        <a
+                          href={imgUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-block text-[10px] text-blue-600 font-bold hover:underline"
+                        >
+                          תמונה {idx + 1} ↗
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
                 {/* Receipt Photo */}
                 <div className="space-y-2">
@@ -4311,15 +4590,15 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                     <>
                       <div className="relative aspect-[4/3] rounded-2xl overflow-hidden border bg-gray-50 flex items-center justify-center">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img 
-                          src={selectedRequest.warrantyReceiptImage} 
-                          alt="Warranty receipt upload" 
+                        <img
+                          src={selectedRequest.warrantyReceiptImage}
+                          alt="Warranty receipt upload"
                           className="max-w-full max-h-full object-contain hover:scale-105 transition-transform duration-500"
                         />
                       </div>
-                      <a 
-                        href={selectedRequest.warrantyReceiptImage} 
-                        target="_blank" 
+                      <a
+                        href={selectedRequest.warrantyReceiptImage}
+                        target="_blank"
                         rel="noreferrer"
                         className="inline-block text-xs text-blue-600 font-bold hover:underline"
                       >
@@ -4341,7 +4620,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
               {selectedRequest.pickupSignedAt && (
                 <div className="border-t border-gray-100 pt-6 mt-6 space-y-4 text-right" dir="rtl">
                   <h3 className="text-sm font-bold text-gray-800">פרטי מסירה למוביל (טופס מסירה דיגיטלי):</h3>
-                  
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                     <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100 shadow-sm">
                       <span className="text-gray-400 block font-bold">נציג החנות (המוסר):</span>
@@ -4368,15 +4647,15 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                         <span className="text-xs font-bold text-gray-800 block">חתימת המוסר:</span>
                         <div className="relative aspect-[4/3] rounded-2xl overflow-hidden border bg-gray-50 flex items-center justify-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img 
-                            src={selectedRequest.pickupSignatureImage} 
-                            alt="חתימת מסירה" 
+                          <img
+                            src={selectedRequest.pickupSignatureImage}
+                            alt="חתימת מסירה"
                             className="max-w-full max-h-full object-contain"
                           />
                         </div>
-                        <a 
-                          href={selectedRequest.pickupSignatureImage} 
-                          target="_blank" 
+                        <a
+                          href={selectedRequest.pickupSignatureImage}
+                          target="_blank"
                           rel="noreferrer"
                           className="inline-block text-xs text-blue-600 font-bold hover:underline"
                         >
@@ -4390,15 +4669,15 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                         <span className="text-xs font-bold text-gray-800 block">צילום מסירה:</span>
                         <div className="relative aspect-[4/3] rounded-2xl overflow-hidden border bg-gray-50 flex items-center justify-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img 
-                            src={selectedRequest.pickupPhotoImage} 
-                            alt="צילום מסירה" 
+                          <img
+                            src={selectedRequest.pickupPhotoImage}
+                            alt="צילום מסירה"
                             className="max-w-full max-h-full object-contain"
                           />
                         </div>
-                        <a 
-                          href={selectedRequest.pickupPhotoImage} 
-                          target="_blank" 
+                        <a
+                          href={selectedRequest.pickupPhotoImage}
+                          target="_blank"
                           rel="noreferrer"
                           className="inline-block text-xs text-blue-600 font-bold hover:underline"
                         >
@@ -4410,7 +4689,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 </div>
               )}
             </div>
-            
+
             {/* Modal Footer */}
             <div className="p-5 bg-gray-50/70 border-t border-gray-100 flex justify-end">
               <button
@@ -4475,9 +4754,8 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                       <select
                         value={adminSelectedDriverId}
                         onChange={(e) => setAdminSelectedDriverId(e.target.value)}
-                        className={`w-full px-4 py-3 rounded-xl border bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-xs transition-all cursor-pointer ${
-                          adminSelectedDriverId ? 'border-gray-200 text-gray-800' : 'border-red-200 text-red-600 font-bold'
-                        }`}
+                        className={`w-full px-4 py-3 rounded-xl border bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-xs transition-all cursor-pointer ${adminSelectedDriverId ? 'border-gray-200 text-gray-800' : 'border-red-200 text-red-600 font-bold'
+                          }`}
                       >
                         <option value="">בחר נהג לקריאה...</option>
                         {driversList.map(d => (
@@ -4579,7 +4857,7 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 </div>
                 <span className="text-3xl font-black tracking-tight text-gray-900">{currentBusinessName}</span>
               </div>
-              
+
               <div className="space-y-2">
                 <h1 className="text-3xl font-extrabold text-gray-950 tracking-tight">לקבלת שירות {currentBusinessName}</h1>
                 <p className="text-gray-500 text-sm font-medium">סרקו את קוד ה-QR לפתיחת קריאת שירות מהירה במכשיר שלכם</p>
@@ -4899,23 +5177,23 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 label="לקוח"
                 required
               />
-                {(() => {
-                  const selectedCustomer = customersList.find(c => c.id === newOrderCustomerId);
-                  if (!selectedCustomer || selectedCustomer.address) return null;
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAddOrderModalOpen(false);
-                        openCustomerCard(selectedCustomer);
-                      }}
-                      className="text-xs font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      ללקוח הזה אין כתובת — הוסף כתובת ואזור
-                    </button>
-                  );
-                })()}
+              {(() => {
+                const selectedCustomer = customersList.find(c => c.id === newOrderCustomerId);
+                if (!selectedCustomer || selectedCustomer.address) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddOrderModalOpen(false);
+                      openCustomerCard(selectedCustomer);
+                    }}
+                    className="text-xs font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    ללקוח הזה אין כתובת — הוסף כתובת ואזור
+                  </button>
+                );
+              })()}
 
               <div className="space-y-1.5">
                 <label className="block text-gray-700 text-xs font-bold flex items-center justify-between">
@@ -5029,49 +5307,15 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    {(() => {
-                      const currentType = (newOrderDeviceType === 'other' ? newOrderCustomDeviceType : newOrderDeviceType).trim();
-                      const filtered = modelsList.filter(m => !m.deviceType || m.deviceType === currentType);
-                      if (filtered.length > 0) {
-                        return (
-                          <>
-                            <select
-                              value={newOrderModel}
-                              onChange={(e) => setNewOrderModel(e.target.value)}
-                              className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all cursor-pointer font-medium"
-                            >
-                              <option value="">-- בחר דגם מתוך הרשימה --</option>
-                              {filtered.map((m) => (
-                                <option key={m.name} value={m.name}>
-                                  {m.name}
-                                </option>
-                              ))}
-                              <option value="custom">הקלד דגם אחר בחופשיות...</option>
-                            </select>
-                            {newOrderModel === 'custom' && (
-                              <input
-                                type="text"
-                                placeholder="הקלד דגם מותאם אישית"
-                                value={newOrderCustomModelText}
-                                onChange={(e) => setNewOrderCustomModelText(e.target.value)}
-                                className="mt-2 w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-medium"
-                              />
-                            )}
-                          </>
-                        );
-                      }
-                      return (
-                        <input
-                          type="text"
-                          placeholder="למשל: Xiaomi Pro 2"
-                          value={newOrderModel}
-                          onChange={(e) => setNewOrderModel(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white text-gray-800 text-sm transition-all font-medium"
-                        />
-                      );
-                    })()}
-                  </div>
+                  <ModelSelectCombobox
+                    models={modelsList}
+                    selectedModel={newOrderModel}
+                    onSelectModel={(m) => setNewOrderModel(m)}
+                    onModelAdded={(newM) => setModelsList(prev => [...prev.filter(m => m.name !== newM.name), newM])}
+                    tenantId={tenantId}
+                    label="דגם הכלי"
+                    placeholder="חפש דגם מתוך המאגר או הקלד להוספת דגם חדש..."
+                  />
                 )}
               </div>
 
@@ -5354,6 +5598,72 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                 </p>
               </div>
 
+              {/* Test/Inspection Approval Default Price */}
+              <div className="pt-4 border-t border-gray-150 space-y-2">
+                <label className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                  <FlaskConical className="w-4 h-4 text-red-600" />
+                  מחיר ברירת מחדל לבקשת אישור בדיקה (₪)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="150"
+                  value={settingsTestApprovalPrice}
+                  onChange={(e) => setSettingsTestApprovalPrice(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                  dir="ltr"
+                />
+                <p className="text-[10px] text-gray-400">
+                  המחיר שיוצע כברירת מחדל בכל בקשת אישור בדיקה חדשה בטאב &quot;אישורי בדיקה&quot; — ניתן לשנות ידנית בכל בקשה.
+                </p>
+              </div>
+
+              {/* Test Approval Notification Phones (up to 4) */}
+              <div className="pt-4 border-t border-gray-150 space-y-2">
+                <label className="text-xs font-black text-gray-900 flex items-center gap-1.5">
+                  <FlaskConical className="w-4 h-4 text-purple-600" />
+                  מספרי טלפון להתראות אישורי בדיקה (עד 4)
+                </label>
+                <p className="text-[10px] text-gray-400 -mt-1">
+                  כשלקוח מאשר בקשת אישור בדיקה בוואטסאפ, תישלח הודעת התראה לכל אחד מהמספרים האלו. מספר 1 מיועד לאדמין הראשי.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="מספר 1 (אדמין)"
+                    value={settingsTestApprovalPhone1}
+                    onChange={(e) => setSettingsTestApprovalPhone1(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                    dir="ltr"
+                  />
+                  <input
+                    type="text"
+                    placeholder="מספר 2 (אופציונלי)"
+                    value={settingsTestApprovalPhone2}
+                    onChange={(e) => setSettingsTestApprovalPhone2(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                    dir="ltr"
+                  />
+                  <input
+                    type="text"
+                    placeholder="מספר 3 (אופציונלי)"
+                    value={settingsTestApprovalPhone3}
+                    onChange={(e) => setSettingsTestApprovalPhone3(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                    dir="ltr"
+                  />
+                  <input
+                    type="text"
+                    placeholder="מספר 4 (אופציונלי)"
+                    value={settingsTestApprovalPhone4}
+                    onChange={(e) => setSettingsTestApprovalPhone4(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:bg-white text-gray-800 text-sm transition-all font-mono"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
               {/* Green API — WhatsApp Automation Connection */}
               <div className="pt-4 border-t border-gray-150 space-y-3">
                 <h3 className="text-xs font-black text-gray-900 flex items-center gap-1.5">
@@ -5475,11 +5785,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                     <button
                       type="button"
                       onClick={copyCustomerLoginUrl}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
-                        copiedCustomerLoginUrl
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-blue-600 hover:bg-blue-700 text-white'
-                      }`}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${copiedCustomerLoginUrl
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
                     >
                       <Copy className="w-3.5 h-3.5" />
                       {copiedCustomerLoginUrl ? 'הועתק!' : 'העתק'}
@@ -5516,11 +5825,10 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
                     <button
                       type="button"
                       onClick={copyAgentPartRequestUrl}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${
-                        copiedAgentPartUrl
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                      }`}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer ${copiedAgentPartUrl
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        }`}
                     >
                       <Copy className="w-3.5 h-3.5" />
                       {copiedAgentPartUrl ? 'הועתק!' : 'העתק'}
@@ -5988,6 +6296,245 @@ export default function AdminDashboard({ initialRequests, customers: initialCust
               <button
                 type="button"
                 onClick={() => setIsAddChinaOrderModalOpen(false)}
+                className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Test Approval Request Modal */}
+      {isAddTestApprovalModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <FlaskConical className="w-5 h-5 text-purple-600" />
+                בקשת אישור בדיקה חדשה
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddTestApprovalModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Request Auto-Fill Search */}
+              <div className="space-y-1.5 relative">
+                <label className="block text-xs font-bold text-gray-700 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-purple-700 font-extrabold">
+                    <Search className="w-3.5 h-3.5" /> חפש קריאה קיימת למילוי מהיר
+                  </span>
+                  <span className="text-[10px] text-gray-400 font-normal">(אופציונלי - לפי מס' קריאה / לקוח / תיאור)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="הקלד מס' קריאה (למשל 101 או #101) או שם לקוח..."
+                    value={testApprovalSelectedRequestSearch}
+                    onChange={(e) => {
+                      setTestApprovalSelectedRequestSearch(e.target.value);
+                      setIsTestApprovalRequestDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsTestApprovalRequestDropdownOpen(true)}
+                    className="w-full pl-8 pr-9 py-2.5 rounded-xl border border-purple-200 bg-purple-50/40 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                  />
+                  <Search className="w-4 h-4 text-purple-400 absolute right-3 top-2.5" />
+                  {testApprovalSelectedRequestSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTestApprovalSelectedRequestSearch('');
+                        setIsTestApprovalRequestDropdownOpen(false);
+                      }}
+                      className="absolute left-2.5 top-2.5 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {isTestApprovalRequestDropdownOpen && testApprovalSelectedRequestSearch.trim() && (
+                  <div className="absolute top-full right-0 left-0 mt-1 bg-white rounded-xl border border-purple-100 shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-gray-100 animate-in fade-in duration-150">
+                    {(() => {
+                      const term = testApprovalSelectedRequestSearch.trim().toLowerCase().replace('#', '');
+                      const matchingRequests = requests.filter(req => {
+                        const numStr = String(req.requestNumber);
+                        const custName = req.customer ? `${req.customer.firstName} ${req.customer.lastName}`.toLowerCase() : '';
+                        const ownerName = (req.toolOwnerName || '').toLowerCase();
+                        const custPhone = (req.customer?.phone || req.toolOwnerPhone || '').toLowerCase();
+                        const desc = (req.issueDescription || req.storeName || '').toLowerCase();
+                        return numStr.includes(term) || custName.includes(term) || ownerName.includes(term) || custPhone.includes(term) || desc.includes(term);
+                      }).slice(0, 10);
+
+                      if (matchingRequests.length === 0) {
+                        return (
+                          <div className="p-3 text-center text-xs text-gray-400 font-medium">
+                            לא נמצאה קריאה תואמת לחיפוש &quot;{testApprovalSelectedRequestSearch}&quot;
+                          </div>
+                        );
+                      }
+
+                      return matchingRequests.map(req => {
+                        const custDisplayName = req.customer ? `${req.customer.firstName} ${req.customer.lastName}` : (req.toolOwnerName || 'לקוח');
+                        return (
+                          <button
+                            key={req.id}
+                            type="button"
+                            onClick={() => {
+                              setNewTestApprovalCustomerId(req.customerId);
+                              setNewTestApprovalToolDescription(req.issueDescription || req.storeName || '');
+                              setTestApprovalSelectedRequestSearch(`קריאה #${req.requestNumber} - ${custDisplayName}`);
+                              setIsTestApprovalRequestDropdownOpen(false);
+                            }}
+                            className="w-full p-2.5 text-right hover:bg-purple-50/60 flex items-center justify-between transition-colors cursor-pointer"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-purple-700 text-xs bg-purple-100 px-2 py-0.5 rounded-md">
+                                  #{req.requestNumber}
+                                </span>
+                                <strong className="text-xs font-bold text-gray-800 truncate">
+                                  {custDisplayName}
+                                </strong>
+                              </div>
+                              <span className="text-[11px] text-gray-500 block truncate mt-0.5">
+                                {req.issueDescription || req.storeName || 'קריאת שירות'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200 shadow-2xs mr-2 flex-shrink-0">
+                              טען קריאה
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              {/* Customer Selection */}
+              <CustomerSelectCombobox
+                customers={customersList}
+                selectedCustomerId={newTestApprovalCustomerId}
+                onSelectCustomer={(c) => setNewTestApprovalCustomerId(c?.id || '')}
+                label="לקוח"
+                required
+              />
+
+              {/* Model Selection Combobox with Search + Add Model */}
+              <ModelSelectCombobox
+                models={modelsList}
+                selectedModel={newTestApprovalModel}
+                onSelectModel={(modelName) => setNewTestApprovalModel(modelName)}
+                onModelAdded={(newModel) => setModelsList(prev => [...prev.filter(m => m.name !== newModel.name), newModel])}
+                tenantId={tenantId}
+                label="דגם הכלי"
+                placeholder="חפש דגם מתוך המאגר או הקלד להוספת דגם חדש..."
+              />
+
+              {/* Tool Description */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">תיאור הכלי / בדיקה</label>
+                <input
+                  type="text"
+                  placeholder="לדוגמה: בדיקת מנוע וסוללה"
+                  value={newTestApprovalToolDescription}
+                  onChange={(e) => setNewTestApprovalToolDescription(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                />
+              </div>
+
+              {/* Mobile Camera Photo Upload */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">תמונת הכלי / הבדיקה (מהמובייל)</label>
+                <input type="file" accept="image/*" ref={testApprovalFileInputRef} onChange={(e) => handleTestApprovalPhotoSelect(e.target.files?.[0] || null)} className="hidden" />
+                <input type="file" accept="image/*" capture="environment" ref={testApprovalCameraInputRef} onChange={(e) => handleTestApprovalPhotoSelect(e.target.files?.[0] || null)} className="hidden" />
+                {newTestApprovalPhotoPreview ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-purple-200 bg-gray-50 aspect-video flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={newTestApprovalPhotoPreview} alt="תצוגה מקדימה" className="w-full h-full object-contain" />
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => testApprovalCameraInputRef.current?.click()}
+                        className="px-2.5 py-1 bg-purple-600/90 hover:bg-purple-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Camera className="w-3.5 h-3.5" /> צלם
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => testApprovalFileInputRef.current?.click()}
+                        className="px-2.5 py-1 bg-gray-700/90 text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        גלריה
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setNewTestApprovalPhotoFile(null); setNewTestApprovalPhotoPreview(null); }}
+                        className="px-2 py-1 bg-red-700/90 text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        הסר
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed border-purple-200/80 rounded-2xl p-4 flex flex-col items-center justify-center bg-purple-50/30 gap-2.5">
+                    <span className="text-xs font-bold text-gray-600">צלם תמונה במובייל או בחר מהגלריה</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => testApprovalCameraInputRef.current?.click()}
+                        className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>צלם במצלמה</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => testApprovalFileInputRef.current?.click()}
+                        className="px-3.5 py-2 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                      >
+                        <ImageIcon className="w-4 h-4 text-gray-400" />
+                        <span>גלריה</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Inspection Price */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">מחיר הבדיקה (₪) <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  min={0}
+                  value={newTestApprovalPriceInput}
+                  onChange={(e) => setNewTestApprovalPriceInput(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:bg-white text-gray-800 text-sm font-medium transition-all"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleCreateTestApproval}
+                disabled={isSavingTestApproval || !newTestApprovalCustomerId}
+                className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-700 hover:to-fuchsia-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-purple-500/10 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSavingTestApproval ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                <span>צור בקשה</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAddTestApprovalModalOpen(false)}
                 className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
               >
                 ביטול

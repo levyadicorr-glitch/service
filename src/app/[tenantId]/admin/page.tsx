@@ -1,6 +1,6 @@
 import React from 'react';
 import { cookies } from 'next/headers';
-import { getServiceRequests, getCustomers, getDrivers, getPartRequests, getOrders, getAgents, getChinaOrders, getTechnicians, getTenantById, ensureIndexes } from '@/lib/db';
+import { getServiceRequests, getCustomers, getDrivers, getPartRequests, getOrders, getAgents, getChinaOrders, getTestApprovals, getTechnicians, getTenantById, ensureIndexes } from '@/lib/db';
 import { normalizeServiceFormConfig } from '@/lib/serviceFormConfig';
 import { normalizeAiBotConfig } from '@/lib/aiBotConfig';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
@@ -22,6 +22,11 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const adminWhatsappPhone3 = tenantObj?.adminWhatsappPhone3 || '';
   const quoteNotificationPhones = tenantObj?.quoteNotificationPhones || '';
   const chinaOrderNotificationPhones = tenantObj?.chinaOrderNotificationPhones || '';
+  const testApprovalPrice = tenantObj?.testApprovalPrice ?? 150;
+  const testApprovalPhone1 = tenantObj?.testApprovalPhone1 || '';
+  const testApprovalPhone2 = tenantObj?.testApprovalPhone2 || '';
+  const testApprovalPhone3 = tenantObj?.testApprovalPhone3 || '';
+  const testApprovalPhone4 = tenantObj?.testApprovalPhone4 || '';
   const greenApiInstanceId = tenantObj?.greenApiInstanceId || '';
   // Only a derived boolean crosses to the client — the token itself never
   // becomes a prop (it is a write-only secret, like the AI key below).
@@ -55,12 +60,13 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
     getDrivers(tenantId),
   ]);
 
-  const [requestsResult, partRequests, orders, agents, chinaOrders, technicians] = await Promise.all([
+  const [requestsResult, partRequests, orders, agents, chinaOrders, testApprovals, technicians] = await Promise.all([
     getServiceRequests(tenantId, { page: 1, limit: 200, excludeImages: true, customers, drivers }),
     getPartRequests(tenantId, { excludeImages: true, customers }),
     getOrders(tenantId, { customers, drivers }),
     getAgents(tenantId),
     getChinaOrders(tenantId, { excludeImages: true }),
+    getTestApprovals(tenantId),
     getTechnicians(tenantId),
   ]);
   const requests = requestsResult.requests;
@@ -68,5 +74,5 @@ export default async function AdminPage(props: { params: Promise<{ tenantId: str
   const { normalizeModels } = await import('@/lib/db');
   const initialModels = normalizeModels(tenantObj?.models);
 
-  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialChinaOrders={chinaOrders} initialTechnicians={technicians} initialFactories={initialFactories} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} chinaOrderNotificationPhones={chinaOrderNotificationPhones} greenApiInstanceId={greenApiInstanceId} greenApiTokenConfigured={greenApiTokenConfigured} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} aiBotConfig={aiBotConfig} aiKeyConfigured={aiKeyConfigured} />;
+  return <AdminDashboard initialRequests={requests} customers={customers} drivers={drivers} initialPartRequests={partRequests} initialOrders={orders} initialAgents={agents} initialChinaOrders={chinaOrders} initialTestApprovals={testApprovals} initialTechnicians={technicians} initialFactories={initialFactories} initialDeviceModels={initialDeviceModels} initialModels={initialModels} tenantId={tenantId} businessName={businessName} whatsappTemplate={whatsappTemplate} partsRequestPhone={partsRequestPhone} adminWhatsappPhone={adminWhatsappPhone} adminWhatsappPhone2={adminWhatsappPhone2} adminWhatsappPhone3={adminWhatsappPhone3} quoteNotificationPhones={quoteNotificationPhones} chinaOrderNotificationPhones={chinaOrderNotificationPhones} testApprovalPrice={testApprovalPrice} testApprovalPhone1={testApprovalPhone1} testApprovalPhone2={testApprovalPhone2} testApprovalPhone3={testApprovalPhone3} testApprovalPhone4={testApprovalPhone4} greenApiInstanceId={greenApiInstanceId} greenApiTokenConfigured={greenApiTokenConfigured} logoUrl={logoUrl} serviceFormConfig={serviceFormConfig} aiBotConfig={aiBotConfig} aiKeyConfigured={aiKeyConfigured} />;
 }

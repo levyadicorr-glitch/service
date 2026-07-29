@@ -99,6 +99,30 @@ export function getQuoteNotificationPhones(tenant: { quoteNotificationPhones?: s
   return Array.from(new Set(fallbackAdmin));
 }
 
+/**
+ * Returns the up to 4 dedicated WhatsApp numbers notified when a customer
+ * approves a test/inspection request (testApprovalPhone1..4) — a separate
+ * list from getQuoteNotificationPhones so this module's recipients don't have
+ * to match the part-request quote recipients.
+ */
+export function getTestApprovalNotificationPhones(tenant: {
+  testApprovalPhone1?: string;
+  testApprovalPhone2?: string;
+  testApprovalPhone3?: string;
+  testApprovalPhone4?: string;
+}): string[] {
+  const phones = [
+    tenant.testApprovalPhone1,
+    tenant.testApprovalPhone2,
+    tenant.testApprovalPhone3,
+    tenant.testApprovalPhone4,
+  ]
+    .map((p) => (p || '').trim())
+    .filter((p) => p.length > 0);
+
+  return Array.from(new Set(phones));
+}
+
 export interface ChinaNotifyResult {
   sent: boolean;
   sentCount: number;

@@ -28,6 +28,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     const adminWhatsappPhone3 = formData.get('adminWhatsappPhone3') as string;
     const quoteNotificationPhones = formData.get('quoteNotificationPhones') as string;
     const chinaOrderNotificationPhones = formData.get('chinaOrderNotificationPhones') as string;
+    const testApprovalPriceRaw = formData.get('testApprovalPrice') as string | null;
+    const testApprovalPhone1 = formData.get('testApprovalPhone1') as string;
+    const testApprovalPhone2 = formData.get('testApprovalPhone2') as string;
+    const testApprovalPhone3 = formData.get('testApprovalPhone3') as string;
+    const testApprovalPhone4 = formData.get('testApprovalPhone4') as string;
     const greenApiInstanceId = formData.get('greenApiInstanceId') as string;
     const greenApiToken = formData.get('greenApiToken') as string;
     const password = formData.get('password') as string;
@@ -45,6 +50,18 @@ export async function POST(req: NextRequest, props: { params: Promise<{ tenantId
     if (adminWhatsappPhone3 !== null) update.adminWhatsappPhone3 = adminWhatsappPhone3.trim();
     if (quoteNotificationPhones !== null) update.quoteNotificationPhones = quoteNotificationPhones.trim();
     if (chinaOrderNotificationPhones !== null) update.chinaOrderNotificationPhones = chinaOrderNotificationPhones.trim();
+    if (testApprovalPriceRaw !== null && testApprovalPriceRaw.trim() !== '') {
+      const parsedPrice = Number(testApprovalPriceRaw);
+      if (Number.isFinite(parsedPrice) && parsedPrice >= 0) {
+        update.testApprovalPrice = parsedPrice;
+      }
+      // Invalid/negative input is silently ignored so the rest of the settings still save —
+      // same pattern as the malformed-JSON guards above.
+    }
+    if (testApprovalPhone1 !== null) update.testApprovalPhone1 = testApprovalPhone1.trim();
+    if (testApprovalPhone2 !== null) update.testApprovalPhone2 = testApprovalPhone2.trim();
+    if (testApprovalPhone3 !== null) update.testApprovalPhone3 = testApprovalPhone3.trim();
+    if (testApprovalPhone4 !== null) update.testApprovalPhone4 = testApprovalPhone4.trim();
     if (greenApiInstanceId !== null) update.greenApiInstanceId = greenApiInstanceId.trim();
     if (greenApiToken && greenApiToken.trim()) update.greenApiToken = greenApiToken.trim();
     if (partsDeletePassword && partsDeletePassword.trim()) update.partsDeletePassword = partsDeletePassword.trim();

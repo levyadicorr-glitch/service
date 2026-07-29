@@ -1,8 +1,8 @@
 import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse, after } from 'next/server';
-import { getTenantById, getCustomerByPhone, tenantExists, ensureIndexes, normalizePhone, type Tenant } from '@/lib/db';
+import { getTenantById, getCustomerByPhone, getPendingTestApprovalsByPhone, updateTestApprovalStatus, tenantExists, ensureIndexes, normalizePhone, type Tenant } from '@/lib/db';
 import getClientPromise from '@/lib/mongodb';
-import { sendWhatsAppMessage, getQuoteNotificationPhones } from '@/lib/greenApi';
+import { sendWhatsAppMessage, getQuoteNotificationPhones, getTestApprovalNotificationPhones } from '@/lib/greenApi';
 import {
   recordInboundMessage,
   recordOutboundMessage,
@@ -361,6 +361,9 @@ export async function POST(
 
     const approvalRegex = /מאשר|מאשרת|כן|סגור|תזמין|תשלח|אישור|אשר|אשמח|yes|ok/i;
     if (approvalRegex.test(textMessage)) {
+      let approvedQuoteCount = 0;
+      let approvedTestApprovalCount = 0;
+
       const customer = await getCustomerByPhone(tenantId, phone);
       if (customer) {
         const client = await getClientPromise();
@@ -413,8 +416,54 @@ export async function POST(
             }
           }
 
-          return NextResponse.json({ success: true, approvedCount: pendingRequests.length });
+          approvedQuoteCount = pendingRequests.length;
         }
+      }
+
+      // ---- Test/inspection approval requests (בקשת אישור בדיקה) ----
+      // Matched by phone directly (not the customer lookup above) — a request
+      // is created against a phone snapshot, so it still resolves even if the
+      // underlying customer record later changes. Sends a thank-you reply to
+      // the customer and notifies the module's own dedicated recipient list
+      // (testApprovalPhone1..4), separate from the part-request quote
+      // notification numbers.
+      if (tenant?.greenApiInstanceId && tenant?.greenApiToken) {
+        const pendingTestApprovals = await getPendingTestApprovalsByPhone(tenantId, phone);
+        if (pendingTestApprovals.length > 0) {
+          console.log('[WEBHOOK REGEX APPROVAL]', pendingTestApprovals.length, 'test approvals for phone', phoneTail(phone));
+          const notificationPhones = getTestApprovalNotificationPhones(tenant);
+
+          for (const ta of pendingTestApprovals) {
+            await updateTestApprovalStatus(tenantId, ta.id, 'APPROVED');
+
+            const custMessage = `תודה ${ta.customerName}! אישור הבדיקה שלך התקבל בהצלחה ✅\nהבדיקה עבור ${ta.toolDescription || 'הכלי'} (${ta.price} ₪) אושרה ותועבר לטיפול.`;
+            const custResult = await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, phone, custMessage);
+            await recordOutboundMessage(tenantId, {
+              phone,
+              chatId: body.senderData?.chatId,
+              customerId: ta.customerId,
+              customerName: ta.customerName,
+              source: 'FALLBACK_REGEX',
+              text: custMessage,
+              actions: [`test_approval_approved:${ta.id}`],
+              delivered: custResult.sent,
+              error: custResult.error,
+            });
+
+            const adminMessage = `✅ אישור בדיקה התקבל ב-${tenant.businessName || tenant.name}!\n\nלקוח: ${ta.customerName} (${ta.customerPhone})\nכלי: ${ta.toolDescription || 'לא צוין'}\nמחיר מאושר: ${ta.price} ₪`;
+            for (const adminPhone of notificationPhones) {
+              if (adminPhone) {
+                await sendWhatsAppMessage(tenant.greenApiInstanceId, tenant.greenApiToken, adminPhone, adminMessage);
+              }
+            }
+          }
+
+          approvedTestApprovalCount = pendingTestApprovals.length;
+        }
+      }
+
+      if (approvedQuoteCount > 0 || approvedTestApprovalCount > 0) {
+        return NextResponse.json({ success: true, approvedCount: approvedQuoteCount, approvedTestApprovalCount });
       }
     }
 

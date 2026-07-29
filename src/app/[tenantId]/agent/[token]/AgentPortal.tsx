@@ -5,6 +5,7 @@ import { Agent, Customer, Driver, Order, PartRequest, ServiceRequest, SpecificMo
 import { ServiceFormConfig } from '@/lib/serviceFormConfig';
 import ServiceRequestForm from '@/components/ServiceRequestForm';
 import CustomerSelectCombobox from '@/components/CustomerSelectCombobox';
+import ModelSelectCombobox from '@/components/ModelSelectCombobox';
 import { formatDate } from '@/lib/format';
 import {
   ShoppingCart, Package, FileText, Truck, Plus, Camera, Loader2,
@@ -56,7 +57,7 @@ export default function AgentPortal({
         if (stored === 'true') {
           setIsAuthenticated(true);
         }
-      } catch (err) {}
+      } catch (err) { }
     }
   }, [agent.id, expectedPassword]);
 
@@ -67,7 +68,7 @@ export default function AgentPortal({
       setLoginError('');
       try {
         localStorage.setItem(`agent_auth_${agent.id}`, 'true');
-      } catch (err) {}
+      } catch (err) { }
     } else {
       setLoginError('סיסמה שגויה, אנא נסה שוב');
     }
@@ -428,11 +429,10 @@ export default function AgentPortal({
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key as typeof activeTab)}
-                className={`py-3 px-4 font-bold text-xs flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
+                className={`py-3 px-4 font-bold text-xs flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${isActive
                     ? 'border-blue-600 text-blue-600 bg-blue-50/40'
                     : 'border-transparent text-gray-500 hover:text-gray-800'
-                }`}
+                  }`}
               >
                 <TabIcon className="w-4 h-4" />
                 <span>{tab.label}</span>
@@ -821,47 +821,15 @@ export default function AgentPortal({
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    {(() => {
-                      const currentType = (selectedDeviceType === 'other' ? customDeviceType : selectedDeviceType).trim();
-                      const filtered = modelsList.filter(m => !m.deviceType || m.deviceType === currentType);
-                      if (filtered.length > 0) {
-                        return (
-                          <>
-                            <select
-                              value={newOrderModel}
-                              onChange={(e) => setNewOrderModel(e.target.value)}
-                              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-xs font-medium focus:bg-white"
-                            >
-                              <option value="">-- בחר דגם מתוך הרשימה --</option>
-                              {filtered.map(m => (
-                                <option key={m.name} value={m.name}>{m.name}</option>
-                              ))}
-                              <option value="custom">הקלד דגם אחר בחופשיות...</option>
-                            </select>
-                            {newOrderModel === 'custom' && (
-                              <input
-                                type="text"
-                                placeholder="הקלד דגם מותאם אישית..."
-                                value={customModelText}
-                                onChange={(e) => setCustomModelText(e.target.value)}
-                                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
-                              />
-                            )}
-                          </>
-                        );
-                      }
-                      return (
-                        <input
-                          type="text"
-                          placeholder="למשל: Xiaomi Pro 2"
-                          value={newOrderModel}
-                          onChange={(e) => setNewOrderModel(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-medium"
-                        />
-                      );
-                    })()}
-                  </div>
+                  <ModelSelectCombobox
+                    models={modelsList}
+                    selectedModel={newOrderModel}
+                    onSelectModel={(m) => setNewOrderModel(m)}
+                    onModelAdded={(newM) => setModelsList(prev => [...prev.filter(m => m.name !== newM.name), newM])}
+                    tenantId={tenantId}
+                    label="דגם הכלי"
+                    placeholder="חפש דגם מתוך המאגר או הקלד להוספת דגם חדש..."
+                  />
                 )}
               </div>
 
